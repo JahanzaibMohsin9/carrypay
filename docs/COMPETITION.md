@@ -25,7 +25,7 @@ How CarryPay maps to it:
 | Security & compliance | **30%** | Safety gateway, permission tiers, verified accounts, rules engine, hash-chained log, red-team results |
 | Innovation & interaction | **30%** | Event-driven agent, rules-as-files, bilingual UI, approval UX, demo stage |
 
-**Challenge bonus: on-chain exploration, 0–5 points.** Listed under the shared scoring section; the Topic F text also mentions it. It isn't fully clear whether non-Topic-F teams can earn it. **Action: email the organiser to ask** (contact above). If yes, our natural fit is anchoring the activity log's head hash on a public test network, so anyone can check the log wasn't changed after the fact (see PLAN.md).
+**Challenge bonus: on-chain exploration, 0–5 points.** Listed under the shared scoring section; the Topic F text also mentions it. **Confirmed by the organiser (14 Oct): the bonus is available to Topics A–E as well, so it applies to us.** Our natural fit is anchoring the activity log's head hash on a public test network, so anyone can check the log wasn't changed after the fact (see PLAN.md).
 
 ## Eligibility and team
 
@@ -57,7 +57,7 @@ Note: item 04 needs a **GitHub repository link**, so the repo must be pushed to 
 | Nov 20 | Check-in and WeBank HQ visit, Shenzhen |
 | Nov 21–23 | Grand final and awards, Shenzhen |
 
-At least one member of each finalist team must attend in person.
+At least one member of each finalist team must attend in person. Organiser's answers (14 Oct): **about 10 teams** are invited to the Grand Final, and travel and accommodation are covered for **all members** of a finalist team (2–5).
 
 ## Prizes and benefits
 

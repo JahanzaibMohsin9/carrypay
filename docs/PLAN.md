@@ -114,7 +114,7 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 - Family app: rule chips explain themselves; "Across currencies" on the Money tab; `/bank/officer`; `/pack` (print to PDF); Overview says "nothing will be paid" when fraud was found; PWA manifest and icons.
 
 **Open questions for you (Y):**
-- **Upload your own bill**: what should happen when the bill is from a hospital that isn't in our verified registry? Options: (a) the agent prices and explains the legal route but won't pay until the institution is verified (shows the safety story); (b) for the demo, treat any uploaded bill as coming from the case's hospital. Recommend (a).
+- **Upload your own bill**: *decided 14 Oct: option (a).* A bill from an unverified hospital is read, priced under the home country's rules and explained, but not paid until the institution is verified; a Director button "Verify institution (sandbox)" stands in for the bank's verification so the demo can continue to payment. Photos need a vision model (check whether DeepSeek's API takes images; PDFs with text work without one).
 - **China, student's own quota**: in one live run the agent paid the London fees from the **student's own** USD 50k quota (her own tuition, one payer) instead of the father's quota plus documents. The rules engine allows it and it isn't 蚂蚁搬家, but please confirm with a bank or MiMo that a student may buy FX for her own tuition with RMB her parents gave her, and what the bank needs.
 - **Chinese review**: new strings are marked `// TODO zh` for MiMo (prompt 5 in [MIMO_PROMPTS.md](MIMO_PROMPTS.md)). No new Urdu: the Urdu UI keeps its original strings and shows English for anything newer.
 
@@ -125,7 +125,7 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 - [x] **C** **A3** Agent eval: a script that runs each scenario Live N times and reports success rate, steps, cost, failures, plus a chart for the deck *(done Oct 14: [EVAL.md](EVAL.md))*
 - [ ] **Y** **A4** Start the interviews: 5-10 people (students abroad, families who paid hospitals abroad), 10 minutes each
 - [ ] **Y** Call or visit a bank's FX desk: medical remittance process, form name, documents, timing. Write down what they say.
-- [ ] **Y** Email the organiser (wangyr@pbcsf.tsinghua.edu.cn): does the 0–5 point **on-chain challenge bonus** apply to Topic C teams? (see COMPETITION.md)
+- [x] **Y** Email the organiser (wangyr@pbcsf.tsinghua.edu.cn): does the 0–5 point **on-chain challenge bonus** apply to Topic C teams? *Answer 14 Oct: yes (A–E). Also: ~10 finalist teams; travel covered for all members.*
 - [ ] **Y** Create a GitHub repository and push (the source-code item requires a GitHub link)
 
 ### Oct 16: Prove it's safe with the real model
@@ -137,7 +137,7 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 
 ### Oct 17: More reasons to win
 Pick by value; the first three are the strongest.
-- [ ] **C** If the organiser says yes to the bonus: **anchor the log on-chain**: publish the activity log's head hash to a public test network at each case milestone, link the transaction from the Security Centre. Real on-chain hashes, cheap, and it strengthens tamper-evidence. (½ day)
+- [ ] **C** **(confirmed: bonus applies to Topic C; do Oct 16–17)** **Anchor the log on-chain**: publish the activity log's head hash to a public test network at each case milestone, link the transaction from the Security Centre. Real on-chain hashes, cheap, and it strengthens tamper-evidence. (½ day)
 - [x] **C** *(done Oct 14: Money tab, "Across currencies")* **Multi-currency view** (named in Topic C): per case, what left in PKR/CNY, what arrived in THB/GBP, fees and tax per route, refunds back in home currency
 - [x] **C** *(done Oct 14: scenario `pk-admission`, rule `CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES`)* **A1** Admission-fraud protection and **scenario 3 (PK to UK/US tuition, fake agent)**, which also delivers the third corridor (rules already in `pk-sbp.json`)
 - [x] **C** *(both done Oct 14: chaos buttons in the Director, `/bank/officer`)* **A5** Chaos mode *or* **A6** bank-officer view (whichever is further along)
