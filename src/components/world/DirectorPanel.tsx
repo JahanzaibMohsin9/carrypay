@@ -53,7 +53,12 @@ export function DirectorPanel({ dense = false }: { dense?: boolean }) {
           </button>
         ))}
       </div>
-      {w.agent.mode === "live" && !state.hasKey && <span className="rounded-md bg-amber-soft px-2 py-1 font-semibold text-amber-strong">No API key on server</span>}
+      {w.agent.mode === "live" &&
+        (state.hasKey ? (
+          <span className="rounded-md bg-brand-soft px-2 py-1 font-semibold text-brand-strong">{state.model}</span>
+        ) : (
+          <span className="rounded-md bg-amber-soft px-2 py-1 font-semibold text-amber-strong">No API key on server</span>
+        ))}
 
       <span className="mx-1 h-5 w-px bg-line" />
       <span className="num font-semibold text-ink-2">

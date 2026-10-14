@@ -383,7 +383,7 @@ export const TOOLS = [
     name: "add_case_note",
     tier: "communicate",
     description: "Write a short note to your future self about this case (decisions made, what you are waiting for). You start each wake-up fresh, so notes are your memory.",
-    schema: z.object({ note: z.string().min(3).max(500), narration }),
+    schema: z.object({ note: z.string().min(3).max(1500).describe("Up to 1500 characters. Short bullet points work best."), narration }),
     run: (i, ctx) => {
       ctx.store.mutate((w) => w.cases[ctx.caseId].notes.push({ at: w.now, text: i.note }));
       return { decision: "allowed", result: { saved: true } };

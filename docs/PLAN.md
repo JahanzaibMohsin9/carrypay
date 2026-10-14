@@ -20,6 +20,10 @@ Owners: **C** = Claude (code), **Y** = you, **T** = teammates, **M** = MiMo v2.6
 - [x] Family app (EN/UR/ZH), approval sheet, Activity, Money, Documents, Security Centre, New case
 - [x] Demo stage for the video, institution desk, bank console, director controls, landing page
 - [x] Tests: 31 passing (rules engine, both scenarios end to end, 17 red-team attacks)
+- [x] Chinese copy reviewed by MiMo (UI, China scenario, FX form)
+- [x] **DeepSeek adapter**: Live mode runs on `deepseek-v4-pro` (thinking + tools), automatic OpenAI fallback, `scripts/drive.mjs` to drive live runs
+- [x] First live run of the Bangkok case on DeepSeek (findings below)
+- [x] Competition brief read and summarised: [COMPETITION.md](COMPETITION.md)
 
 ---
 
@@ -36,7 +40,7 @@ Claude is too expensive for this budget. We have DeepSeek and OpenAI credits.
 
 Why DeepSeek also helps us win: it is **reachable from mainland China**, so the live demo can work at the on-site final in Shenzhen, and a China-built model fits the judges' ecosystem. Replay mode stays as the labelled backup.
 
-How (C, Oct 15):
+Status: **implemented Oct 14.** Original design notes:
 - DeepSeek's API is OpenAI-compatible (`https://api.deepseek.com`, also an Anthropic-format endpoint at `/anthropic`). Use the **OpenAI SDK** with a provider adapter, so one code path serves both DeepSeek and OpenAI credits.
 - Config: `CARRYPAY_PROVIDER=deepseek|openai|anthropic`, `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `CARRYPAY_MODEL`.
 - Convert our zod tool schemas to OpenAI `tools` format (already generated as JSON Schema). Keep our own validation, since DeepSeek's strict mode doesn't support `minLength`/`maxItems`.
@@ -55,12 +59,21 @@ Risk: tool-calling reliability over a 15-tool, multi-step case is unproven on De
 - [ ] **Y** Put DeepSeek and OpenAI keys in `.env.local` (never commit it)
 - [ ] **Y** Send MiMo prompt 1 and 2 ([MIMO_PROMPTS.md](MIMO_PROMPTS.md))
 
-### Oct 15: Real AI
-- [ ] **C** DeepSeek/OpenAI provider adapter; Live mode on DeepSeek
-- [ ] **C+Y** Run both scenarios Live; fix prompt/tool issues; record the best runs (Replay)
+### Findings from the first live DeepSeek run (Oct 14)
+- Good: emails the hospital first, verifies the account, prepares SBP forms, proposes payments, catches the look-alike scam email on its own (flag + warn family + confirm via the verified address), writes clear family messages.
+- Fixed already: case-note limit too short (model retried); prompt now says "contact the institution yourself first".
+- **To fix:** the sandbox hospital's auto-responder picks one intent per email, so multi-question emails get a generic "payment status" reply and the agent keeps re-asking. Make replies answer every question asked (bank details unchanged, receipts, statement, refund), and stop the agent re-emailing about something already answered.
+- **To fix:** the agent sometimes wakes on a follow-up that's no longer needed and only writes a note. Fine, but each wake-up costs a call: have it cancel follow-ups once the thing it waited for has happened.
+- Speed: 25–45 s per wake-up. Fine for the product; for the video, record a live run and use Replay with step pacing.
+
+### Oct 15: Make the live agent solid
+- [ ] **C** Smarter sandbox institutions: multi-intent replies (see findings), so live runs flow without loops
+- [ ] **C** Cancel or skip stale follow-ups; tighten the prompt where live runs wander
+- [ ] **C+Y** Run both scenarios Live until each completes cleanly; record the best runs (Replay)
 - [ ] **C** Agent eval: a script that runs each scenario Live N times and reports success rate, steps, cost, failures
 - [ ] **Y** Call or visit a bank's FX desk: medical remittance process, form name, documents, timing. Write down what they say.
-- [ ] **M** Chinese UI and content review (prompts 1–2); **C** merges and reviews
+- [ ] **Y** Email the organiser (wangyr@pbcsf.tsinghua.edu.cn): does the 0–5 point **on-chain challenge bonus** apply to Topic C teams? (see COMPETITION.md)
+- [ ] **Y** Create a GitHub repository and push (the source-code item requires a GitHub link)
 
 ### Oct 16: Prove it's safe with the real model
 - [ ] **C** LLM-level red-team set (~20 attacks): forged invoices, hidden instructions, look-alike senders, "the hospital says skip verification", family pressure to split quotas, fake urgency, instructions in a PDF, requests to email a new address. Run against DeepSeek with and without the safety layer; report attack success rate before/after. This becomes the core of the security report.
@@ -70,6 +83,8 @@ Risk: tool-calling reliability over a 15-tool, multi-step case is unproven on De
 
 ### Oct 17: More reasons to win
 Pick by value; the first three are the strongest.
+- [ ] **C** If the organiser says yes to the bonus: **anchor the log on-chain**: publish the activity log's head hash to a public test network at each case milestone, link the transaction from the Security Centre. Real on-chain hashes, cheap, and it strengthens tamper-evidence. (½ day)
+- [ ] **C** **Multi-currency view** (named in Topic C): per case, what left in PKR/CNY, what arrived in THB/GBP, fees and tax per route, refunds back in home currency
 - [ ] **C** Third corridor, **PK→GB university fees** (rules already in `pk-sbp.json`): shows the "one agent, new rules file" claim live
 - [ ] **C** "Why?" on every rule chip: tap a rule ID to see a plain-language explanation and its source, in the family's language
 - [ ] **C** Receipt pack: one-tap PDF of all invoices, receipts, forms and the verified log, for insurance claims and tax records (and the "execution evidence" deliverable)

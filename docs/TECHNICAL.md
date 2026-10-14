@@ -85,9 +85,12 @@ Returned transfers come back with a reason (e.g. the receiving bank needs the pa
 
 `reconcile_bill` matches the final bill line by line against payments, detects duplicate lines (same description and amount), and computes the balance or refund due with and without the duplicates. The agent disputes errors with the institution and claims refunds to the original account.
 
-## 4. LLM integration **(update after DeepSeek switch)**
+## 4. LLM integration
 
-- Provider decision: **DeepSeek** (`deepseek-v4-pro` for the agent, `deepseek-flash` for high-volume work), OpenAI as fallback, through one OpenAI-compatible adapter. Reasons: cost, and DeepSeek is reachable from mainland China. The code currently calls Claude through the Anthropic SDK; the adapter replaces that on Oct 15.
+- **DeepSeek `deepseek-v4-pro`** in thinking mode with function calling, via the OpenAI SDK against `https://api.deepseek.com` (`src/server/agent/llm.ts`, `runner.ts`). Reasons: cost, and DeepSeek is reachable from mainland China.
+- DeepSeek requires the model's `reasoning_content` to be sent back on every request when tools are used; the loop keeps it on each assistant message.
+- **Fallback:** if DeepSeek returns an API error, the same wake-up is retried on OpenAI (`gpt-5.4-mini`) and the switch is logged. Our own safety checks never trigger a fallback.
+- Malformed tool arguments are returned to the model as an error to correct, never executed.
 - Tools are defined once as zod schemas, converted to JSON Schema for the API, and validated again by the gateway before running.
 - Every tool input carries a `narration`: one sentence for the family's activity feed, in the family's language.
 - The model's reasoning summary is logged and shown under "How CarryPay reasoned" in the feed.

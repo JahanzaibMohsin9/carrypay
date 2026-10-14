@@ -11,6 +11,7 @@ Built for the 2026 Shenzhen International FinTech Competition, International Tra
 | Doc | What's in it |
 |---|---|
 | [docs/PLAN.md](docs/PLAN.md) | Build plan to the Oct 20 deadline, owners, submission checklist |
+| [docs/COMPETITION.md](docs/COMPETITION.md) | What the official competition brief says: topic, scoring, submission items, timeline |
 | [docs/TECHNICAL.md](docs/TECHNICAL.md) | Architecture, core algorithms, LLM integration, ledger |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, permission tiers, controls, red-team results, known risks |
 | [docs/MIMO_PROMPTS.md](docs/MIMO_PROMPTS.md) | Prompts for MiMo v2.6 Pro: Chinese UI review, scenario content, subtitles |
@@ -56,9 +57,11 @@ Switch in the Director bar.
 
 ## LLM provider
 
-**Decision (Oct 14): DeepSeek.** `deepseek-v4-pro` runs the agent, `deepseek-flash` handles high-volume work, and OpenAI is the fallback, all through one OpenAI-compatible adapter. DeepSeek is cheaper and reachable from mainland China, which matters for the on-site final in Shenzhen.
+**DeepSeek `deepseek-v4-pro`** runs the agent in thinking mode with tool calls, through the OpenAI SDK (`src/server/agent/llm.ts`, `runner.ts`). If DeepSeek returns an API error, the run retries automatically on **OpenAI `gpt-5.4-mini`** and logs the switch. DeepSeek is cheaper and reachable from mainland China, which matters for the on-site final in Shenzhen.
 
-**Current state:** the code still calls Claude through the Anthropic SDK (`src/server/agent/runner.ts`). The DeepSeek adapter is the first task on Oct 15 (see [docs/PLAN.md](docs/PLAN.md)). Until then, use **Scripted** mode, which needs no key.
+Configure in `.env.local`: `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, optionally `CARRYPAY_PROVIDER` (`deepseek` | `openai` | `anthropic`), `CARRYPAY_MODEL`, `CARRYPAY_EFFORT`. The Director bar shows which model Live mode uses.
+
+Drive a live run from the terminal: `node scripts/drive.mjs reset th-medical live`, then `node scripts/drive.mjs run 16`.
 
 ## The demo scenarios
 

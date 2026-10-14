@@ -1,15 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import type { World } from "@/domain/types";
 import type { Store, Trigger } from "../store";
 import { SYSTEM_PROMPT, wakeMessage } from "./prompt";
 import { caseSnapshot } from "./snapshot";
 import { anthropicToolDefs, executeTool } from "./tools";
 import { SCRIPTS } from "./scripted";
+import { fallbackConfig, hasProviderKey, providerConfig, type ProviderConfig } from "./llm";
 
-export const MODEL = process.env.CARRYPAY_MODEL || "claude-opus-5-5";
-const EFFORT = (process.env.CARRYPAY_EFFORT || "medium") as "low" | "medium" | "high" | "xhigh" | "max";
+/** Label of the model that Live mode will use, e.g. "DeepSeek · deepseek-v4-pro". */
+export const MODEL = providerConfig().label;
 const MAX_STEPS = 24;
 const STEP_DELAY_SCRIPTED = Number(process.env.CARRYPAY_STEP_DELAY_MS ?? 700);
 const STEP_DELAY_REPLAY = Number(process.env.CARRYPAY_STEP_DELAY_MS ?? 850);
@@ -33,7 +35,7 @@ export interface Recording {
 }
 
 export function hasApiCredentials(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  return hasProviderKey();
 }
 
 export class AgentRunner {
@@ -65,7 +67,7 @@ export class AgentRunner {
     this.replayCursor.clear();
     this.scriptedCursor.clear();
     const w = this.store.world;
-    this.recording = { scenarioId: w.scenarioId, model: MODEL, createdAt: new Date().toISOString(), runs: [] };
+    this.recording = { scenarioId: w.scenarioId, model: providerConfig().label, createdAt: new Date().toISOString(), runs: [] };
     this.replaySource = loadLatestRecording(w.scenarioId);
   }
 
@@ -125,10 +127,93 @@ export class AgentRunner {
   // Live: Claude decides
 
   private async runLive(caseId: string, triggers: Trigger[]) {
-    if (!hasApiCredentials()) {
-      throw new Error("No ANTHROPIC_API_KEY set. Add it to .env.local, or switch the agent to Replay or Scripted mode in the Director.");
+    const cfg = providerConfig();
+    if (!cfg.apiKey) {
+      throw new Error("No LLM API key set. Add DEEPSEEK_API_KEY (or OPENAI_API_KEY) to .env.local, or switch the agent to Replay or Scripted mode in the Director.");
     }
-    const client = new Anthropic();
+    if (cfg.provider !== "anthropic") {
+      try {
+        return await this.runLiveOpenAICompatible(caseId, triggers, cfg);
+      } catch (err) {
+        // fall back only when the provider itself failed, not when our own checks stopped the run
+        const fb = fallbackConfig(cfg.provider);
+        if (!fb || !(err instanceof OpenAI.APIError)) throw err;
+        this.store.log({ actor: "system", type: "agent.fallback", caseId, data: { from: cfg.label, to: fb.label, error: describeError(err) } });
+        return await this.runLiveOpenAICompatible(caseId, triggers, fb);
+      }
+    }
+    await this.runLiveAnthropic(caseId, triggers, cfg);
+  }
+
+  /** DeepSeek and OpenAI via the Chat Completions API with function calling. */
+  private async runLiveOpenAICompatible(caseId: string, triggers: Trigger[], cfg: ProviderConfig) {
+    const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL, timeout: 180_000, maxRetries: 2 });
+    const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = anthropicToolDefs().map((t) => ({
+      type: "function",
+      function: { name: t.name, description: t.description, parameters: t.input_schema as Record<string, unknown> },
+    }));
+    const run: RecordedRun = { triggers: triggers.map((t) => ({ reason: t.reason, detail: t.detail })), steps: [] };
+    // DeepSeek needs reasoning_content sent back on every request when tools are used,
+    // so assistant messages keep it as an extra field.
+    const messages: (OpenAI.Chat.Completions.ChatCompletionMessageParam & { reasoning_content?: string })[] = [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: wakeMessage(triggers, caseSnapshot(this.store.world, caseId)) },
+    ];
+
+    for (let step = 0; step < MAX_STEPS; step++) {
+      if (this.store.world.agent.killSwitch) break;
+      const body: Record<string, unknown> = { model: cfg.model, messages, tools };
+      if (cfg.provider === "deepseek") {
+        body.thinking = { type: "enabled" };
+        body.reasoning_effort = cfg.effort;
+        body.max_tokens = 16000;
+      } else {
+        body.reasoning_effort = cfg.effort;
+        body.max_completion_tokens = 16000;
+      }
+      const response = (await client.chat.completions.create(
+        body as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+      )) as OpenAI.Chat.Completions.ChatCompletion;
+      const choice = response.choices[0];
+      const msg = choice.message as OpenAI.Chat.Completions.ChatCompletionMessage & { reasoning_content?: string };
+      const thinking = msg.reasoning_content?.trim() ?? "";
+      if (thinking) this.store.log({ actor: "agent", type: "agent.thinking", caseId, data: { summary: thinking.slice(0, 1500), model: cfg.label } });
+
+      if (choice.finish_reason === "length") throw new Error("Model output was cut off (max tokens).");
+
+      messages.push({
+        role: "assistant",
+        content: msg.content ?? "",
+        ...(msg.tool_calls?.length ? { tool_calls: msg.tool_calls } : {}),
+        ...(cfg.provider === "deepseek" && msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {}),
+      });
+
+      const calls = (msg.tool_calls ?? []).filter(
+        (c): c is OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall => c.type === "function",
+      );
+      if (calls.length === 0) {
+        run.finalText = msg.content ?? "";
+        if (run.finalText.trim()) this.store.log({ actor: "agent", type: "agent.summary", caseId, data: { text: run.finalText.slice(0, 1500) } });
+        break;
+      }
+      for (const call of calls) {
+        let output: string;
+        try {
+          const input = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>;
+          run.steps.push({ tool: call.function.name, input, thinking: thinking || undefined });
+          output = executeTool(call.function.name, input, { store: this.store, caseId });
+        } catch {
+          output = JSON.stringify({ error: "INVALID_JSON: the tool arguments were not valid JSON. Call the tool again with valid JSON." });
+        }
+        messages.push({ role: "tool", tool_call_id: call.id, content: output });
+      }
+    }
+
+    this.saveRun(run, cfg.label);
+  }
+
+  private async runLiveAnthropic(caseId: string, triggers: Trigger[], cfg: ProviderConfig) {
+    const client = new Anthropic({ apiKey: cfg.apiKey });
     const tools = anthropicToolDefs();
     const run: RecordedRun = { triggers: triggers.map((t) => ({ reason: t.reason, detail: t.detail })), steps: [] };
     const messages: Anthropic.Beta.BetaMessageParam[] = [
@@ -138,12 +223,12 @@ export class AgentRunner {
     for (let step = 0; step < MAX_STEPS; step++) {
       if (this.store.world.agent.killSwitch) break;
       const response = await client.beta.messages.create({
-        model: MODEL,
+        model: cfg.model,
         max_tokens: 16000,
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
         thinking: { type: "adaptive", display: "summarized" },
-        output_config: { effort: EFFORT },
+        output_config: { effort: cfg.effort as "low" | "medium" | "high" | "xhigh" | "max" },
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools,
         messages,
@@ -181,11 +266,12 @@ export class AgentRunner {
       messages.push({ role: "user", content: results });
     }
 
-    this.saveRun(run);
+    this.saveRun(run, cfg.label);
   }
 
-  private saveRun(run: RecordedRun) {
+  private saveRun(run: RecordedRun, model: string) {
     if (!this.recording) this.resetSession();
+    this.recording!.model = model;
     this.recording!.runs.push(run);
     fs.mkdirSync(REC_DIR, { recursive: true });
     const file = path.join(REC_DIR, `${this.recording!.scenarioId}-${this.recording!.createdAt.replace(/[:.]/g, "-")}.json`);
@@ -259,5 +345,9 @@ function describeError(err: unknown): string {
   if (err instanceof Anthropic.RateLimitError) return "Rate limited by the Anthropic API. Try again shortly.";
   if (err instanceof Anthropic.APIConnectionError) return "Could not reach the Anthropic API (network).";
   if (err instanceof Anthropic.APIError) return `Anthropic API error ${err.status}: ${err.message}`;
+  if (err instanceof OpenAI.AuthenticationError) return "The LLM API key was rejected.";
+  if (err instanceof OpenAI.RateLimitError) return "Rate limited or out of credit at the LLM provider. Try again shortly.";
+  if (err instanceof OpenAI.APIConnectionError) return "Could not reach the LLM provider (network).";
+  if (err instanceof OpenAI.APIError) return `LLM API error ${err.status}: ${err.message}`;
   return err instanceof Error ? err.message : String(err);
 }
