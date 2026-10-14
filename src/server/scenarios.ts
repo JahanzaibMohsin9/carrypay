@@ -110,7 +110,7 @@ function seedUkTuition(): World {
     openedAt: start,
     status: "active",
     brief:
-      "我女儿林雨萱被伦敦的Kingsgate University录取了（理学硕士，2027年1月入学，学号 KG2601847）。学校要求在开学前支付第一期学费和宿舍费。今年我已经用了大约3.1万美元的购汇额度（之前给她付了语言班和押金）。请帮我们把学费付到学校。",
+      "我女儿林雨萱被伦敦 Kingsgate University 录取了（理学硕士，2027年1月入学，学号 KG2601847）。学校要求开学前付第一期学费和住宿费。今年的购汇额度我已经用了大概 3.1 万美元（之前给她交了语言班和押金）。麻烦帮我们把学费付给学校。",
     people: [
       { id: "p_linwei", name: "林伟 Lin Wei", role: "parent", adult: true, abroad: false, priorFxYearUSD: 31000 },
       { id: "p_yuxuan", name: "林雨萱 Lin Yuxuan", role: "student", adult: true, abroad: false },

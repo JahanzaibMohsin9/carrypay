@@ -214,7 +214,7 @@ const UK: ScriptedRun[] = [
   {
     when: (_t, w) => invoicesOf(w, "case_uk").length > 0 && Object.values(w.payments).length === 0,
     steps: [
-      (w) => step("read_document", { document_id: invoicesOf(w, "case_uk")[0].documentId, narration: "阅读学费单：学费 £14,875 + 宿舍费 £9,800" }),
+      (w) => step("read_document", { document_id: invoicesOf(w, "case_uk")[0].documentId, narration: "阅读学费单：学费 £14,875 + 住宿费 £9,800" }),
       (w) => step("verify_beneficiary", { ...ben("kgu"), source_document_id: invoicesOf(w, "case_uk")[0].documentId, narration: "核对学校收款账户" }),
       (w) => step("compare_payment_routes", { invoice_id: invoicesOf(w, "case_uk")[0].id, payer_id: "p_linwei", narration: "比较银行电汇和刷卡的总费用" }),
       (w) => step("prepare_documents", { kinds: ["fx_purchase_application"], invoice_id: invoicesOf(w, "case_uk")[0].id, payer_id: "p_linwei", amount: 24675, narration: "填写个人购汇申请书" }),
@@ -226,7 +226,7 @@ const UK: ScriptedRun[] = [
           payer_id: "p_linwei",
           reference: "KG2601847 Lin Yuxuan",
           beneficiary: ben("kgu"),
-          rationale: `银行电汇直接付到学校账户最省钱，比刷卡（含2.5%手续费）便宜约${diff(w, "CN-GB", "kgu", 24675, "bank_transfer", "card_payment").replace("CNY", "人民币")}元。本次购汇超过今年5万美元额度，但学费和住宿属于经常项目，凭录取通知书和学费单可以办理。`,
+          rationale: `银行电汇直接付到学校账户最省钱，比刷卡（含2.5%手续费）便宜约${diff(w, "CN-GB", "kgu", 24675, "bank_transfer", "card_payment").replace("CNY", "人民币")}元。算上今年已用的额度，这笔购汇会超出 5 万美元便利化额度。不过学费和住宿属于经常项目，凭录取通知书和学费单仍可正常办理。`,
           narration: "请您批准电汇学费",
         }),
     ],
@@ -236,7 +236,7 @@ const UK: ScriptedRun[] = [
     steps: [
       () =>
         step("message_family", {
-          text: "理解您想省事，但不能用您弟弟的额度。用亲属额度分拆购汇属于“蚂蚁搬家”，是外汇局明确禁止的，可能被列入关注名单、暂停便利化额度并罚款。好消息是不需要这样做：学费和住宿属于经常项目，超出额度凭录取通知书和学费单就能正常办理，材料我已经准备好了。",
+          text: "理解您想省事，但不能用您弟弟的额度。用亲属额度分拆购汇就是“蚂蚁搬家”，这是外汇局明确禁止的，可能被列入关注名单、暂停便利化额度并罚款。\n\n好消息是不必这样：学费和住宿属于经常项目，超出额度凭录取通知书和学费单就能正常办理。材料我已经准备好了。",
           importance: "warning",
           narration: "解释为什么不能用亲属额度",
         }),

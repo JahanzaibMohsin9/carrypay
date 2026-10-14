@@ -182,7 +182,7 @@ export function runBeat(store: Store, beat: string) {
       familySays(
         store,
         "case_uk",
-        "我弟弟今年的购汇额度还没用。我们可以用他的名义换一部分英镑，这样就不用准备那么多材料了吧？",
+        "我弟弟今年的购汇额度还没用。能不能用他的名义换一部分英镑？这样就不用准备那么多材料了吧？",
       );
       return;
   }
