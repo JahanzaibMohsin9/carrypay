@@ -335,6 +335,9 @@ export class AgentRunner {
     if (Object.keys(withheld).length) this.store.log({ actor: "gateway", type: "privacy.masked", caseId, data: { withheld, tokens: vault.entries.length } });
   }
 
+  /** Where this session's recording is saved (set once a live run has been recorded). */
+  recordingFile?: string;
+
   private saveRun(run: RecordedRun, model: string) {
     if (!this.recording) this.resetSession();
     this.recording!.model = model;
@@ -342,6 +345,7 @@ export class AgentRunner {
     fs.mkdirSync(REC_DIR, { recursive: true });
     const file = path.join(REC_DIR, `${this.recording!.scenarioId}-${this.recording!.createdAt.replace(/[:.]/g, "-")}.json`);
     fs.writeFileSync(file, JSON.stringify(this.recording, null, 2));
+    this.recordingFile = file;
   }
 
   // -------------------------------------------------------------------------

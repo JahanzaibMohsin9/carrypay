@@ -18,11 +18,12 @@ describe("privacy firewall", () => {
     const store = bangkok();
     const v = buildVault(store.world, "case_th");
     const masked = v.mask(JSON.stringify(caseSnapshot(store.world, "case_th")) + " Dear Ms. Sana, Mr. Tariq needs a stent. Passport AB1234567, card Visa debit •• 4821.");
-    for (const secret of ["Tariq", "Mahmood", "Sana", "66-014382", "4821", "1937", "AB1234567", "stent", "angiography", "chest pain"]) expect(masked).not.toContain(secret);
+    for (const secret of ["Tariq", "tariq", "Mahmood", "Sana", "sana", "66-014382", "4821", "1937", "AB1234567", "stent", "angiography", "chest pain"]) expect(masked).not.toContain(secret);
     expect(masked).toContain("[PERSON_1]");
     expect(masked).toContain("HN [PATIENT_REF_1]");
-    // ids the tools need are untouched
-    expect(masked).toContain('"p_tariq"');
+    // internal IDs carry names, so they are tokens too
+    expect(masked).toContain('"id":"[PERSON_ID_1]"');
+    expect(masked).not.toContain("p_tariq");
     expect(masked).toContain("Siam Riverside International Hospital");
     expect(v.mask("Account number: 101-3-58821-7  SWIFT: BKCBTHBK")).toContain("101-3-58821-7");
     expect(v.withheld()).toMatchObject({ PERSON: 2, PATIENT_REF: 1, CARD: 2, PASSPORT: 1 });
@@ -35,7 +36,7 @@ describe("privacy firewall", () => {
       reference: "HN [PATIENT_REF_1] deposit",
       body: "The CT [MEDICAL_3] [MEDICAL_5] for [PERSON_1] was charged twice.",
       beneficiary: { account_number: "101-3-58821-7" },
-      payer_id: "p_tariq",
+      payer_id: "[PERSON_ID_1]",
     });
     expect(input.reference).toBe("HN 66-014382 deposit");
     expect(input.body).toBe("The CT coronary angiography for Tariq Mahmood was charged twice.");

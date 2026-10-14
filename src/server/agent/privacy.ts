@@ -7,7 +7,7 @@ import type { World } from "@/domain/types";
 // Institution data (names, verified bank accounts, amounts, dates) is business
 // information the agent needs and stays visible.
 
-export type PiiKind = "PERSON" | "PATIENT_REF" | "STUDENT_ID" | "CARD" | "PASSPORT" | "MEDICAL";
+export type PiiKind = "PERSON" | "PERSON_ID" | "PATIENT_REF" | "STUDENT_ID" | "CARD" | "PASSPORT" | "MEDICAL";
 
 /** Medical details the agent doesn't need to see to pay a bill (amounts, dates and urgency stay visible). */
 const MEDICAL_TERMS = [
@@ -27,6 +27,11 @@ const MEDICAL_TERMS = [
   "CCU",
   "heart",
   "cardiac",
+  "drug-eluting",
+  "catheterisation",
+  "catheterization",
+  "myocardial",
+  "infarction",
 ];
 
 interface Entry {
@@ -84,6 +89,8 @@ export function buildVault(w: World, caseId: string): Vault {
   for (const p of c.people) add("PERSON", p.name, nameForms(p.name).filter((f) => f === p.name || owner.get(f) === p.id));
 
   for (const p of c.people) if (p.passport) add("PASSPORT", p.passport, [p.passport]);
+  // internal IDs can carry names ("p_tariq"): the model gets [PERSON_ID_1] and the tools get the real ID back
+  for (const p of c.people) add("PERSON_ID", p.id, [p.id]);
 
   const refs = new Set(Object.values(w.invoices).filter((i) => i.caseId === caseId && i.patientRef).map((i) => i.patientRef!));
   for (const ref of refs) {
@@ -104,7 +111,11 @@ export function buildVault(w: World, caseId: string): Vault {
   // one regex, longest spellings first, so "Tariq Mahmood" wins over "Tariq"
   const all = entries.flatMap((e) => e.patterns.map((p) => ({ p, e }))).sort((a, b) => b.p.length - a.p.length);
   const byPattern = new Map(all.map(({ p, e }) => [p.toLowerCase(), e]));
-  const source = all.map(({ p }) => (isLatin(p) ? `(?<![\\p{L}\\d_])${escapeRe(p)}(?![\\p{L}\\d_])` : escapeRe(p))).join("|");
+  const source = all
+    .map(({ p }) =>
+      isLatin(p) || /^[\w-]+$/.test(p) ? `(?<![\\p{L}\\d_])${escapeRe(p)}(?![\\p{L}\\d_])` : escapeRe(p),
+    )
+    .join("|");
   const re = source ? new RegExp(source, "giu") : null;
   const withheld = new Map<string, PiiKind>();
 
@@ -116,7 +127,7 @@ export function buildVault(w: World, caseId: string): Vault {
           return e.token;
         })
       : text;
-  const tokenRe = /\[(PERSON|PATIENT_REF|STUDENT_ID|CARD|PASSPORT|MEDICAL)_\d+\]/g;
+  const tokenRe = /\[(PERSON_ID|PERSON|PATIENT_REF|STUDENT_ID|CARD|PASSPORT|MEDICAL)_\d+\]/g;
   // a bilingual name ("林雨萱 Lin Yuxuan") comes back in one script: the family's own in what they read,
   // the Latin spelling in emails and references for institutions abroad
   const familyScript = c.lang === "zh" ? "han" : "latin";

@@ -297,6 +297,7 @@ function PasskeyRow({ passkeys, error, setError }: { passkeys: { id: string; lab
 
 const WITHHELD_LABEL: Record<string, string> = {
   PERSON: "names",
+  PERSON_ID: "internal IDs",
   PATIENT_REF: "hospital number",
   STUDENT_ID: "student ID",
   CARD: "card numbers",

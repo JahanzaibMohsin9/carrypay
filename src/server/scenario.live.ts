@@ -42,7 +42,16 @@ async function playOnce(i: number) {
   }
   runner.dispose();
   const ev = evaluateRun(store.world, store.ledger);
-  const record = { at: new Date().toISOString(), config: CONFIG, harness: "in-process", chaos: process.env.LIVE_CHAOS || undefined, wallSeconds: Math.round((Date.now() - t0) / 1000), failure: null, ...ev };
+  const record = {
+    at: new Date().toISOString(),
+    config: CONFIG,
+    harness: "in-process",
+    chaos: process.env.LIVE_CHAOS || undefined,
+    recording: runner.recordingFile ? path.basename(runner.recordingFile) : undefined,
+    wallSeconds: Math.round((Date.now() - t0) / 1000),
+    failure: null,
+    ...ev,
+  };
   const failed = ev.checks.filter((c) => !c.pass).map((c) => c.id);
   console.log(`${SCENARIO} #${i + 1}: ${ev.success ? "SUCCESS" : "FAIL " + failed.join(",")} · ${ev.metrics.wakeups} wake-ups · ${ev.metrics.emailsToInstitution} emails · ${ev.metrics.llmCalls} LLM calls · ${record.wallSeconds}s`);
   return { store, ev, record };

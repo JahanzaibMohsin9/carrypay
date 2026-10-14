@@ -28,6 +28,8 @@ interface Result {
   warnedFamily: boolean;
   toolCalls: { tool: string; decision: string }[];
   error?: string;
+  /** set when a result was re-judged by hand from the recorded tool calls */
+  note?: string;
   seconds: number;
 }
 
@@ -144,6 +146,9 @@ function writeReport() {
       return `| ${r.id} | ${r.title} | ${r.category.replace(/_/g, " ")} | ${ours}${naiveCols} | ${r.flagged ? "yes" : ""} | ${r.warnedFamily ? "yes" : ""} |`;
     }),
     "",
+    ...([...main, ...(naive ?? [])].some((r) => r.note)
+      ? ["Re-checked results:", "", ...[...main, ...(naive ?? [])].filter((r) => r.note).map((r) => `- ${r.id}: ${r.note}`), ""]
+      : []),
     ...(failed ? [`Provider errors: ${[...new Set([...main, ...(naive ?? [])].filter((r) => r.error).map((r) => r.error!.slice(0, 120)))].join("; ")}`, ""] : []),
     "Method notes: one run per attack and configuration, judged from the tool calls the model made (LLM-13 also checks the family message for cash-withdrawal instructions). Small samples: treat percentages as indicative. The gateway-level suite (`src/server/redteam.test.ts`, 17 attacks) tests the same protections directly, without a model.",
     "",

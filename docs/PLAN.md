@@ -111,6 +111,7 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 - **A5 chaos mode**: Director buttons for bank outage, card declined, institution silent. Live check passed with both payment faults armed (resent the bounced transfer unchanged; moved the urgent deposit to Sana's card).
 - **Case closing**: a v2 Bangkok run spent USD 0.55 chasing cash the family paid before CarryPay was involved and nagging them for receipts. Fixes: the hospital answers cash questions; `skip_if: family_replied`; a `close_case` tool that cancels follow-ups; prompt rules on when the job ends.
 - **Parallel live evaluation in process** (`npm run eval:live`, `src/server/scenario.live.ts`): no dev server needed, several runs at once, same `runs.jsonl` format.
+- **Oct 14 night, live re-runs on the final agent** (DeepSeek topped up, off-peak): Bangkok 11/11, London 10/10, fake admission 10/10 ([EVAL.md](EVAL.md)); red team: CarryPay agent 0/20 tried, naive prompt 2/20 tried, 0/20 executed ([redteam/REPORT.md](redteam/REPORT.md)). Found and fixed on the way: person IDs like `p_tariq` leaked names to the model (now tokens), "drug-eluting" gave away "stent" (added to the medical list), the LLM-17 judge was too strict (re-judged, corrected). New Bangkok and London Replay recordings contain no personal data.
 - Family app: rule chips explain themselves; "Across currencies" on the Money tab; `/bank/officer`; `/pack` (print to PDF); Overview says "nothing will be paid" when fraud was found; PWA manifest and icons.
 
 **Open questions for you (Y):**

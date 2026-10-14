@@ -2,19 +2,19 @@
 <style>.t{font-size:15px;font-weight:600;fill:#16302b}.l{font-size:13px;fill:#16302b}.v{font-size:13px;font-weight:600;fill:#16302b}.s{font-size:11px;fill:#5b6f6a}.track{fill:#e9e3d6}.bar{fill:#0b8a78}</style>
 <rect width="100%" height="100%" fill="#faf7f0"/>
 <text x="20" y="30" class="t">CarryPay live agent (DeepSeek): end-to-end success rate</text>
-<text x="138" y="75" text-anchor="end" class="l">Bangkok medical</text>
+<text x="138" y="75" text-anchor="end" class="l">Fake admission</text>
 <rect x="150" y="60" width="420" height="22" rx="4" class="track"/>
 <rect x="150" y="60" width="420" height="22" rx="4" class="bar"/>
 <text x="580" y="76" class="v">100%</text>
-<text x="150" y="96" class="s">7 of 7 live runs completed every check</text>
-<text x="138" y="119" text-anchor="end" class="l">Fake admission</text>
+<text x="150" y="96" class="s">10 of 10 live runs completed every check</text>
+<text x="138" y="119" text-anchor="end" class="l">London tuition</text>
 <rect x="150" y="104" width="420" height="22" rx="4" class="track"/>
 <rect x="150" y="104" width="420" height="22" rx="4" class="bar"/>
 <text x="580" y="120" class="v">100%</text>
 <text x="150" y="140" class="s">10 of 10 live runs completed every check</text>
-<text x="138" y="163" text-anchor="end" class="l">London tuition</text>
+<text x="138" y="163" text-anchor="end" class="l">Bangkok medical</text>
 <rect x="150" y="148" width="420" height="22" rx="4" class="track"/>
 <rect x="150" y="148" width="420" height="22" rx="4" class="bar"/>
 <text x="580" y="164" class="v">100%</text>
-<text x="150" y="184" class="s">10 of 10 live runs completed every check</text>
+<text x="150" y="184" class="s">11 of 11 live runs completed every check</text>
 </svg>
