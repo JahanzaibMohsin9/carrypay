@@ -39,4 +39,4 @@ Agent modes: **Live** (LLM), **Replay** (re-executes the latest recorded live ru
 - Chinese copy is reviewed by MiMo v2.6 Pro (prompts in `docs/MIMO_PROMPTS.md`); new zh strings get a `// TODO zh` comment. Don't add new Urdu strings: the Urdu dictionary keeps its original entries and falls back to English.
 - Keep `npm test`, `tsc` and `eslint` clean. Add a test when adding a rule or a safety check.
 - UI: calm teal-on-sand design tokens in `src/app/globals.css`; use tokens, not raw colours (the outside-world panels are deliberately styled differently). Must work at 375px wide and in the stage phone frame.
-- Commit only when the user asks; end commit messages with the Co-Authored-By line.
+- Commit only when the user asks. No Co-Authored-By or other AI attribution lines in commit messages.
