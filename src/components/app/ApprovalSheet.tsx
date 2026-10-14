@@ -1,15 +1,17 @@
 "use client";
 
 import { motion } from "motion/react";
-import { BadgeCheck, Check, ChevronDown, Clock, FileSignature, Fingerprint, Info, ShieldCheck, TriangleAlert } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, Clock, FileSignature, Fingerprint, Info, KeyRound, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useRef, useState } from "react";
 import { useCarry, post } from "@/lib/client";
+import { approveWithPasskey, passkeysSupported, registerPasskey } from "@/lib/passkey";
 import { ROUTE_KEY, useT } from "@/lib/i18n";
 import { caseTz } from "@/lib/selectors";
 import { cn, dateTime, money } from "@/lib/format";
 import { ROUTE_SHORT } from "@/domain/corridors";
 import { compareRoutes, evaluateRoute, findRule } from "@/domain/rules/engine";
 import { Badge, Sheet } from "../ui";
+import { RuleChip } from "../RuleChip";
 
 export function ApprovalSheet({ approvalId, onClose }: { approvalId: string | null; onClose: () => void }) {
   const { state } = useCarry();
@@ -17,6 +19,8 @@ export function ApprovalSheet({ approvalId, onClose }: { approvalId: string | nu
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [useHold, setUseHold] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const a = state && approvalId ? state.world.approvals[approvalId] : undefined;
   const open = Boolean(a && (!a.decision || done));
@@ -43,15 +47,33 @@ export function ApprovalSheet({ approvalId, onClose }: { approvalId: string | nu
   const forms = Object.values(w.docs).filter((d) => d.caseId === c.id && d.origin === "agent" && d.fields.invoice === inv.number);
   const arrivesAt = new Date(new Date(p.createdAt).getTime() + p.cost.arrivesInHours * 3_600_000).toISOString();
 
-  const decide = async (decision: "approved" | "declined") => {
+  const canPasskey = passkeysSupported();
+  const hasPasskey = canPasskey && state.passkeys.length > 0;
+  const passkeyMode = hasPasskey && !useHold;
+
+  const decide = async (decision: "approved" | "declined", method: "hold" | "passkey" = "hold") => {
+    setError(null);
+    setBusy(true);
     try {
-      await post(`/api/approvals/${a.id}`, { decision, method: "hold" });
+      if (decision === "approved" && method === "passkey") await approveWithPasskey(a.id);
+      else await post(`/api/approvals/${a.id}`, { decision, method: "hold" });
       if (decision === "approved") {
         setDone(true);
         setTimeout(onClose, 1100);
       } else onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e instanceof Error && e.name !== "NotAllowedError" ? e.message : "Approval was cancelled. Try again, or hold to approve instead.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setUp = async () => {
+    setError(null);
+    try {
+      await registerPasskey();
+    } catch (e) {
+      setError(e instanceof Error && e.name !== "NotAllowedError" ? e.message : "Passkey setup was cancelled.");
     }
   };
 
@@ -193,10 +215,24 @@ export function ApprovalSheet({ approvalId, onClose }: { approvalId: string | nu
         {error && <p className="rounded-xl bg-danger-soft px-3 py-2 text-[13px] text-danger">{error}</p>}
 
         <div className="sticky bottom-0 -mx-5 space-y-1.5 border-t border-line/60 bg-surface px-5 pb-1 pt-3">
-          <HoldToApprove done={done} label={done ? t("approved") : t("holdToApprove")} onComplete={() => decide("approved")} />
+          {passkeyMode ? (
+            <PasskeyButton done={done} busy={busy} label={done ? t("approved") : t("approveWithPasskey")} onClick={() => decide("approved", "passkey")} />
+          ) : (
+            <HoldToApprove done={done} label={done ? t("approved") : t("holdToApprove")} onComplete={() => decide("approved")} />
+          )}
+          {!done && hasPasskey && (
+            <button onClick={() => setUseHold((v) => !v)} className={cn("mx-auto block rounded-full px-3 py-1 text-[12px] font-semibold text-ink-3 hover:bg-surface-3 hover:text-ink", urdu && "urdu")}>
+              {useHold ? t("approveWithPasskey") : t("holdInstead")}
+            </button>
+          )}
+          {!done && canPasskey && !hasPasskey && (
+            <button onClick={setUp} className={cn("mx-auto flex items-center gap-1 rounded-full px-3 py-1 text-[12px] font-semibold text-brand hover:bg-brand-softer", urdu && "urdu")}>
+              <KeyRound size={13} /> {t("setUpPasskey")}
+            </button>
+          )}
           <div className="flex items-center justify-between gap-3 pb-1">
-            <p className="flex items-center gap-1 text-[11px] leading-tight text-ink-3" dir="ltr">
-              <ShieldCheck size={12} className="shrink-0" /> Nothing moves without this. The safety layer re-checks it.
+            <p className={cn("flex items-center gap-1 text-[11px] leading-tight text-ink-3", passkeyMode && urdu && "urdu")}>
+              <ShieldCheck size={12} className="shrink-0" /> {passkeyMode ? t("passkeySigns") : "Nothing moves without this. The safety layer re-checks it."}
             </p>
             {!done && (
               <button onClick={() => decide("declined")} className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-semibold text-ink-3 hover:bg-surface-3 hover:text-ink">
@@ -227,9 +263,30 @@ function CheckLine({ ok, text, rule }: { ok: boolean; text: string; rule?: strin
       </span>
       <span className="flex-1 text-ink-2">
         {text}
-        {rule && <span className="ml-1.5 font-mono text-[10.5px] text-ink-3">{rule}</span>}
+        {rule && <RuleChip id={rule} className="ml-1.5" />}
       </span>
     </li>
+  );
+}
+
+function PasskeyButton({ onClick, label, done, busy }: { onClick: () => void; label: string; done: boolean; busy: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={done || busy}
+      className={cn("relative h-14 w-full select-none overflow-hidden rounded-full text-[15px] font-semibold transition-colors", done ? "bg-success text-white" : "bg-ink text-bg hover:bg-brand", busy && "opacity-80")}
+    >
+      <span className="relative flex items-center justify-center gap-2">
+        {done ? (
+          <motion.span initial={{ scale: 0.4 }} animate={{ scale: 1 }} className="grid h-6 w-6 place-items-center rounded-full bg-white/25">
+            <Check size={16} strokeWidth={3} />
+          </motion.span>
+        ) : (
+          <Fingerprint size={20} className={cn(busy && "animate-pulse")} />
+        )}
+        {label}
+      </span>
+    </button>
   );
 }
 

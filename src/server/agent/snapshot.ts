@@ -35,6 +35,7 @@ export function caseSnapshot(w: World, caseId: string) {
         reference_on_document: i.patientRef,
       };
     });
+  const caseMail = Object.values(w.mail).filter((m) => m.caseId === caseId);
   const cards = w.cards.filter((k) => c.people.some((p) => p.id === k.personId));
   return {
     now: w.now,
@@ -43,6 +44,7 @@ export function caseSnapshot(w: World, caseId: string) {
       type: c.type,
       title: c.title,
       family_language: c.lang,
+      status: c.status,
       corridor: `${corridor.label} (${corridor.sourceCurrency} → ${inst.bank.currency})`,
       rules_pack: corridor.packId,
       opened_at: c.openedAt,
@@ -89,10 +91,9 @@ export function caseSnapshot(w: World, caseId: string) {
           ? { used: r0(usage.caseBankTransferUSD), cap: findRule(c.corridor, "PK.MED.REMIT.CAP")?.values?.perCaseUSD }
           : undefined,
     },
-    mailbox: Object.values(w.mail)
-      .filter((m) => m.caseId === caseId)
-      .slice(-14)
-      .map((m) => ({
+    mailbox: caseMail.slice(-14).map((m) => {
+      const reply = m.direction === "outbound" ? caseMail.find((r) => r.inReplyTo === m.id) : undefined;
+      return {
         id: m.id,
         direction: m.direction,
         from: m.from,
@@ -102,7 +103,14 @@ export function caseSnapshot(w: World, caseId: string) {
         unread: m.direction === "inbound" && !m.read,
         sender_verified: m.direction === "inbound" ? !m.unverifiedSender && m.from === inst.email : undefined,
         attachments: m.attachments,
-      })),
+        // institutions answer every question in one reply: these show what was asked and answered
+        ...(m.direction === "outbound" ? { answered_by: reply?.id ?? (m.to === inst.email ? "awaiting reply" : undefined) } : {}),
+        ...(m.inReplyTo ? { in_reply_to: m.inReplyTo, topics_answered: m.topics } : {}),
+      };
+    }),
+    scheduled_followups: w.schedule
+      .filter((s) => s.kind === "agent.followup" && (s.payload as { caseId?: string }).caseId === caseId)
+      .map((s) => ({ id: s.id, due_at: s.at, reason: (s.payload as { reason?: string }).reason, skip_if: (s.payload as { skipIf?: string }).skipIf })),
     documents: Object.values(w.docs)
       .filter((d) => d.caseId === caseId)
       .map((d) => ({ id: d.id, kind: d.kind, title: d.title, origin: d.origin })),

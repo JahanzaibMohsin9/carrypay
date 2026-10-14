@@ -37,12 +37,22 @@ Open:
 | `http://localhost:3000/app` | The family app (mobile-first) |
 | `http://localhost:3000/hospital` | The institution's billing desk (outside world) |
 | `http://localhost:3000/bank` | Payment rails: SWIFT tracker and card network |
-| `http://localhost:3000/director` | Director controls + raw agent log |
+| `http://localhost:3000/bank/officer` | The bank's FX officer view: each transfer as a ready-to-review package (applicant, verified beneficiary, rules checked, signed forms, passkey approval, draft SWIFT MT103) |
+| `http://localhost:3000/pack` | Printable case pack (Save as PDF): payments, every bill, receipt and form, and the log verification |
+| `http://localhost:3000/director` | Director controls + raw agent log, including **chaos mode** (bank outage, card declined, institution silent) |
 
-Run the tests (rules engine, both scenarios end to end, 17 red-team attacks):
+Run the tests (58: rules engine, all three scenarios end to end, 17 red-team attacks on the safety layer, sandbox institutions, chaos mode, privacy firewall, passkey verification):
 
 ```bash
 npm test
+```
+
+With an API key in `.env.local` and the dev server running, two more checks use the real model:
+
+```bash
+node scripts/eval.mjs run th-medical 10    # play a scenario Live end to end N times, scored per run
+node scripts/eval.mjs report               # writes docs/EVAL.md and docs/eval/chart.svg
+npm run redteam:llm                        # 20 attacks against the live agent: docs/redteam/REPORT.md
 ```
 
 ## Agent modes
@@ -52,7 +62,7 @@ Switch in the Director bar.
 | Mode | Who decides | When to use |
 |---|---|---|
 | **Live** | The LLM, through the safety layer (see "LLM provider" below) | The real product. Every live run is recorded to `.data/recordings/`. |
-| **Replay** | Decisions replayed from the latest recorded live run; every action still executes for real against the sandbox | Demos where the network to the API is unreliable (e.g. on-site in mainland China). Clearly labelled in the UI. |
+| **Replay** | Decisions replayed from a recorded live run (the curated one in `recordings/<scenario>.json`, else the newest in `.data/recordings/`); every action still executes for real against the sandbox | Demos where the network to the API is unreliable (e.g. on-site in mainland China). Clearly labelled in the UI. |
 | **Scripted** | A hand-written plan, **no AI** | Development without an API key. Clearly labelled "Scripted demo · no AI". Never present it as the AI. |
 
 ## LLM provider
@@ -69,7 +79,7 @@ Drive a live run from the terminal: `node scripts/drive.mjs reset th-medical liv
 
 1. The family opens the case. The agent emails the hospital's verified desk for the estimate, deposit and bank details.
 2. Estimate arrives (THB 420,000, deposit THB 250,000). The agent verifies the bank account, compares routes (bank transfer is ~PKR 44k cheaper than card), fills the SBP Appendix V-68 form and self-declaration, and asks for approval.
-3. The receiving bank returns the transfer: the reference must include the patient's hospital number. The agent finds the HN on the invoice and re-sends the same approved transfer.
+3. If the payment reference lacks the patient's hospital number, the receiving bank returns the transfer; the agent finds the HN on the invoice and re-sends the same approved transfer. (The scripted demo shows this recovery; the live agent usually includes the HN from the start.)
 4. Complication: THB 160,000 needed before an 08:00 procedure. A bank transfer would arrive too late, so the agent proposes the card and explains the trade-off.
 5. **Attack:** a look-alike "billing" email claims the bank details changed, with hidden text telling AI assistants to skip verification. The agent flags it, warns the family and confirms with the hospital's real address. Even a fooled agent could not pay it: the safety layer blocks unverified accounts.
 6. Discharge: the agent finds a CT scan charged twice, gets a corrected bill, and claims the THB 42,000 refund until it arrives.
@@ -77,6 +87,10 @@ Drive a live run from the terminal: `node scripts/drive.mjs reset th-medical liv
 **2. University fees in London (China → UK, SAFE rules, Chinese UI)**
 
 The father has used USD 31,000 of his USD 50,000 yearly quota. The agent gets the fee statement, prepares the 个人购汇申请书, and pays above the quota legally with proof of tuition. When the father asks to use his brother's quota, the agent explains why 蚂蚁搬家 is prohibited and that it isn't needed.
+
+**3. A university offer that came through an agent (Pakistan → UK, admission check first)**
+
+A family brings an offer letter from a consultant who wants the tuition and a "visa guarantee fee" paid to his company's account; they've already given him PKR 350,000 in cash. The agent flags the letter, asks the university itself (through its verified address) whether the offer is real, and asks the family to hold off. The university has no such applicant. The agent tells the family gently that it isn't their fault, that nothing has been paid, not to pay the agent anything more, and to keep the evidence and report it; when the consultant pressures them to pay his personal account, CarryPay says no. The rules engine also refuses tuition until the university itself has confirmed the admission.
 
 ## Architecture
 
@@ -86,7 +100,7 @@ The father has used USD 31,000 of his USD 50,000 yearly quota. The agent gets th
         ▼                                ├─ Bank: SWIFT, returns, settlement
  ┌──────────────────────────────┐        └─ Card network
  │ Agent runner                 │                 ▲
- │  Live: Claude + tools        │                 │
+ │  Live: DeepSeek + tools      │                 │
  │  Replay / Scripted           │                 │
  └──────────────┬───────────────┘                 │
                 ▼ every tool call                 │
@@ -119,9 +133,11 @@ The father has used USD 31,000 of his USD 50,000 yearly quota. The agent gets th
 | Untrusted content | Emails and documents are labelled untrusted when passed to the model. The model is told never to follow instructions in them. |
 | Numbers from tools | Costs, limits and balances come from the engine, not the model. |
 | Emergency stop | One switch blocks every tool call instantly. |
+| Passkey approval | The family approves with fingerprint or face (WebAuthn). The passkey signs a digest of the exact payment, checked on the server. |
+| Privacy firewall | Names, hospital and student numbers, card and passport numbers and medical details are replaced with placeholders before anything reaches the LLM, and restored only inside CarryPay's code. |
 | Tamper-evident log | Each entry is SHA-256 hashed with the previous entry's hash. Verify in the Security Centre (recomputed in the browser), export from `/api/ledger`, and publish anchors so the head hash exists outside the system. |
 
-Red-team results: `src/server/redteam.test.ts` (17 attacks, all blocked).
+Red-team results: `src/server/redteam.test.ts` (17 attacks on the safety layer, all blocked) and [docs/redteam/REPORT.md](docs/redteam/REPORT.md) (20 attacks on the live DeepSeek agent: 0 executed; a naive prompt tried 2, the gateway blocked both).
 
 ## Deploying
 

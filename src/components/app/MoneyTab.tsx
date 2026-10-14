@@ -8,6 +8,7 @@ import { cn, dateTime, money } from "@/lib/format";
 import { ROUTE_SHORT } from "@/domain/corridors";
 import type { Invoice, Payment, PaymentStatus } from "@/domain/types";
 import { Badge, Card, Empty, SectionTitle } from "../ui";
+import { CurrencyCard } from "./CurrencyCard";
 
 const INV_LABEL: Record<Invoice["kind"], string> = {
   estimate: "Estimate",
@@ -31,6 +32,7 @@ export function MoneyTab() {
 
   return (
     <div className="space-y-6 px-4 pb-10 pt-4">
+      <CurrencyCard w={w} c={c} payments={payments} />
       <section>
         <SectionTitle>
           <span className={cn(urdu && "urdu normal-case tracking-normal")}>{t("payments")}</span>

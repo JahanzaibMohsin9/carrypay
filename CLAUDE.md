@@ -12,7 +12,9 @@ The user is a student in Pakistan; the Bangkok scenario is based on their family
 
 ```bash
 npm run dev                      # http://localhost:3000 (/stage, /app, /hospital, /bank, /director)
-npm test                         # 31 tests: rules engine, both scenarios, 17 red-team attacks
+npm test                         # 58 tests: rules engine, three scenarios, 17 red-team attacks, institutions, chaos, privacy, passkeys
+node scripts/eval.mjs run uk-tuition 10 && node scripts/eval.mjs report   # live evaluation -> docs/EVAL.md
+npm run redteam:llm              # 20 attacks on the live model -> docs/redteam/REPORT.md (REDTEAM_AGENT=naive for the ablation)
 npx tsc --noEmit && npx eslint src
 node scripts/drive.mjs reset th-medical live   # then: next | approve | run 16 | log 30
 ```
@@ -34,7 +36,7 @@ Agent modes: **Live** (LLM), **Replay** (re-executes the latest recorded live ru
 - The safety gateway must not trust the model. Never move a check from code into the prompt.
 - Every money amount, limit and cost shown or said comes from the engine, not from the model or hard-coded text.
 - Regulations live in `src/domain/rules/packs/*.json` with source, status and dates. Don't state a rule as fact unless its status says so.
-- Chinese copy is reviewed by MiMo v2.6 Pro (prompts in `docs/MIMO_PROMPTS.md`); new zh strings get a `// TODO zh` comment. Urdu is reviewed by the user.
+- Chinese copy is reviewed by MiMo v2.6 Pro (prompts in `docs/MIMO_PROMPTS.md`); new zh strings get a `// TODO zh` comment. Don't add new Urdu strings: the Urdu dictionary keeps its original entries and falls back to English.
 - Keep `npm test`, `tsc` and `eslint` clean. Add a test when adding a rule or a safety check.
 - UI: calm teal-on-sand design tokens in `src/app/globals.css`; use tokens, not raw colours (the outside-world panels are deliberately styled differently). Must work at 375px wide and in the stage phone frame.
 - Commit only when the user asks; end commit messages with the Co-Authored-By line.

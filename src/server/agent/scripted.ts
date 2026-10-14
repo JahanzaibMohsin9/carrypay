@@ -1,6 +1,6 @@
 // Hand-written demo plans used in "Scripted" mode, so the app can be developed
 // and demonstrated without an API key. These are NOT the AI: the Director and
-// the UI label this mode clearly. Live mode is Claude; Replay replays Claude.
+// the UI label this mode clearly. Live mode is the LLM; Replay replays a recorded live run.
 import type { Invoice, Mail, World } from "@/domain/types";
 import { INSTITUTIONS } from "@/domain/institutions";
 import type { Trigger } from "../store";
@@ -244,4 +244,62 @@ const UK: ScriptedRun[] = [
   },
 ];
 
-export const SCRIPTS: Record<string, ScriptedRun[]> = { "th-medical": TH, "uk-tuition": UK };
+const offerDoc = (w: World) => Object.values(w.docs).find((d) => d.caseId === "case_pk" && d.title.startsWith("Offer letter"));
+const uniSaidNo = (w: World) => !!lastInbound(w, "case_pk", (m) => /no applicant/i.test(m.body));
+
+const PK: ScriptedRun[] = [
+  {
+    when: (t, w) => has(t, "family_message") && !Object.values(w.mail).some((m) => m.caseId === "case_pk"),
+    steps: [
+      () => step("get_case_overview", { narration: "Reading your message and the offer letter you uploaded" }),
+      (w) => step("read_document", { document_id: offerDoc(w)!.id, narration: "Checking the offer letter the consultant sent" }),
+      (w) =>
+        step("flag_suspicious_message", {
+          document_id: offerDoc(w)!.id,
+          reason: "Offer letter sent by a consultant from a gmail address, asks for tuition and a 'visa guarantee fee' to be paid to the consultant's company account within 5 days. Universities don't charge visa guarantee fees or collect tuition through agents.",
+          narration: "Flagging the offer letter's warning signs",
+        }),
+      () =>
+        step("send_email", {
+          to: "student.finance@kingsgate.ac.uk",
+          subject: "Please confirm an offer of admission: Mariam Aslam (ref KGU/INT/2026/77812)",
+          body:
+            "Dear Kingsgate University,\n\nCarryPay is helping the family of Mariam Aslam pay university fees. They received an offer letter (ref KGU/INT/2026/77812, MSc Finance, January 2027) through an education consultant, Global Pathways Education, who asks for tuition and a visa guarantee fee to be paid to his company's account.\n\nCould you please confirm whether Mariam Aslam holds a genuine offer from Kingsgate, and how fees should be paid?\n\nKind regards,\nCarryPay, on behalf of the family",
+          narration: "Asking the university directly, through its verified address, whether the offer is real",
+        }),
+      () =>
+        step("message_family", {
+          text: "Before anyone pays anything, I'm checking with Kingsgate University directly, using their own verified address, whether Mariam's offer is genuine. Some things in this letter worry me: real universities don't ask for a 'visa guarantee fee' or for tuition to go to an agent's account. Please don't send anything to the consultant until I hear back.",
+          importance: "warning",
+          narration: "Asking you to hold off while I check with the university",
+        }),
+      () => step("add_case_note", { note: "Offer letter came via consultant (gmail, pay to agent account, visa guarantee fee). Asked KGU admissions to confirm. No payment until the university confirms.", narration: "Saving what I'm checking" }),
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && uniSaidNo(w),
+    steps: [
+      (w) => step("read_email", { mail_id: lastInbound(w, "case_pk")!.id, narration: "Reading the university's answer" }),
+      () =>
+        step("message_family", {
+          text: "I'm so sorry. Kingsgate University has confirmed they have no application or offer for Mariam: the letter is not from them. This is not your fault; these scams are made to look real. Nothing has been paid through CarryPay. Please don't send anything more to the consultant. Keep the letter, his messages and the receipt for the PKR 350,000 you gave him, and report it to the police. If Mariam wants to apply for real, the university's own website is the place to start, and I'll help with the fees when there's a genuine offer.",
+          importance: "warning",
+          narration: "Telling you what the university said and what to do next",
+        }),
+      () => step("add_case_note", { note: "KGU confirmed: no applicant named Mariam Aslam; offer is fraudulent. Nothing paid. Family told not to pay the consultant, keep evidence, report to police.", narration: "Recording the university's answer" }),
+    ],
+  },
+  {
+    when: (t) => has(t, "family_message"),
+    steps: [
+      () =>
+        step("message_family", {
+          text: "Please don't send money to Faraz's personal account. The university has told us in writing that there is no offer for Mariam, so there is no place to lose. A real university never asks for fees to go to a person, and never threatens to cancel a place within hours. If he keeps pressing you, stop replying and add his messages to your police report.",
+          importance: "warning",
+          narration: "Warning you not to pay the consultant",
+        }),
+    ],
+  },
+];
+
+export const SCRIPTS: Record<string, ScriptedRun[]> = { "th-medical": TH, "uk-tuition": UK, "pk-admission": PK };

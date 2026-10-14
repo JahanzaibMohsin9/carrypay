@@ -1,6 +1,6 @@
 "use client";
 
-import { FileCheck2, FileSignature, FileText, FileWarning, GraduationCap, Landmark, ReceiptText } from "lucide-react";
+import { Download, FileCheck2, FileSignature, FileText, FileWarning, GraduationCap, Landmark, ReceiptText } from "lucide-react";
 import { useState } from "react";
 import { useCarry } from "@/lib/client";
 import { useT } from "@/lib/i18n";
@@ -22,7 +22,7 @@ const ICONS: Record<Doc["kind"], React.ComponentType<{ size?: number }>> = {
 
 export function DocsTab() {
   const { state } = useCarry();
-  const { lang } = useT();
+  const { t, lang } = useT();
   const [openId, setOpenId] = useState<string | null>(null);
   if (!state) return null;
   const c = activeCase(state)!;
@@ -32,6 +32,9 @@ export function DocsTab() {
 
   return (
     <div className="px-4 pb-10 pt-4">
+      <a href="/pack" target="_blank" rel="noreferrer" className="mb-3 flex items-center justify-center gap-1.5 rounded-full border border-line-strong px-4 py-2 text-[13px] font-semibold text-ink hover:bg-surface-3">
+        <Download size={15} /> {t("casePack")}
+      </a>
       {docs.length === 0 ? (
         <Card>
           <Empty icon={<FileText size={20} />} title="No documents yet" hint="Invoices, receipts and the forms CarryPay prepares will appear here." />

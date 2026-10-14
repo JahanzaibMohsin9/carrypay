@@ -22,6 +22,7 @@ export function BankConsole() {
       <div className="flex items-center gap-2 border-b border-[#2a3441] px-4 py-2.5">
         <Landmark size={15} className="text-[#7fb3ff]" />
         <p className="flex-1 text-[13px] font-semibold">Payment rails · SWIFT gpi & card network</p>
+        <a href="/bank/officer" className="text-[11px] font-semibold text-[#7fb3ff] hover:underline">Officer view</a>
         <span className="font-mono text-[10px] text-[#8193a8]">sandbox</span>
       </div>
       <div className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto p-3">

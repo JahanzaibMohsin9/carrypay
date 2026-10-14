@@ -1,6 +1,6 @@
 "use client";
 
-import { Anchor, Bot, FastForward, Pause, Play, RotateCcw, SkipForward, Skull, Zap } from "lucide-react";
+import { Anchor, Bot, FastForward, Flame, Pause, Play, RotateCcw, SkipForward, Skull, Zap } from "lucide-react";
 import { useState } from "react";
 import { director, useCarry } from "@/lib/client";
 import { activeCase, caseTz } from "@/lib/selectors";
@@ -46,7 +46,7 @@ export function DirectorPanel({ dense = false }: { dense?: boolean }) {
             aria-checked={w.agent.mode === m}
             onClick={() => run("mode", { mode: m })}
             className={cn("h-full rounded-md px-2 font-semibold capitalize", w.agent.mode === m ? "bg-ink text-bg" : "text-ink-3 hover:text-ink")}
-            title={m === "live" ? "Claude makes every decision" : m === "replay" ? "Replays decisions from the last recorded live run" : "Hand-written plan, no AI (development)"}
+            title={m === "live" ? "The AI model makes every decision" : m === "replay" ? "Replays the decisions of a recorded live run" : "Hand-written plan, no AI (development)"}
           >
             {m === "live" && <Bot size={12} className="mr-1 inline" />}
             {m}
@@ -77,6 +77,27 @@ export function DirectorPanel({ dense = false }: { dense?: boolean }) {
         <Zap size={13} /> Wake agent
       </button>
 
+      <span className="mx-1 h-5 w-px bg-line" />
+      <span className="inline-flex items-center gap-1 font-semibold text-ink-2" title="Break the outside world and watch the agent recover">
+        <Flame size={13} className="text-amber" /> Chaos
+      </span>
+      {(
+        [
+          ["bank_outage", "Bank outage", Boolean(w.chaos?.bankOutage)],
+          ["card_decline", "Card declined", Boolean(w.chaos?.cardDecline)],
+          ["silent", "Institution silent", Boolean(w.chaos?.silentUntil && w.chaos.silentUntil > w.now)],
+        ] as const
+      ).map(([kind, label, armed]) => (
+        <button
+          key={kind}
+          onClick={() => run("chaos", { kind })}
+          disabled={armed}
+          className={cn("inline-flex h-8 items-center rounded-lg border px-2 font-semibold", armed ? "border-amber bg-amber-soft text-amber-strong" : "border-line hover:border-amber")}
+        >
+          {label}
+          {armed ? " ✓" : ""}
+        </button>
+      ))}
       <span className="mx-1 h-5 w-px bg-line" />
       <label className="inline-flex items-center gap-1 font-semibold text-ink-2">
         <input type="checkbox" checked={w.autoReply} onChange={(e) => run("autoReply", { on: e.target.checked })} /> Auto-reply

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ArrowRight, GraduationCap, HeartPulse, Landmark, LifeBuoy, Plane, Siren } from "lucide-react";
+import { ArrowRight, GraduationCap, HeartPulse, Landmark, LifeBuoy, Plane, ShieldAlert, Siren } from "lucide-react";
 import { useState } from "react";
 import { director } from "@/lib/client";
 import { Card } from "@/components/ui";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/format";
 
 const LIVE = [
   { id: "th-medical", icon: HeartPulse, title: "Hospital treatment abroad", corridor: ["PK", "Pakistan", "TH", "Thailand"], rules: "State Bank of Pakistan rules" },
+  { id: "pk-admission", icon: ShieldAlert, title: "University offer through an agent", corridor: ["PK", "Pakistan", "GB", "United Kingdom"], rules: "State Bank of Pakistan rules · admission check first" },
   { id: "uk-tuition", icon: GraduationCap, title: "University fees abroad", corridor: ["CN", "China", "GB", "United Kingdom"], rules: "SAFE (国家外汇管理局) rules" },
 ];
 

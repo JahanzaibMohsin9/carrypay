@@ -9,6 +9,7 @@ import { caseSnapshot } from "./snapshot";
 import { anthropicToolDefs, executeTool } from "./tools";
 import { SCRIPTS } from "./scripted";
 import { fallbackConfig, hasProviderKey, providerConfig, type ProviderConfig } from "./llm";
+import { buildVault, type Vault } from "./privacy";
 
 /** Label of the model that Live mode will use, e.g. "DeepSeek · deepseek-v4-pro". */
 export const MODEL = providerConfig().label;
@@ -16,6 +17,8 @@ const MAX_STEPS = 24;
 const STEP_DELAY_SCRIPTED = Number(process.env.CARRYPAY_STEP_DELAY_MS ?? 700);
 const STEP_DELAY_REPLAY = Number(process.env.CARRYPAY_STEP_DELAY_MS ?? 850);
 const REC_DIR = path.join(process.env.CARRYPAY_DATA_DIR || path.join(process.cwd(), ".data"), "recordings");
+/** Curated live runs checked into the repo; Replay prefers these (set CARRYPAY_REPLAY_SOURCE=latest to replay the newest local run). */
+const CURATED_DIR = path.join(process.cwd(), "recordings");
 
 export interface RecordedStep {
   tool: string;
@@ -31,6 +34,7 @@ export interface Recording {
   scenarioId: string;
   model: string;
   createdAt: string;
+  note?: string;
   runs: RecordedRun[];
 }
 
@@ -48,7 +52,11 @@ export class AgentRunner {
 
   private onTrigger = (t: Trigger) => this.enqueue(t);
 
-  constructor(private store: Store) {
+  /** systemPrompt is only overridden by the red-team ablation (a naive agent without CarryPay's safety rules) */
+  constructor(
+    private store: Store,
+    private systemPrompt: string = SYSTEM_PROMPT,
+  ) {
     store.on("trigger", this.onTrigger);
   }
 
@@ -59,6 +67,14 @@ export class AgentRunner {
 
   get isBusy() {
     return this.busy || this.pending.size > 0;
+  }
+
+  /** Take over the session of the runner this one replaces (dev hot reload), so a recording isn't split in two. */
+  adoptSession(prev: AgentRunner) {
+    this.recording = prev.recording;
+    this.replayCursor = prev.replayCursor;
+    this.replaySource = prev.replaySource;
+    this.scriptedCursor = prev.scriptedCursor;
   }
 
   /** Called on scenario reset. */
@@ -81,6 +97,8 @@ export class AgentRunner {
   private async pump() {
     if (this.busy) return;
     this.busy = true;
+    // let events raised in the same moment (e.g. an approval and the card payment it settles) arrive, so they share one wake-up
+    await new Promise((r) => setImmediate(r));
     try {
       while (this.pending.size > 0) {
         const [caseId, triggers] = this.pending.entries().next().value as [string, Trigger[]];
@@ -124,7 +142,7 @@ export class AgentRunner {
   }
 
   // -------------------------------------------------------------------------
-  // Live: Claude decides
+  // Live: the LLM decides
 
   private async runLive(caseId: string, triggers: Trigger[]) {
     const cfg = providerConfig();
@@ -152,14 +170,35 @@ export class AgentRunner {
       type: "function",
       function: { name: t.name, description: t.description, parameters: t.input_schema as Record<string, unknown> },
     }));
+    const vault = this.openVault(caseId, triggers);
     const run: RecordedRun = { triggers: triggers.map((t) => ({ reason: t.reason, detail: t.detail })), steps: [] };
     // DeepSeek needs reasoning_content sent back on every request when tools are used,
     // so assistant messages keep it as an extra field.
     const messages: (OpenAI.Chat.Completions.ChatCompletionMessageParam & { reasoning_content?: string })[] = [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: wakeMessage(triggers, caseSnapshot(this.store.world, caseId)) },
+      { role: "system", content: this.systemPrompt },
+      { role: "user", content: vault.prompt },
     ];
 
+    const usage = { calls: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+    try {
+      await this.loopOpenAICompatible(caseId, client, cfg, tools, messages, run, usage, vault);
+    } finally {
+      if (usage.calls) this.store.log({ actor: "system", type: "agent.usage", caseId, data: { model: cfg.label, ...usage } });
+      this.logWithheld(caseId, vault);
+    }
+    this.saveRun(run, cfg.label);
+  }
+
+  private async loopOpenAICompatible(
+    caseId: string,
+    client: OpenAI,
+    cfg: ProviderConfig,
+    tools: OpenAI.Chat.Completions.ChatCompletionTool[],
+    messages: (OpenAI.Chat.Completions.ChatCompletionMessageParam & { reasoning_content?: string })[],
+    run: RecordedRun,
+    usage: { calls: number; inputTokens: number; cachedInputTokens: number; outputTokens: number },
+    vault: Vault,
+  ) {
     for (let step = 0; step < MAX_STEPS; step++) {
       if (this.store.world.agent.killSwitch) break;
       const body: Record<string, unknown> = { model: cfg.model, messages, tools };
@@ -168,16 +207,23 @@ export class AgentRunner {
         body.reasoning_effort = cfg.effort;
         body.max_tokens = 16000;
       } else {
-        body.reasoning_effort = cfg.effort;
+        // OpenAI's Chat Completions rejects reasoning_effort together with function tools on gpt-5.4-mini
+        // (it wants the Responses API for that), so the model's default reasoning is used here.
         body.max_completion_tokens = 16000;
       }
       const response = (await client.chat.completions.create(
         body as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
       )) as OpenAI.Chat.Completions.ChatCompletion;
+      const u = response.usage as (OpenAI.CompletionUsage & { prompt_cache_hit_tokens?: number }) | undefined;
+      usage.calls += 1;
+      usage.inputTokens += u?.prompt_tokens ?? 0;
+      usage.cachedInputTokens += u?.prompt_cache_hit_tokens ?? u?.prompt_tokens_details?.cached_tokens ?? 0;
+      usage.outputTokens += u?.completion_tokens ?? 0;
       const choice = response.choices[0];
       const msg = choice.message as OpenAI.Chat.Completions.ChatCompletionMessage & { reasoning_content?: string };
       const thinking = msg.reasoning_content?.trim() ?? "";
-      if (thinking) this.store.log({ actor: "agent", type: "agent.thinking", caseId, data: { summary: thinking.slice(0, 1500), model: cfg.label } });
+      // the log is ours and the family reads it: real names go back in for display
+      if (thinking) this.store.log({ actor: "agent", type: "agent.thinking", caseId, data: { summary: vault.unmask(thinking.slice(0, 1500)), model: cfg.label } });
 
       if (choice.finish_reason === "length") throw new Error("Model output was cut off (max tokens).");
 
@@ -193,33 +239,32 @@ export class AgentRunner {
       );
       if (calls.length === 0) {
         run.finalText = msg.content ?? "";
-        if (run.finalText.trim()) this.store.log({ actor: "agent", type: "agent.summary", caseId, data: { text: run.finalText.slice(0, 1500) } });
+        if (run.finalText.trim()) this.store.log({ actor: "agent", type: "agent.summary", caseId, data: { text: vault.unmask(run.finalText.slice(0, 1500)) } });
         break;
       }
       for (const call of calls) {
         let output: string;
         try {
+          // recorded as the model wrote it (tokens, no personal data); real values only for execution
           const input = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>;
           run.steps.push({ tool: call.function.name, input, thinking: thinking || undefined });
-          output = executeTool(call.function.name, input, { store: this.store, caseId });
+          output = vault.mask(executeTool(call.function.name, vault.unmaskDeep(input), { store: this.store, caseId }));
         } catch {
           output = JSON.stringify({ error: "INVALID_JSON: the tool arguments were not valid JSON. Call the tool again with valid JSON." });
         }
         messages.push({ role: "tool", tool_call_id: call.id, content: output });
       }
     }
-
-    this.saveRun(run, cfg.label);
   }
 
   private async runLiveAnthropic(caseId: string, triggers: Trigger[], cfg: ProviderConfig) {
     const client = new Anthropic({ apiKey: cfg.apiKey });
     const tools = anthropicToolDefs();
+    const vault = this.openVault(caseId, triggers);
     const run: RecordedRun = { triggers: triggers.map((t) => ({ reason: t.reason, detail: t.detail })), steps: [] };
-    const messages: Anthropic.Beta.BetaMessageParam[] = [
-      { role: "user", content: wakeMessage(triggers, caseSnapshot(this.store.world, caseId)) },
-    ];
+    const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: vault.prompt }];
 
+    const usage = { calls: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
     for (let step = 0; step < MAX_STEPS; step++) {
       if (this.store.world.agent.killSwitch) break;
       const response = await client.beta.messages.create({
@@ -229,11 +274,15 @@ export class AgentRunner {
         fallbacks: "default",
         thinking: { type: "adaptive", display: "summarized" },
         output_config: { effort: cfg.effort as "low" | "medium" | "high" | "xhigh" | "max" },
-        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
         tools,
         messages,
       });
 
+      usage.calls += 1;
+      usage.inputTokens += response.usage.input_tokens + (response.usage.cache_read_input_tokens ?? 0) + (response.usage.cache_creation_input_tokens ?? 0);
+      usage.cachedInputTokens += response.usage.cache_read_input_tokens ?? 0;
+      usage.outputTokens += response.usage.output_tokens;
       if (response.stop_reason === "refusal") {
         throw new Error(`Model declined (${response.stop_details?.category ?? "unknown"}).`);
       }
@@ -243,7 +292,7 @@ export class AgentRunner {
         .map((b) => b.thinking)
         .filter(Boolean)
         .join("\n");
-      if (thinking) this.store.log({ actor: "agent", type: "agent.thinking", caseId, data: { summary: thinking.slice(0, 1500) } });
+      if (thinking) this.store.log({ actor: "agent", type: "agent.thinking", caseId, data: { summary: vault.unmask(thinking.slice(0, 1500)) } });
 
       messages.push({ role: "assistant", content: response.content });
 
@@ -252,7 +301,7 @@ export class AgentRunner {
       if (toolUses.length === 0) {
         const text = response.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text").map((b) => b.text).join("\n");
         run.finalText = text;
-        if (text.trim()) this.store.log({ actor: "agent", type: "agent.summary", caseId, data: { text: text.slice(0, 1500) } });
+        if (text.trim()) this.store.log({ actor: "agent", type: "agent.summary", caseId, data: { text: vault.unmask(text.slice(0, 1500)) } });
         break;
       }
 
@@ -260,13 +309,30 @@ export class AgentRunner {
       for (const tu of toolUses) {
         const input = (tu.input ?? {}) as Record<string, unknown>;
         run.steps.push({ tool: tu.name, input, thinking: thinking || undefined });
-        const output = executeTool(tu.name, input, { store: this.store, caseId });
+        const output = vault.mask(executeTool(tu.name, vault.unmaskDeep(input), { store: this.store, caseId }));
         results.push({ type: "tool_result", tool_use_id: tu.id, content: output });
       }
       messages.push({ role: "user", content: results });
     }
 
+    this.store.log({ actor: "system", type: "agent.usage", caseId, data: { model: cfg.label, ...usage } });
+    this.logWithheld(caseId, vault);
     this.saveRun(run, cfg.label);
+  }
+
+  /** Privacy firewall for one wake-up; the masked prompt is kept for the Security Centre's "what the AI saw". */
+  private openVault(caseId: string, triggers: Trigger[]): Vault & { prompt: string } {
+    const vault = buildVault(this.store.world, caseId);
+    const prompt = vault.mask(wakeMessage(triggers, caseSnapshot(this.store.world, caseId)));
+    this.store.mutate((w) => (w.agent.lastPrompt = { at: w.now, caseId, text: prompt, withheld: vault.withheld() }));
+    // recordings keep what the model saw: trigger details (e.g. the family's message) masked too
+    for (const t of triggers) if (t.detail) t.detail = vault.mask(t.detail);
+    return { ...vault, prompt };
+  }
+
+  private logWithheld(caseId: string, vault: Vault) {
+    const withheld = vault.withheld();
+    if (Object.keys(withheld).length) this.store.log({ actor: "gateway", type: "privacy.masked", caseId, data: { withheld, tokens: vault.entries.length } });
   }
 
   private saveRun(run: RecordedRun, model: string) {
@@ -294,11 +360,11 @@ export class AgentRunner {
     for (const step of rec.runs[idx].steps) {
       if (this.store.world.agent.killSwitch) break;
       if (step.thinking && step.thinking !== lastThinking) {
-        this.store.log({ actor: "agent", type: "agent.thinking", caseId, data: { summary: step.thinking.slice(0, 1500), replayed: true } });
+        this.store.log({ actor: "agent", type: "agent.thinking", caseId, data: { summary: buildVault(this.store.world, caseId).unmask(step.thinking.slice(0, 1500)), replayed: true } });
         lastThinking = step.thinking;
       }
       await sleep(STEP_DELAY_REPLAY);
-      executeTool(step.tool, step.input, { store: this.store, caseId });
+      executeTool(step.tool, buildVault(this.store.world, caseId).unmaskDeep(step.input), { store: this.store, caseId });
     }
   }
 
@@ -327,6 +393,8 @@ export interface ScriptedRun {
 }
 
 function loadLatestRecording(scenarioId: string): Recording | null {
+  const curated = path.join(CURATED_DIR, `${scenarioId}.json`);
+  if (process.env.CARRYPAY_REPLAY_SOURCE !== "latest" && fs.existsSync(curated)) return JSON.parse(fs.readFileSync(curated, "utf8")) as Recording;
   if (!fs.existsSync(REC_DIR)) return null;
   const files = fs.readdirSync(REC_DIR).filter((f) => f.startsWith(scenarioId + "-") && f.endsWith(".json")).sort();
   for (const f of files.reverse()) {

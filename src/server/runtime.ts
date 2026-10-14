@@ -1,9 +1,10 @@
 import { Store } from "./store";
 import { AgentRunner, hasApiCredentials, MODEL } from "./agent/runner";
 import { SCENARIOS, seedScenario } from "./scenarios";
-import { advanceTo, advanceToNext, nextScheduled, runBeat, setPaymentStatus, submitPayment } from "./sim/engine";
+import { advanceTo, advanceToNext, injectChaos, nextScheduled, runBeat, setPaymentStatus, submitPayment, type ChaosKind } from "./sim/engine";
 import { hoursFrom } from "./sim/factory";
 import { verifyChain } from "./hash";
+import { listPasskeys } from "./passkey";
 import type { AgentMode } from "@/domain/types";
 
 interface Runtime {
@@ -27,9 +28,12 @@ export function runtime(): Runtime {
     g.__carrypay = { store, runner, autoplayTimer, runnerClass: AgentRunner };
   } else if (g.__carrypay.runnerClass !== AgentRunner && !g.__carrypay.runner.isBusy) {
     // dev hot reload: keep the world, swap in the new agent code
+    // (in dev, API routes can also load separate copies of this module: keep the recording going either way)
+    const prev = g.__carrypay.runner;
+    prev.dispose();
     g.__carrypay.store.removeAllListeners("trigger");
     g.__carrypay.runner = new AgentRunner(g.__carrypay.store);
-    g.__carrypay.runner.resetSession();
+    g.__carrypay.runner.adoptSession(prev);
     g.__carrypay.runnerClass = AgentRunner;
   }
   return g.__carrypay;
@@ -60,6 +64,7 @@ export function publicState() {
     agentBusy: runner.isBusy || store.world.agent.status === "working",
     nextEvent: next ? { at: next.at, label: next.label } : null,
     hasKey: hasApiCredentials(),
+    passkeys: listPasskeys().map((k) => ({ id: k.id.slice(0, 12), label: k.label, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt })),
     model: MODEL,
     scenarios: SCENARIOS,
   };
@@ -69,8 +74,12 @@ export type PublicState = ReturnType<typeof publicState>;
 // ---------------------------------------------------------------------------
 // Family actions
 
-export function decideApproval(approvalId: string, decision: "approved" | "declined", method: "passkey" | "hold") {
-  const { store } = runtime();
+export function decideApproval(approvalId: string, decision: "approved" | "declined", method: "passkey" | "hold", evidence?: Record<string, unknown>) {
+  decideApprovalIn(runtime().store, approvalId, decision, method, evidence);
+}
+
+/** The family's decision on a payment, applied to a given world (the app's, or a test's). */
+export function decideApprovalIn(store: Store, approvalId: string, decision: "approved" | "declined", method: "passkey" | "hold", evidence?: Record<string, unknown>) {
   const a = store.world.approvals[approvalId];
   if (!a || a.decision) throw new Error("This approval is no longer pending.");
   const p = store.world.payments[a.paymentId];
@@ -84,7 +93,7 @@ export function decideApproval(approvalId: string, decision: "approved" | "decli
     type: decision === "approved" ? "approval.approved" : "approval.declined",
     caseId: a.caseId,
     narration: decision === "approved" ? `You approved: ${a.summary}` : `You declined: ${a.summary}`,
-    data: { approvalId, paymentId: a.paymentId, method },
+    data: { approvalId, paymentId: a.paymentId, method, ...(evidence ? { passkey: evidence } : {}) },
   });
   if (decision === "approved") {
     setPaymentStatus(store, p.id, "approved", `Approved by family (${method})`);
@@ -152,6 +161,10 @@ export function directorAction(body: Record<string, unknown>) {
       return;
     case "nudge":
       store.trigger({ caseId: String(body.caseId), reason: "nudge" });
+      return;
+    case "chaos":
+      if (!["bank_outage", "card_decline", "silent"].includes(String(body.kind))) throw new Error("chaos kind must be bank_outage, card_decline or silent");
+      injectChaos(store, body.kind as ChaosKind);
       return;
     case "anchor":
       store.addAnchor(String(body.note ?? "Manual anchor"));

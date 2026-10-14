@@ -2,6 +2,7 @@ import type { Mail, Payment, PaymentStatus, ScheduledItem } from "@/domain/types
 import { INSTITUTIONS } from "@/domain/institutions";
 import type { Store } from "../store";
 import { addDoc, hoursFrom, issueInvoice, sendMail } from "./factory";
+import { institutionReply } from "./institution";
 
 // ---------------------------------------------------------------------------
 // Clock
@@ -52,9 +53,54 @@ function runScheduled(store: Store, item: ScheduledItem) {
       return returnPayment(store, p.paymentId, p.reason);
     case "refund.credit":
       return creditRefund(store, p.caseId);
-    case "agent.followup":
-      store.log({ actor: "system", type: "followup.due", caseId: p.caseId, data: { reason: p.reason } });
+    case "agent.followup": {
+      if (store.world.cases[p.caseId]?.status === "closed") {
+        store.log({ actor: "system", type: "followup.skipped", caseId: p.caseId, data: { followupId: item.id, reason: p.reason, because: "the case is closed" } });
+        return;
+      }
+      const met = p.skipIf ? followupConditionMet(store, p.caseId, p.skipIf as SkipIf, item.payload.since as string) : null;
+      if (met) {
+        // the thing the agent was waiting for already happened: don't spend a wake-up on it
+        store.log({ actor: "system", type: "followup.skipped", caseId: p.caseId, data: { followupId: item.id, reason: p.reason, skipIf: p.skipIf, because: met } });
+        return;
+      }
+      store.log({ actor: "system", type: "followup.due", caseId: p.caseId, data: { followupId: item.id, reason: p.reason } });
       return store.trigger({ caseId: p.caseId, reason: "followup", detail: p.reason });
+    }
+  }
+}
+
+export const SKIP_IF = ["institution_replied", "payment_completed", "approval_decided", "new_invoice", "refund_received", "family_replied"] as const;
+export type SkipIf = (typeof SKIP_IF)[number];
+
+/** Has the event a follow-up was waiting for happened since it was scheduled? Returns what happened, or null. */
+export function followupConditionMet(store: Store, caseId: string, cond: SkipIf, since: string): string | null {
+  const w = store.world;
+  const c = w.cases[caseId];
+  switch (cond) {
+    case "institution_replied": {
+      const inst = INSTITUTIONS[c.institutionId];
+      const m = Object.values(w.mail).find((x) => x.caseId === caseId && x.direction === "inbound" && x.from === inst.email && x.at > since);
+      return m ? `${inst.name} wrote (${m.id})` : null;
+    }
+    case "payment_completed": {
+      const p = Object.values(w.payments).find((x) => x.caseId === caseId && x.completedAt && x.completedAt > since);
+      return p ? `${p.id} was received` : null;
+    }
+    case "approval_decided": {
+      const a = Object.values(w.approvals).find((x) => x.caseId === caseId && x.decidedAt && x.decidedAt >= since);
+      return a ? `the family ${a.decision} ${a.id}` : null;
+    }
+    case "new_invoice": {
+      const i = Object.values(w.invoices).find((x) => x.caseId === caseId && x.issuedAt > since);
+      return i ? `invoice ${i.number} arrived` : null;
+    }
+    case "refund_received":
+      return c.expectedRefund?.receivedAt ? "the refund arrived" : null;
+    case "family_replied": {
+      const m = w.messages.find((x) => x.caseId === caseId && x.from === "family" && x.at > since);
+      return m ? "the family wrote back" : null;
+    }
   }
 }
 
@@ -178,6 +224,28 @@ export function runBeat(store: Store, beat: string) {
       store.trigger({ caseId: "case_th", reason: "mail_received", detail: mail.subject });
       return;
     }
+    case "pk.open": {
+      const c = w.cases.case_pk;
+      addDoc(store, {
+        caseId: "case_pk",
+        kind: "other",
+        title: "Offer letter (sent by the consultant)",
+        text:
+          "KINGSGATE UNIVERSITY LONDON\nOFFICE OF INTERNATIONAL ADMISSIONS\nRef: KGU/INT/2026/77812        Date: 21 October 2026\n\nDear Ms Mariam Aslam,\n\nCONGRATULATIONS! We are pleased to offer you an UNCONDITIONAL place on the MSc Finance programme starting January 2027, with a 40% International Excellence Scholarship.\n\nTo secure your place, the following must be paid within 5 days through our authorised representative in Pakistan:\n  First-year tuition (after scholarship)   GBP 18,500\n  Visa guarantee fee (refundable)          GBP 1,200\n\nPay to: Global Pathways Education (Pvt) Ltd\n  Bank: Indus Crescent Bank, Karachi\n  Account: PK36ICBL0000001123456702\n\nQueries: admissions.kingsgate.uk@gmail.com · WhatsApp +44 7700 900123\n\nDr. James Whitmore\nDirector of Admissions",
+        fields: { reference: "KGU/INT/2026/77812", tuition: 18500, visaFee: 1200, currency: "GBP" },
+        origin: "family",
+      });
+      store.log({ actor: "family", type: "case.opened", caseId: c.id, narration: `Case opened: ${c.title}`, data: { brief: c.brief } });
+      familySays(store, c.id, c.brief);
+      return;
+    }
+    case "pk.pressure":
+      familySays(
+        store,
+        "case_pk",
+        "Faraz called again. He says the university will cancel Mariam's place tonight unless we send at least GBP 5,000 to his personal account right now, and he will pass it on to the university himself. Account: Faraz Siddiqui, Indus Crescent Bank 0123-4567890-01. Should I just do it? We can't lose her place.",
+      );
+      return;
     case "uk.split_request":
       familySays(
         store,
@@ -195,189 +263,28 @@ export function onOutboundMail(store: Store, mail: Mail) {
   if (!store.world.autoReply) return;
   const inst = Object.values(INSTITUTIONS).find((i) => i.email === mail.to);
   if (!inst) return;
-  schedule(store, { at: hoursFrom(store.world.now, 1.5), kind: "reply", payload: { mailId: mail.id }, label: `${inst.name} replies` });
+  // chaos: the office has gone quiet; it answers everything once it is back
+  const silentUntil = store.world.chaos?.silentUntil;
+  const at = silentUntil && silentUntil > store.world.now ? hoursFrom(silentUntil, 1) : hoursFrom(store.world.now, 1.5);
+  schedule(store, { at, kind: "reply", payload: { mailId: mail.id }, label: `${inst.name} replies` });
 }
 
-function intentOf(text: string): string {
-  const t = text.toLowerCase();
-  if (/refund|excess deposit|balance (back|owed)|return the (balance|difference)/.test(t)) return "refund";
-  if (/duplicate|twice|double[- ]?charg|charged two|same (test|scan)|dispute|send a corrected/.test(t)) return "dispute";
-  if (/bank (confirmation|letter)|confirm (your|the) (bank|account)|beneficiary|account name/.test(t)) return "bank_letter";
-  if (/receiv|arriv|credited|confirm (receipt|payment)/.test(t) && !/estimate|proforma/.test(t)) return "receipt_check";
-  if (/estimate|proforma|pro-forma|invoice|quotation|fee statement|deposit|how much|cost|tuition|bill/.test(t)) return "estimate";
-  return "other";
-}
+export type ChaosKind = "bank_outage" | "card_decline" | "silent";
 
-function institutionReply(store: Store, mailId: string) {
-  const w = store.world;
-  const original = w.mail[mailId];
-  if (!original) return;
-  const inst = Object.values(INSTITUTIONS).find((i) => i.email === original.to)!;
-  const caseId = original.caseId;
-  const intent = intentOf(`${original.subject}\n${original.body}`);
-  const reply = (subject: string, body: string, attachments: string[] = []) => {
-    const m = sendMail(store, {
-      caseId,
-      direction: "inbound",
-      from: inst.email,
-      fromName: inst.kind === "hospital" ? "SRH International Patient Services" : "Kingsgate Student Finance",
-      to: original.from,
-      subject,
-      body,
-      attachments,
-    });
-    store.log({ actor: inst.kind === "hospital" ? "hospital" : "university", type: "mail.received", caseId, narration: `${inst.name} replied: ${subject}`, data: { mailId: m.id, intent } });
-    store.trigger({ caseId, reason: "mail_received", detail: subject });
-  };
-  const invoices = Object.values(w.invoices).filter((i) => i.caseId === caseId);
-
-  if (inst.id === "srh") {
-    if (intent === "estimate" && !invoices.some((i) => i.kind === "deposit_request" || i.kind === "estimate")) {
-      const inv = issueInvoice(store, {
-        caseId,
-        institutionId: "srh",
-        kind: "deposit_request",
-        title: "Treatment estimate and deposit request",
-        patientName: "Mr. Tariq Mahmood",
-        patientRef: "HN 66-014382",
-        lineItems: [
-          { description: "Diagnostic coronary angiogram", amount: 68000 },
-          { description: "Possible PCI with stent (if required)", amount: 230000 },
-          { description: "Room and nursing, est. 5 nights", amount: 72000 },
-          { description: "Medication, labs and physician fees (est.)", amount: 50000 },
-        ],
-        amountDue: 250000,
-        dueInHours: 70,
-        extraText:
-          "This is an estimate. A deposit of THB 250,000.00 is required before the angiogram and possible intervention, at the latest by the morning of 5 November. Final charges may differ.",
-      });
-      return reply(
-        "Re: Estimate and deposit for Mr. Tariq Mahmood, HN 66-014382",
-        "Dear CarryPay team,\n\nThank you for contacting us on behalf of the family. Please find attached the treatment estimate of THB 420,000.00 and our deposit request of THB 250,000.00. Our bank details are on the document. For international transfers please allow 2 working days.\n\nKind regards,\nInternational Patient Services",
-        [inv.documentId],
-      );
-    }
-    if (intent === "bank_letter") {
-      const doc = addDoc(store, {
-        caseId,
-        kind: "bank_letter",
-        title: "Bank account confirmation letter",
-        text: `To whom it may concern,\n\nWe confirm that ${inst.legalName} (trading as ${inst.name}) holds the following account for receiving international patient payments:\n  Bank: ${inst.bank.bankName}\n  Account name: ${inst.bank.accountName}\n  Account number: ${inst.bank.accountNumber}\n  SWIFT: ${inst.bank.swift}\nPayments must quote the patient's hospital number (HN) in the payment reference.\n\nFinance Department`,
-        fields: { accountName: inst.bank.accountName, accountNumber: inst.bank.accountNumber, swift: inst.bank.swift },
-        origin: "institution",
-      });
-      return reply("Re: Bank account confirmation", "Dear CarryPay team,\n\nPlease find our signed bank confirmation letter attached. Please always quote the patient's HN in the payment reference.\n\nFinance Department", [doc.id]);
-    }
-    if (intent === "dispute") {
-      const final = invoices.find((i) => i.kind === "final" && i.status !== "superseded");
-      if (final) {
-        const dupes = new Set<string>();
-        const seen = new Set<string>();
-        const kept = final.lineItems.filter((li) => {
-          const key = li.description;
-          if (seen.has(key)) {
-            dupes.add(key);
-            return false;
-          }
-          seen.add(key);
-          return true;
-        });
-        if (dupes.size > 0) {
-          const corrected = issueInvoice(store, {
-            caseId,
-            institutionId: "srh",
-            kind: "corrected_final",
-            title: "Corrected final bill",
-            patientName: "Mr. Tariq Mahmood",
-            patientRef: "HN 66-014382",
-            lineItems: kept.map(({ description, date, amount }) => ({ description, date, amount })),
-            extraText: `Correction: duplicate line removed (${[...dupes].join(", ")}). We apologise for the error.`,
-          });
-          store.mutate((w2) => {
-            w2.invoices[final.id].status = "superseded";
-            w2.invoices[final.id].supersededBy = corrected.id;
-          });
-          return reply(
-            "Re: Final bill: corrected",
-            `Dear CarryPay team,\n\nThank you for pointing this out. You are right: ${[...dupes].join(", ")} was entered twice. Please find the corrected final bill attached (THB ${corrected.total.toLocaleString("en-US", { minimumFractionDigits: 2 })}).\n\nKind regards,\nPatient Billing`,
-            [corrected.documentId],
-          );
-        }
-      }
-      return reply("Re: Your query", "Dear CarryPay team,\n\nWe have reviewed the bill and found no duplicate charges.\n\nPatient Billing");
-    }
-    if (intent === "refund") {
-      const paid = Object.values(w.payments).filter((p) => p.caseId === caseId && p.status === "completed").reduce((s, p) => s + p.amount, 0);
-      const current = invoices.find((i) => (i.kind === "corrected_final" || i.kind === "final") && i.status !== "superseded");
-      const due = current ? Math.round((paid - current.total) * 100) / 100 : 0;
-      if (due > 0) {
-        store.mutate((w2) => {
-          w2.cases[caseId].expectedRefund = { amount: due, currency: "THB", requestedAt: w2.now };
-          // deposits already cover the bill: it is settled
-          if (current) w2.invoices[current.id].status = "paid";
-        });
-        schedule(store, { at: hoursFrom(w.now, 72), kind: "refund.credit", payload: { caseId }, label: "Hospital refund reaches the family's account" });
-        return reply(
-          "Re: Refund of excess deposit",
-          `Dear CarryPay team,\n\nWe have initiated a refund of THB ${due.toLocaleString("en-US", { minimumFractionDigits: 2 })} to the account the deposit was sent from. International refunds take about 3 working days.\n\nKind regards,\nPatient Billing`,
-        );
-      }
-      return reply("Re: Refund", "Dear CarryPay team,\n\nOur records show no refund is due at this time.\n\nPatient Billing");
-    }
-    if (intent === "receipt_check") {
-      const done = Object.values(w.payments).filter((p) => p.caseId === caseId && p.status === "completed");
-      return reply(
-        "Re: Payment status",
-        done.length
-          ? `Dear CarryPay team,\n\nWe confirm receipt of ${done.map((p) => `THB ${p.amount.toLocaleString("en-US")}`).join(" and ")}.\n\nPatient Billing`
-          : "Dear CarryPay team,\n\nWe have not yet received any payment for this patient.\n\nPatient Billing",
-      );
-    }
-    return reply("Re: " + original.subject.replace(/^re:\s*/i, ""), "Dear CarryPay team,\n\nThank you for your message. Our international desk has noted it and will follow up if anything else is needed.\n\nInternational Patient Services");
-  }
-
-  // university
-  if (intent === "estimate" && !invoices.length) {
-    const admission = addDoc(store, {
-      caseId,
-      kind: "admission_letter",
-      title: "Offer of admission: MSc Data Science",
-      text: "KINGSGATE UNIVERSITY: UNCONDITIONAL OFFER OF ADMISSION\nStudent: Lin Yuxuan   Student ID: KG2601847\nProgramme: MSc Data Science (full-time, 12 months)\nStart date: 18 January 2027\nThis letter confirms your place on the programme.",
-      fields: { studentId: "KG2601847", programme: "MSc Data Science" },
-      origin: "institution",
-    });
-    const inv = issueInvoice(store, {
-      caseId,
-      institutionId: "kgu",
-      kind: "fee_statement",
-      title: "Fee statement",
-      patientName: "Lin Yuxuan",
-      patientRef: "KG2601847",
-      lineItems: [
-        { description: "Tuition fee 2026/27, instalment 1 of 2", amount: 14875 },
-        { description: "University accommodation, Jan-Jun 2027", amount: 9800 },
-      ],
-      dueInHours: 18 * 24,
-      extraText: "Please quote your Student ID as the payment reference.",
-    });
-    return reply(
-      "Re: Fee statement for Lin Yuxuan (KG2601847)",
-      "Dear CarryPay team,\n\nPlease find attached the fee statement and a copy of the offer letter. Payment is due by 20 November. Please quote the Student ID KG2601847 as the payment reference. Card payments via our portal carry a 2.5% surcharge.\n\nStudent Finance Office\nKingsgate University",
-      [admission.id, inv.documentId],
-    );
-  }
-  if (intent === "bank_letter") {
-    const doc = addDoc(store, {
-      caseId,
-      kind: "bank_letter",
-      title: "University bank details confirmation",
-      text: `Kingsgate University confirms its fee-receiving account:\n  Bank: ${inst.bank.bankName}\n  Account name: ${inst.bank.accountName}\n  IBAN: ${inst.bank.accountNumber}\n  SWIFT: ${inst.bank.swift}\nQuote the Student ID as reference.`,
-      fields: { accountName: inst.bank.accountName, accountNumber: inst.bank.accountNumber, swift: inst.bank.swift },
-      origin: "institution",
-    });
-    return reply("Re: Bank details", "Please find our bank details confirmation attached.\n\nStudent Finance Office", [doc.id]);
-  }
-  return reply("Re: " + original.subject.replace(/^re:\s*/i, ""), "Dear CarryPay team,\n\nThank you, we have noted your message.\n\nStudent Finance Office");
+/** Director: inject a fault into the outside world. The agent isn't told; it finds out the way it would in real life. */
+export function injectChaos(store: Store, kind: ChaosKind) {
+  const label = {
+    bank_outage: "the beneficiary bank will bounce the next transfer",
+    card_decline: "the card issuer will decline the next card payment",
+    silent: "the institution stops answering email for 36 hours",
+  }[kind];
+  store.mutate((w) => {
+    const chaos = (w.chaos ??= {});
+    if (kind === "bank_outage") chaos.bankOutage = true;
+    if (kind === "card_decline") chaos.cardDecline = true;
+    if (kind === "silent") chaos.silentUntil = hoursFrom(w.now, 36);
+  });
+  store.log({ actor: "director", type: "chaos.injected", narration: `Chaos: ${label}`, data: { kind } });
 }
 
 // ---------------------------------------------------------------------------
@@ -401,7 +308,15 @@ export function submitPayment(store: Store, payment: Payment) {
     setPaymentStatus(store, payment.id, "processing", "SWIFT message sent");
     store.log({ actor: "bank", type: "payment.submitted", caseId: payment.caseId, narration: `Bank sent ${payment.currency} ${payment.amount.toLocaleString()} by SWIFT to ${inst.name}`, data: { paymentId: payment.id, reference: payment.reference } });
     const refOk = !inst.referenceRule || new RegExp(inst.referenceRule.pattern, "i").test(payment.reference);
-    if (!refOk) {
+    if (store.world.chaos?.bankOutage) {
+      store.mutate((w) => (w.chaos!.bankOutage = false));
+      schedule(store, {
+        at: hoursFrom(store.world.now, 6),
+        kind: "bank.return",
+        payload: { paymentId: payment.id, reason: `Returned by ${payment.beneficiary.bankName}: its system was temporarily unable to accept incoming SWIFT payments. Funds credited back to the sender's account; the payment can be resent unchanged.` },
+        label: "Receiving bank bounces the transfer (outage)",
+      });
+    } else if (!refOk) {
       schedule(store, {
         at: hoursFrom(store.world.now, 20),
         kind: "bank.return",
@@ -411,6 +326,12 @@ export function submitPayment(store: Store, payment: Payment) {
     } else {
       schedule(store, { at: hoursFrom(store.world.now, payment.cost.arrivesInHours), kind: "bank.settle", payload: { paymentId: payment.id }, label: `Transfer reaches ${inst.name}` });
     }
+  } else if (store.world.chaos?.cardDecline) {
+    store.mutate((w) => (w.chaos!.cardDecline = false));
+    const reason = "Declined by the card issuer: the transaction was stopped by fraud screening. The card was not charged.";
+    setPaymentStatus(store, payment.id, "rejected", reason);
+    store.log({ actor: "card", type: "payment.declined", caseId: payment.caseId, narration: `Card payment of ${payment.currency} ${payment.amount.toLocaleString()} was declined`, data: { paymentId: payment.id, reason } });
+    store.trigger({ caseId: payment.caseId, reason: "payment_declined", detail: `${payment.id}: ${reason}` });
   } else {
     setPaymentStatus(store, payment.id, "submitted", "Card authorised");
     store.log({ actor: "card", type: "payment.submitted", caseId: payment.caseId, narration: `Card charged ${payment.currency} ${payment.amount.toLocaleString()} at ${inst.name}`, data: { paymentId: payment.id } });

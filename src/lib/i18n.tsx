@@ -77,17 +77,39 @@ const en = {
   routeCash: "Carried cash",
   waitingEstimate: "Waiting for the hospital's estimate.",
   waitingFees: "Waiting for the fee statement.",
+  onHoldFraud: "Nothing will be paid: CarryPay found warning signs of fraud. See the latest message.",
+  caseClosed: "Case closed: everything is settled.",
   nothingYet: "Nothing yet.",
   directToHospital: "direct to hospital",
   directToUniversity: "direct to university",
   savedVsCard: "Saved vs. paying by card",
   limitsNotePk: "Limits from State Bank of Pakistan rules. CarryPay never goes over them or borrows someone else's.",
   limitsNoteCn: "Limits from SAFE rules. CarryPay never goes over them or borrows someone else's quota.",
+  approveWithPasskey: "Approve with fingerprint or face",
+  holdInstead: "Hold to approve instead",
+  setUpPasskey: "Set up fingerprint or face approval",
+  passkeyReady: "Fingerprint or face approval is on",
+  passkeySigns: "Your passkey signs this exact amount and account.",
+  privacyTitle: "Privacy",
+  acrossCurrencies: "Across currencies",
+  casePack: "Case pack: all bills, receipts and forms (PDF)",
+  leftHome: "Left your account",
+  arrivedAbroad: "Arrived abroad",
+  onTheWay: "on the way",
+  fxFeesTax: "Exchange markup, fees and tax",
+  refundBack: "Refund back",
+  refundComing: "Refund on its way",
+  netCost: "Net cost to you",
+  allInRate: "Your all-in rate",
+  midRate: "mid-market",
+  privacyHeadline: "The AI never sees who you are",
+  privacyHint: "Names, hospital numbers, card and passport numbers and medical details are replaced with placeholders before anything is sent to the AI. CarryPay puts the real values back only when it sends an email, a message or a payment.",
 };
 
 type Dict = typeof en;
 
-const ur: Dict = {
+// Urdu: original strings only; anything newer falls back to English
+const ur: Partial<Dict> = {
   overview: "خلاصہ",
   activity: "سرگرمی",
   money: "رقم",
@@ -243,15 +265,40 @@ const zh: Dict = {
   routeCash: "携带现金",
   waitingEstimate: "正在等待医院的费用预估。",
   waitingFees: "正在等待学校的学费单。",
+  // TODO zh: two strings below
+  onHoldFraud: "不会付款：CarryPay 发现了诈骗迹象，请查看最新消息。",
+  caseClosed: "案件已结：所有款项均已结清。",
   nothingYet: "暂无动态。",
   directToHospital: "直接付给医院",
   directToUniversity: "直接付给学校",
   savedVsCard: "比刷卡节省",
   limitsNotePk: "额度依据巴基斯坦国家银行规定。CarryPay 绝不超额，也不借用他人额度。",
   limitsNoteCn: "额度依据国家外汇管理局规定。CarryPay 绝不超额，也不借用他人额度（不“蚂蚁搬家”）。",
+  // TODO zh: review the five passkey strings below
+  approveWithPasskey: "用指纹或面容批准",
+  holdInstead: "改为长按批准",
+  setUpPasskey: "开启指纹或面容批准",
+  passkeyReady: "已开启指纹或面容批准",
+  passkeySigns: "您的通行密钥只对这笔金额和这个账户签名。",
+  // TODO zh: review the three privacy strings below
+  privacyTitle: "隐私",
+  // TODO zh: currency strings below
+  acrossCurrencies: "多币种汇总",
+  casePack: "案件资料包：全部账单、收据和表格（PDF）",
+  leftHome: "从您账户付出",
+  arrivedAbroad: "到达境外",
+  onTheWay: "在途",
+  fxFeesTax: "汇率加价、手续费和税",
+  refundBack: "已退回",
+  refundComing: "退款在途",
+  netCost: "您的净成本",
+  allInRate: "综合汇率",
+  midRate: "中间价",
+  privacyHeadline: "AI 永远不知道您是谁",
+  privacyHint: "姓名、医院病历号或学号、银行卡号、护照号和病情信息在发送给 AI 之前都会被替换成占位符。只有在发送邮件、消息或付款时，CarryPay 才在系统内部填回真实信息。",
 };
 
-export const DICTS: Record<Lang, Dict> = { en, ur, zh };
+export const DICTS: Record<Lang, Partial<Dict>> = { en, ur, zh };
 
 export const ROUTE_KEY = { bank_transfer: "routeBank", card_payment: "routeCard", atm_cash: "routeAtm", carried_cash: "routeCash" } as const;
 export type TKey = keyof Dict;

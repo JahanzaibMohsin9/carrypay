@@ -57,6 +57,8 @@ export function hasProviderKey(): boolean {
 
 /** The fallback provider to try when the primary one fails (DeepSeek ↔ OpenAI). */
 export function fallbackConfig(primary: Provider): ProviderConfig | undefined {
+  // CARRYPAY_FALLBACK=none: fail instead of switching provider (e.g. to keep OpenAI credits untouched)
+  if (process.env.CARRYPAY_FALLBACK === "none") return undefined;
   const order: Provider[] = primary === "deepseek" ? ["openai"] : primary === "openai" ? ["deepseek"] : [];
   for (const p of order) if (keyFor(p)) return providerConfig(p);
   return undefined;

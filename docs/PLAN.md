@@ -97,31 +97,52 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 - **To fix:** the agent sometimes wakes on a follow-up that's no longer needed and only writes a note. Fine, but each wake-up costs a call: have it cancel follow-ups once the thing it waited for has happened.
 - Speed: 25–45 s per wake-up. Fine for the product; for the video, record a live run and use Replay with step pacing.
 
+### Done on Oct 14 (second session), ahead of plan
+- **Sandbox institutions answer every question in one reply** (`src/server/sim/institution.ts`) and say when things will come ("final bill on discharge"). Replies are linked to the email they answer; the snapshot shows `answered_by` and `topics_answered`. A repeat refund request no longer starts a second refund (bug).
+- **Follow-ups**: `skip_if` conditions checked in code (no wake-up when the awaited event already happened), `cancel_followup`, max 4 open.
+- **Runner fixes**: events at the same moment share one wake-up; in dev, API routes load separate copies of the agent module, which split recordings in two; a replacement runner now takes over the session. Token usage logged per wake-up.
+- **Live runs, DeepSeek**: Bangkok 11/11 checks with 3 emails (first run: 10 emails, looping); London 10/10 with 1 email, about USD 0.07–0.11 per case. Curated runs in `recordings/` for Replay.
+- **Evaluation** (A3): `scripts/eval.mjs` + `src/server/evaluate.ts` + `/api/eval`; results in [EVAL.md](EVAL.md).
+- **LLM red team**: 20 attacks; CarryPay agent 0/20 attempted, 0/20 executed. Ablation with a naive prompt: 2/20 attempted (split across cards, overpay), 0/20 executed thanks to the gateway.
+- **Privacy firewall** (A2) with "what the AI saw" in the Security Centre; sandbox passport numbers added to people and forms.
+- **Passkey approvals**: WebAuthn without a library; the challenge is a digest of the exact payment; tested with a software authenticator and once in the browser.
+- Test isolation: each vitest worker has its own data dir (two files raced on `world.json`).
+- **A1 scenario 3** (`pk-admission`): fake offer via a consultant; the agent checks with the university, which has no such applicant; nothing is paid; the family is told gently. Rule `CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES` (only a university-issued admission letter counts). Passed live on DeepSeek; curated Replay recording.
+- **A5 chaos mode**: Director buttons for bank outage, card declined, institution silent. Live check passed with both payment faults armed (resent the bounced transfer unchanged; moved the urgent deposit to Sana's card).
+- **Case closing**: a v2 Bangkok run spent USD 0.55 chasing cash the family paid before CarryPay was involved and nagging them for receipts. Fixes: the hospital answers cash questions; `skip_if: family_replied`; a `close_case` tool that cancels follow-ups; prompt rules on when the job ends.
+- **Parallel live evaluation in process** (`npm run eval:live`, `src/server/scenario.live.ts`): no dev server needed, several runs at once, same `runs.jsonl` format.
+- Family app: rule chips explain themselves; "Across currencies" on the Money tab; `/bank/officer`; `/pack` (print to PDF); Overview says "nothing will be paid" when fraud was found; PWA manifest and icons.
+
+**Open questions for you (Y):**
+- **Upload your own bill**: what should happen when the bill is from a hospital that isn't in our verified registry? Options: (a) the agent prices and explains the legal route but won't pay until the institution is verified (shows the safety story); (b) for the demo, treat any uploaded bill as coming from the case's hospital. Recommend (a).
+- **China, student's own quota**: in one live run the agent paid the London fees from the **student's own** USD 50k quota (her own tuition, one payer) instead of the father's quota plus documents. The rules engine allows it and it isn't 蚂蚁搬家, but please confirm with a bank or MiMo that a student may buy FX for her own tuition with RMB her parents gave her, and what the bank needs.
+- **Chinese review**: new strings are marked `// TODO zh` for MiMo (prompt 5 in [MIMO_PROMPTS.md](MIMO_PROMPTS.md)). No new Urdu: the Urdu UI keeps its original strings and shows English for anything newer.
+
 ### Oct 15: Make the live agent solid
-- [ ] **C** Smarter sandbox institutions: multi-intent replies (see findings), so live runs flow without loops
-- [ ] **C** Cancel or skip stale follow-ups; tighten the prompt where live runs wander
-- [ ] **C+Y** Run both scenarios Live until each completes cleanly; record the best runs (Replay)
-- [ ] **C** **A3** Agent eval: a script that runs each scenario Live N times and reports success rate, steps, cost, failures, plus a chart for the deck
+- [x] **C** Smarter sandbox institutions: multi-intent replies (see findings), so live runs flow without loops *(done Oct 14)*
+- [x] **C** Cancel or skip stale follow-ups; tighten the prompt where live runs wander *(done Oct 14)*
+- [x] **C+Y** Run both scenarios Live until each completes cleanly; record the best runs (Replay) *(done Oct 14: `recordings/`)*
+- [x] **C** **A3** Agent eval: a script that runs each scenario Live N times and reports success rate, steps, cost, failures, plus a chart for the deck *(done Oct 14: [EVAL.md](EVAL.md))*
 - [ ] **Y** **A4** Start the interviews: 5-10 people (students abroad, families who paid hospitals abroad), 10 minutes each
 - [ ] **Y** Call or visit a bank's FX desk: medical remittance process, form name, documents, timing. Write down what they say.
 - [ ] **Y** Email the organiser (wangyr@pbcsf.tsinghua.edu.cn): does the 0–5 point **on-chain challenge bonus** apply to Topic C teams? (see COMPETITION.md)
 - [ ] **Y** Create a GitHub repository and push (the source-code item requires a GitHub link)
 
 ### Oct 16: Prove it's safe with the real model
-- [ ] **C** LLM-level red-team set (~20 attacks): forged invoices, hidden instructions, look-alike senders, "the hospital says skip verification", family pressure to split quotas, fake urgency, instructions in a PDF, requests to email a new address. Run against DeepSeek with and without the safety layer; report attack success rate before/after. This becomes the core of the security report.
-- [ ] **C** **A2** Privacy firewall: mask personal data before it reaches the LLM, restore it only in our code, show "what the AI saw" in the Security Centre; add red-team cases for data leakage
-- [ ] **C** Real passkey approval (WebAuthn: register once, fingerprint/face per approval), with hold-to-approve as fallback
+- [x] **C** *(done Oct 14: [redteam/REPORT.md](redteam/REPORT.md))* LLM-level red-team set (~20 attacks): forged invoices, hidden instructions, look-alike senders, "the hospital says skip verification", family pressure to split quotas, fake urgency, instructions in a PDF, requests to email a new address. Run against DeepSeek with and without the safety layer; report attack success rate before/after. This becomes the core of the security report.
+- [x] **C** *(done Oct 14)* **A2** Privacy firewall: mask personal data before it reaches the LLM, restore it only in our code, show "what the AI saw" in the Security Centre; add red-team cases for data leakage
+- [x] **C** *(done Oct 14)* Real passkey approval (WebAuthn: register once, fingerprint/face per approval), with hold-to-approve as fallback
 - [ ] **C** Upload your own bill: photo or PDF of an invoice → extraction (vision model via OpenAI credits if DeepSeek vision isn't available) → agent works from it. Strong live-demo moment: "show us any hospital bill".
 - [ ] **T** Draft the demo video script ([VIDEO_SCRIPT.md](VIDEO_SCRIPT.md), to create)
 
 ### Oct 17: More reasons to win
 Pick by value; the first three are the strongest.
 - [ ] **C** If the organiser says yes to the bonus: **anchor the log on-chain**: publish the activity log's head hash to a public test network at each case milestone, link the transaction from the Security Centre. Real on-chain hashes, cheap, and it strengthens tamper-evidence. (½ day)
-- [ ] **C** **Multi-currency view** (named in Topic C): per case, what left in PKR/CNY, what arrived in THB/GBP, fees and tax per route, refunds back in home currency
-- [ ] **C** **A1** Admission-fraud protection and **scenario 3 (PK to UK/US tuition, fake agent)**, which also delivers the third corridor (rules already in `pk-sbp.json`)
-- [ ] **C** **A5** Chaos mode *or* **A6** bank-officer view (whichever is further along)
-- [ ] **C** "Why?" on every rule chip: tap a rule ID to see a plain-language explanation and its source, in the family's language
-- [ ] **C** Receipt pack: one-tap PDF of all invoices, receipts, forms and the verified log, for insurance claims and tax records (and the "execution evidence" deliverable)
+- [x] **C** *(done Oct 14: Money tab, "Across currencies")* **Multi-currency view** (named in Topic C): per case, what left in PKR/CNY, what arrived in THB/GBP, fees and tax per route, refunds back in home currency
+- [x] **C** *(done Oct 14: scenario `pk-admission`, rule `CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES`)* **A1** Admission-fraud protection and **scenario 3 (PK to UK/US tuition, fake agent)**, which also delivers the third corridor (rules already in `pk-sbp.json`)
+- [x] **C** *(both done Oct 14: chaos buttons in the Director, `/bank/officer`)* **A5** Chaos mode *or* **A6** bank-officer view (whichever is further along)
+- [x] **C** *(done Oct 14)* "Why?" on every rule chip: tap a rule ID to see a plain-language explanation and its source, in the family's language
+- [x] **C** *(done Oct 14: `/pack`, print to PDF)* Receipt pack: one-tap PDF of all invoices, receipts, forms and the verified log, for insurance claims and tax records (and the "execution evidence" deliverable)
 - [ ] **C** WhatsApp-style notifications (simulated): families in Pakistan live on WhatsApp; show the agent's messages arriving there
 - [ ] **C** Family roles: the attendant can follow everything, but only the payer approves money
 - [ ] **C** Impact panel on the landing page: time saved, fees saved, steps handled, using the scenario numbers
@@ -130,7 +151,7 @@ Pick by value; the first three are the strongest.
 ### Oct 18: Polish and deploy, then feature freeze
 - [ ] **C** Accessibility pass (contrast, focus states, screen-reader labels), dark mode check, empty and error states, loading skeletons
 - [ ] **C** Sound and motion polish for the video: approval success, payment arrival
-- [ ] **C** **A8** PWA: manifest, icons, full-screen; test install on Android and iPhone (optional APK wrapper only if everything else is done)
+- [x] **C** *(manifest and icons done Oct 14; install test on phones still to do)* **A8** PWA: manifest, icons, full-screen; test install on Android and iPhone (optional APK wrapper only if everything else is done)
 - [ ] **C+Y** Deploy to a server outside mainland China (Singapore/HK/Tokyo) on our own domain (`carrypay.app` / `carrypayments.com` were free on Oct 14); HTTPS; long-running Node process
 - [ ] **Y** Test the URL with a "website speed test from China" tool
 - [ ] **All** End of day: **feature freeze.** Only fixes after this.

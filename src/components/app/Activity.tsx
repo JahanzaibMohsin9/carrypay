@@ -24,6 +24,7 @@ import { useT } from "@/lib/i18n";
 import { activeCase, caseTz, feed, type FeedItem } from "@/lib/selectors";
 import { cn, dayKey, dayLabel, dayNumber, shortHash, timeOf } from "@/lib/format";
 import { Logo } from "../ui";
+import { RuleChip } from "../RuleChip";
 
 export function ActivityFeed() {
   const { state } = useCarry();
@@ -237,9 +238,7 @@ export function FeedLine({ item, tz, compact = false }: { item: FeedItem; tz: st
           {ruleIds.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {[...new Set(ruleIds)].map((r) => (
-                <span key={r} className="rounded-md bg-surface-3 px-1.5 py-0.5 font-mono text-[10px] text-ink-2">
-                  {r}
-                </span>
+                <RuleChip key={r} id={r} />
               ))}
             </div>
           )}

@@ -99,3 +99,36 @@ Structure:
 
 Length: about 600–800 Chinese characters. Factual: only claim what the documents say. Professional tone suitable for WeBank and Tsinghua judges.
 ```
+
+---
+
+## Prompt 6: Review the Oct 14 additions (rule explanations and new screens)
+
+Commit first, so MiMo's edits show up as a clean diff. Paste the shared context, then:
+
+```
+New Chinese text was added in two files. Each place is marked with a comment "// TODO zh". Review that Chinese (it is a first draft, not checked by a native speaker), improve it, and remove each "// TODO zh" comment when you have finished the text under it. Do not commit; leave your changes in the working tree.
+
+1. src/lib/i18n.tsx, inside `const zh: Dict = { ... }`: the entries under the "// TODO zh" comments (fraud hold and case closed, passkey approval, privacy, the multi-currency card, the case pack link). Compare each with the English entry of the same key in `const en`. Context:
+   - Passkey = 通行密钥; the family approves payments with fingerprint or face (指纹或面容).
+   - "Across currencies" is a card on the Money tab: money that left the family's account in CNY, money that arrived in GBP, exchange markup, fees, refunds, and the all-in rate compared with the mid-market rate.
+   - The privacy strings explain that names, ID/passport numbers, card numbers and medical details are replaced with placeholders before anything is sent to the AI.
+   - The case pack is a printable PDF of all bills, receipts and forms.
+
+2. src/domain/rules/explain.ts: each rule has a plain-language explanation shown when a parent taps a rule code. Review every `zh:` line and the `STATUS` lines.
+   - Code like ${usd(r.values?.adultUSD)}, ${pct(now?.rate)} or ${r.consequence ...} inserts numbers or text at runtime. Keep every ${...} exactly as it is, including the characters inside the braces.
+   - The Pakistan rules (PK.*) are shown to Chinese-speaking users only rarely; keep them accurate and plain rather than polished.
+   - For the China rules (CN.FX.*), use standard SAFE and bank wording (便利化额度, 个人购汇申请书, 经常项目, 蚂蚁搬家). If a statement looks wrong, don't change its meaning: add it under "Questions for the team".
+
+Afterwards run `npx tsc --noEmit` and `npm test` and report the results, then list every change as: file, key or rule ID, original, new, reason.
+```
+
+## Prompt 7: Check the Chinese the live agent writes (feedback only, optional)
+
+The family's messages in the London case are written by the AI at run time, so they can't be fixed in a file. Ask MiMo for feedback that Claude can turn into prompt rules:
+
+```
+Open recordings/uk-tuition.json. It is a recorded run of the AI agent paying a Chinese family's London tuition. In each step where "tool" is "message_family", the "text" field is a message the agent sent to the father (林伟) in Chinese; placeholders such as [PERSON_1] stand for names. Do not edit any file.
+
+For each message, rate it 1-5 on: natural Chinese for a parent, correct banking terms, accuracy against SAFE rules, warmth without being wordy. Then give at most 5 concrete style rules the agent should follow when writing Chinese to families (for example preferred terms, sentence length, how to state amounts in 人民币 and 英镑). Write the rules in English with Chinese examples.
+```

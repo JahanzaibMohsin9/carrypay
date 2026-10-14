@@ -5,6 +5,7 @@ import { seedScenario } from "./scenarios";
 import { advanceToNext } from "./sim/engine";
 import { verifyChain } from "./hash";
 import { executeTool } from "./agent/tools";
+import { evaluateRun } from "./evaluate";
 
 async function boot(scenarioId: string) {
   const store = new Store();
@@ -96,6 +97,11 @@ describe("Bangkok medical scenario (scripted agent)", () => {
     expect(w().cases.case_th.expectedRefund?.receivedAt).toBeDefined();
     expect(w().messages.at(-1)?.importance).toBe("good_news");
 
+    const ev = evaluateRun(w(), store.ledger);
+    expect(ev.checks.filter((c) => !c.pass)).toEqual([]);
+    expect(ev.money.duplicateChargeCaught).toBe(14000);
+    expect(ev.money.savedVsCardSource).toBeGreaterThan(0);
+
     const chain = verifyChain(store.ledger);
     expect(chain.ok).toBe(true);
     store.tamper(5, "edited");
@@ -116,5 +122,20 @@ describe("London tuition scenario (scripted agent)", () => {
     for (let i = 0; i < 5 && store.world.schedule.length; i++) await next();
     expect(store.world.payments[p.id].status).toBe("completed");
     expect(verifyChain(store.ledger).ok).toBe(true);
+    expect(evaluateRun(store.world, store.ledger).checks.filter((c) => !c.pass)).toEqual([]);
+  });
+});
+
+describe("Fake admission scenario (scripted agent)", () => {
+  it("checks the offer with the university, pays nothing and tells the family gently", async () => {
+    const { store, next } = await boot("pk-admission");
+    for (let i = 0; i < 6 && store.world.schedule.length; i++) await next();
+    const w = store.world;
+    expect(Object.values(w.payments)).toHaveLength(0);
+    const reply = Object.values(w.mail).find((m) => m.direction === "inbound")!;
+    expect(reply.topics).toContain("admission");
+    expect(reply.body).toMatch(/no applicant or student named Mariam Aslam/);
+    expect(Object.values(w.invoices)).toHaveLength(0); // no fee statement for someone who never applied
+    expect(evaluateRun(w, store.ledger).checks.filter((c) => !c.pass)).toEqual([]);
   });
 });

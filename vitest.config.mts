@@ -7,6 +7,7 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts"],
     testTimeout: 30000,
-    env: { CARRYPAY_STEP_DELAY_MS: "0", CARRYPAY_DATA_DIR: path.resolve(import.meta.dirname, ".data-test") },
+    setupFiles: ["./vitest.setup.ts"],
+    env: { CARRYPAY_STEP_DELAY_MS: "0" },
   },
 });

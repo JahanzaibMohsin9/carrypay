@@ -1,10 +1,11 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Ban, Banknote, Download, ExternalLink, Eye, Link2, Loader2, OctagonX, PenLine, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
+import { Ban, Banknote, Download, ExternalLink, Eye, EyeOff, Fingerprint, Link2, Loader2, OctagonX, PenLine, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
 import { useState } from "react";
 import { post, useCarry } from "@/lib/client";
 import { useT } from "@/lib/i18n";
+import { passkeysSupported, registerPasskey } from "@/lib/passkey";
 import { stableStringify } from "@/lib/canonical";
 import { activeCase, caseTz } from "@/lib/selectors";
 import { cn, dateTime, shortHash } from "@/lib/format";
@@ -12,6 +13,7 @@ import { CORRIDORS } from "@/domain/corridors";
 import { PACKS } from "@/domain/rules/engine";
 import type { LedgerEntry } from "@/domain/types";
 import { Badge, Card, SectionTitle } from "../ui";
+import { RuleChip } from "../RuleChip";
 
 async function sha256Hex(text: string) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -38,6 +40,7 @@ export function SecurityCenter() {
   const [verifying, setVerifying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<{ ok: boolean; brokenAt?: number; reason?: string; head?: string; at: number } | null>(null);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
   if (!state) return null;
   const c = activeCase(state)!;
   const w = state.world;
@@ -90,6 +93,7 @@ export function SecurityCenter() {
             <motion.span layout className="absolute top-1 h-6 w-6 rounded-full bg-white shadow" style={{ left: kill ? 28 : 4 }} />
           </button>
         </div>
+        <PasskeyRow passkeys={state.passkeys} error={passkeyError} setError={setPasskeyError} />
       </Card>
 
       {/* Threats */}
@@ -109,11 +113,7 @@ export function SecurityCenter() {
                 <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-2">{e.detail}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   <Badge tone={e.severity === "critical" ? "danger" : "amber"}>{e.severity === "critical" ? "Critical" : "Warning"}</Badge>
-                  {e.ruleIds?.map((r) => (
-                    <span key={r} className="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[10px] text-ink-2">
-                      {r}
-                    </span>
-                  ))}
+                  {e.ruleIds?.map((r) => <RuleChip key={r} id={r} />)}
                   <span className="text-[11px] text-ink-3">{dateTime(e.at, tz, lang)}</span>
                 </div>
               </div>
@@ -121,6 +121,8 @@ export function SecurityCenter() {
           ))}
         </Card>
       </section>
+
+      <PrivacyCard lastPrompt={w.agent.lastPrompt} />
 
       {/* Log integrity */}
       <section>
@@ -258,4 +260,95 @@ function StatusBadge({ status }: { status: string }) {
   if (status === "reported") return <Badge tone="info">Reported</Badge>;
   if (status === "assumed") return <Badge tone="amber">Verify</Badge>;
   return <Badge tone="brand">Policy</Badge>;
+}
+
+function PasskeyRow({ passkeys, error, setError }: { passkeys: { id: string; label: string; createdAt: string; lastUsedAt?: string }[]; error: string | null; setError: (e: string | null) => void }) {
+  const { t, lang } = useT();
+  const urdu = lang === "ur";
+  const on = passkeys.length > 0;
+  const setUp = async () => {
+    setError(null);
+    try {
+      await registerPasskey();
+    } catch (e) {
+      setError(e instanceof Error && e.name !== "NotAllowedError" ? e.message : "Passkey setup was cancelled.");
+    }
+  };
+  return (
+    <div className="border-t border-line px-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-full", on ? "bg-success-soft text-success" : "bg-surface-3 text-ink-3")}>
+          <Fingerprint size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={cn("text-[14px] font-semibold", urdu && "urdu")}>{on ? t("passkeyReady") : t("setUpPasskey")}</p>
+          <p className={cn("text-[12px] text-ink-3", urdu && "urdu")}>{on ? `${passkeys.map((k) => k.label).join(", ")} · ${t("passkeySigns")}` : t("passkeySigns")}</p>
+        </div>
+        {!on && passkeysSupported() && (
+          <button onClick={setUp} className="shrink-0 rounded-full bg-ink px-3 py-1.5 text-[12.5px] font-semibold text-bg hover:bg-brand">
+            Set up
+          </button>
+        )}
+      </div>
+      {error && <p className="mt-2 rounded-xl bg-danger-soft px-3 py-2 text-[12.5px] text-danger">{error}</p>}
+    </div>
+  );
+}
+
+const WITHHELD_LABEL: Record<string, string> = {
+  PERSON: "names",
+  PATIENT_REF: "hospital number",
+  STUDENT_ID: "student ID",
+  CARD: "card numbers",
+  PASSPORT: "passport numbers",
+  MEDICAL: "medical details",
+};
+
+/** Privacy firewall: what was withheld from the AI, and the exact text it was sent last time. */
+function PrivacyCard({ lastPrompt }: { lastPrompt?: { at: string; caseId: string; text: string; withheld: Record<string, number> } }) {
+  const { t, lang } = useT();
+  const urdu = lang === "ur";
+  const [open, setOpen] = useState(false);
+  const kinds = Object.entries(lastPrompt?.withheld ?? {});
+  return (
+    <section>
+      <SectionTitle>
+        <span className={cn(urdu && "urdu normal-case tracking-normal")}>{t("privacyTitle")}</span>
+      </SectionTitle>
+      <Card className="space-y-3 p-4">
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-brand-softer text-brand">
+            <EyeOff size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className={cn("text-[14px] font-semibold", urdu && "urdu")}>{t("privacyHeadline")}</p>
+            <p className={cn("text-[12px] leading-relaxed text-ink-3", urdu && "urdu")}>{t("privacyHint")}</p>
+          </div>
+        </div>
+        {kinds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" dir="ltr">
+            {kinds.map(([k, n]) => (
+              <Badge key={k} tone="success">
+                {n} {WITHHELD_LABEL[k] ?? k} withheld
+              </Badge>
+            ))}
+          </div>
+        )}
+        {lastPrompt ? (
+          <div>
+            <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1.5 text-[13px] font-semibold text-brand">
+              <Eye size={14} /> {open ? "Hide" : "Show"} exactly what the AI was sent
+            </button>
+            {open && (
+              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-surface-2 p-3 font-mono text-[10.5px] leading-relaxed text-ink-2" dir="ltr">
+                {lastPrompt.text}
+              </pre>
+            )}
+          </div>
+        ) : (
+          <p className="text-[12.5px] text-ink-3">The AI hasn&apos;t been sent anything for this case yet.</p>
+        )}
+      </Card>
+    </section>
+  );
 }

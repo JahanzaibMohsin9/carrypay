@@ -244,7 +244,12 @@ export function evaluateRoute(opts: {
       "The payer is not a person on this case. Payments cannot be routed through relatives or other people to use their allowances.");
   }
 
-  const docsPresent = new Set(Object.values(world.docs).filter((d) => d.caseId === caseFile.id).map((d) => d.kind));
+  // an admission letter only counts if it came from the university itself (a forwarded or uploaded "offer" doesn't)
+  const docsPresent = new Set(
+    Object.values(world.docs)
+      .filter((d) => d.caseId === caseFile.id && (d.kind !== "admission_letter" || d.origin === "institution"))
+      .map((d) => d.kind),
+  );
   const addDocs = (rule: Rule) => {
     for (const kind of rule.documents ?? []) {
       if (ev.requiredDocs.some((d) => d.kind === kind)) continue;
@@ -256,6 +261,12 @@ export function evaluateRoute(opts: {
       });
     }
   };
+
+  // fake-admission fraud: no tuition on any route until the university has confirmed the admission
+  if (purpose === "tuition") {
+    const admission = pack.rules.find((r) => r.id === "CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES");
+    if (admission) addDocs(admission);
+  }
 
   if (pack.id === "pk-sbp") {
     if (route === "bank_transfer" && purpose === "medical") {

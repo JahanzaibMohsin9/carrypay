@@ -113,3 +113,31 @@ describe("route comparison", () => {
     expect(opts.find((o) => o.route === "card_payment")!.meetsDeadline).toBe(true);
   });
 });
+
+describe("rule explanations", () => {
+  it("every rule in every pack has a plain-language explanation (English, Chinese)", async () => {
+    const { explainRule, rulesWithoutExplanation } = await import("./explain");
+    expect(rulesWithoutExplanation()).toEqual([]);
+    const ex = explainRule("PK.MED.REMIT.CAP", "en", "2026-11-02T00:00:00Z")!;
+    expect(ex.text).toContain("USD 50,000");
+    expect(explainRule("PK.CARD.ADVANCE_TAX", "en", "2026-11-02T00:00:00Z")!.text).toContain("0.5%");
+    expect(explainRule("PK.CARD.ADVANCE_TAX", "en", "2025-11-02T00:00:00Z")!.text).toContain("5%");
+    expect(explainRule("CN.FX.ANNUAL_QUOTA", "zh", "2026-11-02T00:00:00Z")!.text).toContain("USD 50,000");
+  });
+});
+
+describe("admission verified before fees", () => {
+  it("an offer letter uploaded by the family doesn't count; the university's own letter does", async () => {
+    const { Store } = await import("@/server/store");
+    const { issueInvoice, addDoc } = await import("@/server/sim/factory");
+    const store = new Store();
+    store.reset(seedScenario("uk-tuition"));
+    const inv = issueInvoice(store, { caseId: "case_uk", institutionId: "kgu", kind: "fee_statement", title: "Fees", patientName: "Lin Yuxuan", patientRef: "KG2601847", lineItems: [{ description: "Tuition", amount: 14875 }] });
+    const w = store.world;
+    const ev = () => evaluateRoute({ world: w, caseFile: w.cases.case_uk, payer: w.cases.case_uk.people[0], route: "card_payment", amount: 14875, currency: "GBP", invoiceId: inv.id });
+    addDoc(store, { caseId: "case_uk", kind: "admission_letter", title: "Offer (from an agent)", text: "offer", fields: {}, origin: "family" });
+    expect(ev().requiredDocs.find((d) => d.ruleId === "CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES")?.present).toBe(false);
+    addDoc(store, { caseId: "case_uk", kind: "admission_letter", title: "Offer of admission", text: "offer", fields: {}, origin: "institution" });
+    expect(ev().requiredDocs.find((d) => d.ruleId === "CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES")?.present).toBe(true);
+  });
+});

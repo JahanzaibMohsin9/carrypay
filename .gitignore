@@ -44,4 +44,6 @@ next-env.d.ts
 # CarryPay runtime data (world state, ledger, recordings)
 .data/
 .data-test/
+.data-redteam/
+.data-live/
 .data-dev.log

@@ -9,6 +9,7 @@ const nastaliq = Noto_Nastaliq_Urdu({ variable: "--font-nastaliq", subsets: ["ar
 export const metadata: Metadata = {
   title: "CarryPay",
   description: "The AI agent that pays your family's hospital and university bills abroad: legally, safely and for less.",
+  appleWebApp: { capable: true, title: "CarryPay", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

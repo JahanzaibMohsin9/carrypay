@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "motion/react";
-import { ArrowRight, BadgeCheck, Building2, CircleCheck, GraduationCap, HeartPulse, PiggyBank, Plus, Sparkles, Undo2 } from "lucide-react";
+import { ArrowRight, BadgeCheck, Building2, CircleCheck, GraduationCap, HeartPulse, PiggyBank, Plus, ShieldAlert, Sparkles, Undo2 } from "lucide-react";
 import { useCarry } from "@/lib/client";
 import { ROUTE_KEY, useT } from "@/lib/i18n";
 import { activeCase, allowances, caseTz, feed, moneySummary, pendingApprovals, savingsVsCash } from "@/lib/selectors";
@@ -81,10 +81,16 @@ export function Overview() {
                 </div>
               )}
             </>
+          ) : state.world.security.some((s) => s.caseId === c.id && s.kind === "suspicious_message") ? (
+            // nothing to pay and a fraud warning on file: say so instead of "waiting for the bill"
+            <p className={cn("flex items-start gap-1.5 rounded-xl bg-amber-soft px-3 py-2 text-[14px] font-semibold text-amber-strong", urdu && "urdu")}>
+              <ShieldAlert size={16} className="mt-[3px] shrink-0" />
+              {t("onHoldFraud")}
+            </p>
           ) : (
             <p className="py-2 text-[14px] text-ink-2">
               <Sparkles size={14} className="mr-1 inline text-brand" />
-              {c.type === "medical" ? t("waitingEstimate") : t("waitingFees")}
+              {c.status === "closed" ? t("caseClosed") : c.type === "medical" ? t("waitingEstimate") : t("waitingFees")}
             </p>
           )}
         </div>

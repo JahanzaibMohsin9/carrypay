@@ -19,12 +19,16 @@ export interface Person {
   abroad: boolean;
   /** FX already bought by bank this calendar year, before the case (USD) */
   priorFxYearUSD?: number;
+  /** identity document number for regulatory forms (sandbox values); never shown to the LLM */
+  passport?: string;
 }
 
 export interface Institution {
   id: string;
   kind: "hospital" | "university";
   name: string; // trading name shown to people
+  /** universities: applicants with a genuine offer (the sandbox stand-in for the admissions system) */
+  students?: { id: string; name: string; programme: string; start: string }[];
   legalName: string; // name on the bank account
   country: string;
   city: string;
@@ -145,6 +149,9 @@ export interface Mail {
   read: boolean;
   /** set by the security layer when the sender is not a verified contact */
   unverifiedSender?: boolean;
+  /** for institution replies: the email this answers, and the topics it answered */
+  inReplyTo?: string;
+  topics?: string[];
 }
 
 export type DocumentKind =
@@ -234,7 +241,7 @@ export interface ScheduledItem {
   label: string;
 }
 
-/** live = Claude decides; replay = decisions replayed from a recorded live run; scripted = hand-written demo plan (no AI) */
+/** live = the LLM decides; replay = decisions replayed from a recorded live run; scripted = hand-written demo plan (no AI) */
 export type AgentMode = "live" | "replay" | "scripted";
 
 export interface AgentState {
@@ -244,6 +251,8 @@ export interface AgentState {
   currentCaseId?: string;
   lastError?: string;
   runs: number;
+  /** exactly what the LLM was sent at its last wake-up, after the privacy firewall (for the Security Centre) */
+  lastPrompt?: { at: string; caseId: string; text: string; withheld: Record<string, number> };
 }
 
 export interface World {
@@ -263,6 +272,8 @@ export interface World {
   schedule: ScheduledItem[];
   agent: AgentState;
   autoReply: boolean;
+  /** director's chaos mode: faults injected into the outside world, each consumed when it fires */
+  chaos?: { bankOutage?: boolean; cardDecline?: boolean; silentUntil?: string };
   /** director: advance the clock automatically whenever the agent is idle */
   autoplay: boolean;
   counters: Record<string, number>;

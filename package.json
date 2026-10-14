@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "redteam:llm": "vitest run --config vitest.redteam.config.mts",
+    "eval:live": "vitest run --config vitest.live.config.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
