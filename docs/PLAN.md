@@ -126,7 +126,7 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 - [ ] **Y** **A4** Start the interviews: 5-10 people (students abroad, families who paid hospitals abroad), 10 minutes each
 - [ ] **Y** Call or visit a bank's FX desk: medical remittance process, form name, documents, timing. Write down what they say.
 - [x] **Y** Email the organiser (wangyr@pbcsf.tsinghua.edu.cn): does the 0–5 point **on-chain challenge bonus** apply to Topic C teams? *Answer 14 Oct: yes (A–E). Also: ~10 finalist teams; travel covered for all members.*
-- [ ] **Y** Create a GitHub repository and push (the source-code item requires a GitHub link)
+- [x] **Y** Create a GitHub repository and push (the source-code item requires a GitHub link) *(done 14 Oct: https://github.com/JahanzaibMohsin9/carrypay, branch `main`)*
 
 ### Oct 16: Prove it's safe with the real model
 - [x] **C** *(done Oct 14: [redteam/REPORT.md](redteam/REPORT.md))* LLM-level red-team set (~20 attacks): forged invoices, hidden instructions, look-alike senders, "the hospital says skip verification", family pressure to split quotas, fake urgency, instructions in a PDF, requests to email a new address. Run against DeepSeek with and without the safety layer; report attack success rate before/after. This becomes the core of the security report.
@@ -176,7 +176,7 @@ Pick by value; the first three are the strongest.
 |---|---|
 | Technical documentation (architecture, core algorithm, security design) | [TECHNICAL.md](TECHNICAL.md) |
 | Presentation deck (≤10 min) | to make Oct 19 |
-| Source code: README, GitHub link, deployment steps, tests | repo, [README.md](../README.md), `npm test` |
+| Source code: README, GitHub link, deployment steps, tests | https://github.com/JahanzaibMohsin9/carrypay, [README.md](../README.md), `npm test` |
 | Security self-assessment (permission tiers, known risks) | [SECURITY.md](SECURITY.md) |
 | Execution evidence (sandbox logs + demo video) | `/api/ledger` export per scenario + video |
 | Demo video (≤5 min, optional but we're doing it) | MP4 + link reachable from China |

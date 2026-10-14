@@ -42,7 +42,7 @@ Registration and submission share the same deadline. A bilingual reminder email 
 | 01 | Technical documentation | System architecture, core algorithm description, security design | [TECHNICAL.md](TECHNICAL.md) |
 | 02 | Presentation deck | Final presentation no longer than 10 minutes | to make |
 | 03 | Demo video | Optional, no longer than 5 minutes | to make |
-| 04 | Source code | README, GitHub repository link, deployment instructions, test cases | repo + [README](../README.md) |
+| 04 | Source code | README, GitHub repository link, deployment instructions, test cases | https://github.com/JahanzaibMohsin9/carrypay + [README](../README.md) |
 | 05 | Security self-assessment | Permission-tier implementation and known-risk list | [SECURITY.md](SECURITY.md) |
 | 06 | Execution evidence | For non-on-chain topics: simulated-account / sandbox operation logs **and** demo video | `/api/ledger` export + video |
 
