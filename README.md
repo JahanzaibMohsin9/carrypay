@@ -6,6 +6,15 @@ CarryPay is an AI agent that pays a family's hospital and university bills abroa
 
 Built for the 2026 Shenzhen International FinTech Competition, International Track (Topic C: Cross-border & Student Finance Assistant).
 
+## Documentation
+
+| Doc | What's in it |
+|---|---|
+| [docs/PLAN.md](docs/PLAN.md) | Build plan to the Oct 20 deadline, owners, submission checklist |
+| [docs/TECHNICAL.md](docs/TECHNICAL.md) | Architecture, core algorithms, LLM integration, ledger |
+| [docs/SECURITY.md](docs/SECURITY.md) | Threat model, permission tiers, controls, red-team results, known risks |
+| [docs/MIMO_PROMPTS.md](docs/MIMO_PROMPTS.md) | Prompts for MiMo v2.6 Pro: Chinese UI review, scenario content, subtitles |
+
 > **Sandbox.** The hospital, university, banks and card network are simulated. Institutions are fictional and exchange rates are illustrative. Regulations are real and cited, each marked *official*, *reported*, *assumed* (verify with a bank) or *policy* (CarryPay's own rule).
 
 ---
@@ -14,7 +23,7 @@ Built for the 2026 Shenzhen International FinTech Competition, International Tra
 
 ```bash
 npm install
-cp .env.local.example .env.local   # add ANTHROPIC_API_KEY for Live mode
+cp .env.local.example .env.local   # add your API key for Live mode
 npm run dev
 ```
 
@@ -41,9 +50,15 @@ Switch in the Director bar.
 
 | Mode | Who decides | When to use |
 |---|---|---|
-| **Live** | Claude (Opus 5.5) via the Anthropic API, through the safety layer | The real product. Every live run is recorded to `.data/recordings/`. |
+| **Live** | The LLM, through the safety layer (see "LLM provider" below) | The real product. Every live run is recorded to `.data/recordings/`. |
 | **Replay** | Decisions replayed from the latest recorded live run; every action still executes for real against the sandbox | Demos where the network to the API is unreliable (e.g. on-site in mainland China). Clearly labelled in the UI. |
 | **Scripted** | A hand-written plan, **no AI** | Development without an API key. Clearly labelled "Scripted demo · no AI". Never present it as the AI. |
+
+## LLM provider
+
+**Decision (Oct 14): DeepSeek.** `deepseek-v4-pro` runs the agent, `deepseek-flash` handles high-volume work, and OpenAI is the fallback, all through one OpenAI-compatible adapter. DeepSeek is cheaper and reachable from mainland China, which matters for the on-site final in Shenzhen.
+
+**Current state:** the code still calls Claude through the Anthropic SDK (`src/server/agent/runner.ts`). The DeepSeek adapter is the first task on Oct 15 (see [docs/PLAN.md](docs/PLAN.md)). Until then, use **Scripted** mode, which needs no key.
 
 ## The demo scenarios
 
@@ -107,9 +122,9 @@ Red-team results: `src/server/redteam.test.ts` (17 attacks, all blocked).
 
 ## Deploying
 
-The Anthropic API isn't reachable from mainland China, and `*.vercel.app` domains can be unreliable there. Plan:
+`*.vercel.app` domains can be unreliable from mainland China, and some LLM APIs (including Anthropic's) aren't reachable there. DeepSeek is. Plan:
 
-1. Run `npm run build && npm start` on a server **outside** mainland China (Singapore, Hong Kong or Tokyo) under your own domain. The server calls Claude; the browser never does.
+1. Run `npm run build && npm start` on a server **outside** mainland China (Singapore, Hong Kong or Tokyo) under your own domain. The server calls the LLM; the browser never does.
 2. Test the URL with a "website speed test from China" tool before submitting.
 3. Record a Live run of each scenario before the final so **Replay** mode is available as a clearly labelled fallback.
 4. Keep the demo video as an MP4 plus a link reachable from China (e.g. Bilibili), not only YouTube.
