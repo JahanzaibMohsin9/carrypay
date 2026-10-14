@@ -73,7 +73,7 @@
     },
     {
       "id": "CN.FX.PROHIBITED_PURPOSES",
-      "title": "Personal FX may not be used for overseas property, securities or investment-type insurance",
+      "title": "Personal FX may not be used for overseas property, securities, life insurance or investment-linked insurance",
       "kind": "forbidden",
       "appliesTo": [
         "bank_transfer"
@@ -97,7 +97,7 @@
       "appliesTo": [
         "bank_transfer"
       ],
-      "consequence": "Watch-list, loss of the convenience quota for later years, fines",
+      "consequence": "Watch-list, no convenience quota for that year and the next two, administrative penalties, and a note on the personal credit record",
       "status": "reported",
       "effectiveFrom": "2017-01-01",
       "source": {
