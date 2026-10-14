@@ -52,6 +52,37 @@ Risk: tool-calling reliability over a 15-tool, multi-step case is unproven on De
 
 ---
 
+## Additions after the review (Oct 14 evening)
+
+Where we stand (honest self-rating): task completion 8/10 (until live runs complete cleanly), security & compliance 8.5/10, innovation & interaction 7.5/10. Many teams will share the idea; our edge is execution, safety evidence and a real story. These additions target the gaps:
+
+| # | Addition | Why it scores | Effort | When |
+|---|---|---|---|---|
+| A1 | **Admission-fraud protection** (scenario 3, below) | Topic C's "students" half, a real and current harm in Pakistan, security 30% | 1 day | Oct 17 |
+| A2 | **Privacy firewall**: mask passport numbers, account numbers and medical details before anything reaches the LLM (`[PASSPORT_1]`), fill real values back only inside our code; log what was shared | Security & compliance; cross-border data rules (China's PIPL) when using DeepSeek/OpenAI; matters to WeBank | half a day | Oct 16 |
+| A3 | **Evaluation report**: each scenario run Live 10 times; success rate, steps, AI cost per case, PKR/CNY saved; one chart for the deck | Task completion with evidence instead of claims | half a day | Oct 15 |
+| A4 | **Real-world validation**: talk to 5-10 people (Pakistani students abroad, families who travelled for treatment) plus the bank call; quotes and a few numbers in the deck | Judges trust real users over features | your time | Oct 15-17 |
+| A5 | **Chaos mode**: one button makes the bank go down, the institution go silent or the rate jump; the agent recovers live | Proves it's an agent, memorable on stage | half a day | Oct 17 (if time) |
+| A6 | **Bank-officer view**: the bank's side, a ready-to-approve remittance package (documents checked, rules cited, draft SWIFT message) | Answers "how would this work with a real bank?"; pitches CarryPay as a layer banks like WeBank could deploy | half a day | Oct 17 (if time) |
+| A7 | **Business model slide**: who pays (institutions, banks white-label, per-transaction fee), sourced market numbers | Credibility in front of bank judges | 1 hour | Oct 19 |
+| A8 | **Installable web app (PWA)**: icon, splash, full-screen; record the demo on a real phone | Authentic video; judges open a link, not an APK | 1-2 hours | Oct 18 |
+
+**APK decision:** no native APK by default. The competition doesn't require one, judges review a link, and unknown APKs are distrusted. Optional: wrap the PWA as an APK on Oct 18 only if everything else is done.
+
+### A1: Admission-fraud protection (scenario 3)
+
+**Why:** in early October 2026 a gold-medallist student of IIUI in Islamabad died after a man posing as an admissions agent took over Rs7 million from her family for a fake Harvard admission and scholarship, using forged offer letters and fee receipts. Rs2.9m went through her personal bank account and the rest in cash ([Express Tribune](https://tribune.com.pk/story/2634102/pm-shehbaz-takes-notice-of-gold-medallists-suicide-in-islamabad-following-education-funds-scam), [Dunya News](https://dunyanews.tv/en/Pakistan/977128-islamabad-gold-medalist-ends-life-after-rs7-million-harvard-admission-), [Pakistan Today](https://www.pakistantoday.com.pk/2026/10/10/gold-medalist-students-suicide-exposes-alleged-multi-million-rupee-education-fraud)). The investigation is ongoing and details differ between reports. Fake study-abroad agents are a common scam in Pakistan.
+
+**What CarryPay already does that would have stopped the money:** it pays tuition only to the university's own verified account, never to a person or an agent. Pakistan's rules also require education fees to go directly to the institution.
+
+**What to add:**
+- **Verify the admission before any fee is paid.** The agent contacts the university through its verified admissions or finance contact (from the registry, never from the offer letter) and asks it to confirm the applicant, programme and offer reference. New rule `CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES` (policy): no tuition payment until the institution itself has confirmed the admission.
+- **Red flags the agent checks and explains:** fees payable to a person or a "consultant" account, offer letters from free email addresses or look-alike domains, "scholarship processing" or "visa guarantee" fees, pressure and secrecy, payment in cash or through the student's own account.
+- **Scenario 3 (PK to US/UK tuition):** a family brings an offer letter from an "education consultant" who asks for fees to be paid to their account. The agent checks with the university and gets *no such applicant*. The safety layer blocks any payment to the consultant. The agent explains gently, tells the family not to pay anything more, keeps the evidence, and points to the authorities (confirm the current reporting channel in Pakistan before naming it).
+- **Careful wording:** messages after a fraud is found must never blame the family ("this is not your fault; nothing more has been paid; here is what to do next"). In a real product, also link to support resources. Ask someone you trust to read these messages.
+
+**Using the story in the pitch:** don't use her name or photo. Describe it as "a recent case reported in Pakistan", cite the news, keep it short and respectful, and keep your own Bangkok story as the opening. If in doubt, mention the problem in general terms (fake study-abroad agents) and cite the case only in the written documents.
+
 ## Day plan
 
 ### Oct 14 (today), rest of the day
@@ -70,13 +101,15 @@ Risk: tool-calling reliability over a 15-tool, multi-step case is unproven on De
 - [ ] **C** Smarter sandbox institutions: multi-intent replies (see findings), so live runs flow without loops
 - [ ] **C** Cancel or skip stale follow-ups; tighten the prompt where live runs wander
 - [ ] **C+Y** Run both scenarios Live until each completes cleanly; record the best runs (Replay)
-- [ ] **C** Agent eval: a script that runs each scenario Live N times and reports success rate, steps, cost, failures
+- [ ] **C** **A3** Agent eval: a script that runs each scenario Live N times and reports success rate, steps, cost, failures, plus a chart for the deck
+- [ ] **Y** **A4** Start the interviews: 5-10 people (students abroad, families who paid hospitals abroad), 10 minutes each
 - [ ] **Y** Call or visit a bank's FX desk: medical remittance process, form name, documents, timing. Write down what they say.
 - [ ] **Y** Email the organiser (wangyr@pbcsf.tsinghua.edu.cn): does the 0–5 point **on-chain challenge bonus** apply to Topic C teams? (see COMPETITION.md)
 - [ ] **Y** Create a GitHub repository and push (the source-code item requires a GitHub link)
 
 ### Oct 16: Prove it's safe with the real model
 - [ ] **C** LLM-level red-team set (~20 attacks): forged invoices, hidden instructions, look-alike senders, "the hospital says skip verification", family pressure to split quotas, fake urgency, instructions in a PDF, requests to email a new address. Run against DeepSeek with and without the safety layer; report attack success rate before/after. This becomes the core of the security report.
+- [ ] **C** **A2** Privacy firewall: mask personal data before it reaches the LLM, restore it only in our code, show "what the AI saw" in the Security Centre; add red-team cases for data leakage
 - [ ] **C** Real passkey approval (WebAuthn: register once, fingerprint/face per approval), with hold-to-approve as fallback
 - [ ] **C** Upload your own bill: photo or PDF of an invoice → extraction (vision model via OpenAI credits if DeepSeek vision isn't available) → agent works from it. Strong live-demo moment: "show us any hospital bill".
 - [ ] **T** Draft the demo video script ([VIDEO_SCRIPT.md](VIDEO_SCRIPT.md), to create)
@@ -85,7 +118,8 @@ Risk: tool-calling reliability over a 15-tool, multi-step case is unproven on De
 Pick by value; the first three are the strongest.
 - [ ] **C** If the organiser says yes to the bonus: **anchor the log on-chain**: publish the activity log's head hash to a public test network at each case milestone, link the transaction from the Security Centre. Real on-chain hashes, cheap, and it strengthens tamper-evidence. (½ day)
 - [ ] **C** **Multi-currency view** (named in Topic C): per case, what left in PKR/CNY, what arrived in THB/GBP, fees and tax per route, refunds back in home currency
-- [ ] **C** Third corridor, **PK→GB university fees** (rules already in `pk-sbp.json`): shows the "one agent, new rules file" claim live
+- [ ] **C** **A1** Admission-fraud protection and **scenario 3 (PK to UK/US tuition, fake agent)**, which also delivers the third corridor (rules already in `pk-sbp.json`)
+- [ ] **C** **A5** Chaos mode *or* **A6** bank-officer view (whichever is further along)
 - [ ] **C** "Why?" on every rule chip: tap a rule ID to see a plain-language explanation and its source, in the family's language
 - [ ] **C** Receipt pack: one-tap PDF of all invoices, receipts, forms and the verified log, for insurance claims and tax records (and the "execution evidence" deliverable)
 - [ ] **C** WhatsApp-style notifications (simulated): families in Pakistan live on WhatsApp; show the agent's messages arriving there
@@ -96,6 +130,7 @@ Pick by value; the first three are the strongest.
 ### Oct 18: Polish and deploy, then feature freeze
 - [ ] **C** Accessibility pass (contrast, focus states, screen-reader labels), dark mode check, empty and error states, loading skeletons
 - [ ] **C** Sound and motion polish for the video: approval success, payment arrival
+- [ ] **C** **A8** PWA: manifest, icons, full-screen; test install on Android and iPhone (optional APK wrapper only if everything else is done)
 - [ ] **C+Y** Deploy to a server outside mainland China (Singapore/HK/Tokyo) on our own domain (`carrypay.app` / `carrypayments.com` were free on Oct 14); HTTPS; long-running Node process
 - [ ] **Y** Test the URL with a "website speed test from China" tool
 - [ ] **All** End of day: **feature freeze.** Only fixes after this.
@@ -103,7 +138,7 @@ Pick by value; the first three are the strongest.
 ### Oct 19: Make the package
 - [ ] **T+Y** Record the video (stage at 1920×1080, Live or Replay, voiceover recorded separately)
 - [ ] **M** Bilingual subtitles 中英双语 from the final script (prompt 4), then **a native Chinese speaker checks them**
-- [ ] **T** Deck (≤10 min, ~12 slides)
+- [ ] **T** Deck (≤10 min, ~12 slides), including the **A7** business-model slide, the **A3** evaluation chart and **A4** interview quotes
 - [ ] **C** Finalise [TECHNICAL.md](TECHNICAL.md) and [SECURITY.md](SECURITY.md) with the DeepSeek results and the red-team numbers
 - [ ] **C** Export execution evidence: ledger JSON + verification + anchors for each scenario
 - [ ] **All** **Submit the full package tonight**
