@@ -1,0 +1,150 @@
+import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import path from "node:path";
+import type { Actor, LedgerEntry, World } from "@/domain/types";
+import { GENESIS_HASH, hashEntry } from "./hash";
+
+const DATA_DIR = process.env.CARRYPAY_DATA_DIR || path.join(process.cwd(), ".data");
+const WORLD_FILE = path.join(DATA_DIR, "world.json");
+const LEDGER_FILE = path.join(DATA_DIR, "ledger.jsonl");
+const ANCHOR_FILE = path.join(DATA_DIR, "anchors.json");
+
+export interface CommitInput {
+  actor: Actor;
+  type: string;
+  caseId?: string;
+  narration?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface Anchor {
+  seq: number;
+  hash: string;
+  at: string;
+  simAt: string;
+  note: string;
+}
+
+export interface Trigger {
+  caseId: string;
+  reason: string;
+  detail?: string;
+}
+
+export class Store extends EventEmitter {
+  world!: World;
+  ledger: LedgerEntry[] = [];
+  anchors: Anchor[] = [];
+  private saveTimer: NodeJS.Timeout | null = null;
+  private changeTimer: NodeJS.Timeout | null = null;
+
+  load(seed: () => World) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (fs.existsSync(WORLD_FILE)) {
+      this.world = JSON.parse(fs.readFileSync(WORLD_FILE, "utf8"));
+      this.ledger = fs.existsSync(LEDGER_FILE)
+        ? fs.readFileSync(LEDGER_FILE, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l))
+        : [];
+      this.anchors = fs.existsSync(ANCHOR_FILE) ? JSON.parse(fs.readFileSync(ANCHOR_FILE, "utf8")) : [];
+      // never resume mid-run after a restart
+      this.world.agent.status = this.world.agent.killSwitch ? "stopped" : "idle";
+      this.world.agent.currentCaseId = undefined;
+    } else {
+      this.reset(seed());
+    }
+  }
+
+  reset(world: World) {
+    this.world = world;
+    this.ledger = [];
+    this.anchors = [];
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(LEDGER_FILE, "");
+    fs.writeFileSync(ANCHOR_FILE, "[]");
+    this.saveNow();
+    this.changed();
+  }
+
+  nextId(prefix: string): string {
+    const n = (this.world.counters[prefix] ?? 0) + 1;
+    this.world.counters[prefix] = n;
+    return `${prefix}_${n}`;
+  }
+
+  /** Append a hash-chained entry to the activity log. */
+  log(input: CommitInput): LedgerEntry {
+    const prev = this.ledger.at(-1);
+    const base: Omit<LedgerEntry, "hash"> = {
+      seq: (prev?.seq ?? 0) + 1,
+      at: new Date().toISOString(),
+      simAt: this.world.now,
+      actor: input.actor,
+      type: input.type,
+      caseId: input.caseId,
+      narration: input.narration,
+      data: input.data ?? {},
+      prevHash: prev?.hash ?? GENESIS_HASH,
+    };
+    const entry: LedgerEntry = { ...base, hash: hashEntry(base) };
+    this.ledger.push(entry);
+    fs.appendFileSync(LEDGER_FILE, JSON.stringify(entry) + "\n");
+    this.scheduleSave();
+    this.changed();
+    return entry;
+  }
+
+  mutate(fn: (w: World) => void) {
+    fn(this.world);
+    this.scheduleSave();
+    this.changed();
+  }
+
+  trigger(t: Trigger) {
+    this.emit("trigger", t);
+  }
+
+  addAnchor(note: string): Anchor {
+    const head = this.ledger.at(-1);
+    const anchor: Anchor = {
+      seq: head?.seq ?? 0,
+      hash: head?.hash ?? GENESIS_HASH,
+      at: new Date().toISOString(),
+      simAt: this.world.now,
+      note,
+    };
+    this.anchors.push(anchor);
+    fs.writeFileSync(ANCHOR_FILE, JSON.stringify(this.anchors, null, 2));
+    this.changed();
+    return anchor;
+  }
+
+  /** Test hook for the "tamper" demo: edit a stored entry without re-hashing. */
+  tamper(seq: number, narration: string): boolean {
+    const e = this.ledger.find((x) => x.seq === seq);
+    if (!e) return false;
+    e.narration = narration;
+    fs.writeFileSync(LEDGER_FILE, this.ledger.map((x) => JSON.stringify(x)).join("\n") + "\n");
+    this.changed();
+    return true;
+  }
+
+  private scheduleSave() {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      this.saveNow();
+    }, 150);
+  }
+
+  private saveNow() {
+    fs.writeFileSync(WORLD_FILE, JSON.stringify(this.world));
+  }
+
+  private changed() {
+    if (this.changeTimer) return;
+    this.changeTimer = setTimeout(() => {
+      this.changeTimer = null;
+      this.emit("change", this.ledger.at(-1)?.seq ?? 0);
+    }, 60);
+  }
+}
