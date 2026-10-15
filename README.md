@@ -6,7 +6,7 @@ CarryPay is an AI agent that pays a family's hospital and university bills abroa
 
 Built for the 2026 Shenzhen International FinTech Competition, International Track (Topic C: Cross-border & Student Finance Assistant).
 
-**Live demo:** https://carrypay.169-58-44-4.sslip.io (family app at [/app](https://carrypay.169-58-44-4.sslip.io/app), demo stage at [/stage](https://carrypay.169-58-44-4.sslip.io/stage)). Sandbox only: fictional institutions, no real money.
+**Live demo:** https://carrypay.duckdns.org (family app at [/app](https://carrypay.duckdns.org/app), demo stage at [/stage](https://carrypay.duckdns.org/stage)). Sandbox only: fictional institutions, no real money.
 
 ## Documentation
 

@@ -4,7 +4,7 @@ CarryPay is one long-running Node process: the agent, the sandbox world, the tim
 
 ## Where it runs now (15 Oct)
 
-https://carrypay.169-58-44-4.sslip.io: a VPS in France that also hosts another project. CarryPay lives in `/opt/carrypay` (`docker-compose.shared.yml` + `deploy/compose.join-proxy.yml`, `PROXY_NETWORK=citelyra_default`) and joins that project's Caddy container's network as `carrypay`, with no port published. Its site block was appended to `/opt/citelyra/Caddyfile` (backup next to it, `Caddyfile.bak-before-carrypay-*`); Caddy got the Let's Encrypt certificate itself. The public world is set to Replay mode, so visitors cost no AI credits.
+https://carrypay.duckdns.org (also https://carrypay.169-58-44-4.sslip.io): a VPS in France that also hosts another project. CarryPay lives in `/opt/carrypay` (`docker-compose.shared.yml` + `deploy/compose.join-proxy.yml`, `PROXY_NETWORK=citelyra_default`) and joins that project's Caddy container's network as `carrypay`, with no port published. Its site block (both names) was appended to `/opt/citelyra/Caddyfile` (backup next to it, `Caddyfile.bak-before-carrypay-*`); Caddy got the Let's Encrypt certificate itself. `carrypay.duckdns.org` is a free DuckDNS name pointed at the server's IP (DuckDNS account: the project owner's). Passkeys belong to one hostname, so register them on the DuckDNS name. The public world is set to Replay mode, so visitors cost no AI credits.
 
 Update after a push: `ssh root@169.58.44.4 'cd /opt/carrypay && git pull && PROXY_NETWORK=citelyra_default docker compose -f docker-compose.shared.yml -f deploy/compose.join-proxy.yml up -d --build'`.
 
