@@ -423,11 +423,10 @@ const zh: Dict = {
   viewingAs: "谁在使用这部手机",
   onlyPayerApproves: "只有{name}可以批准这笔付款：它从{name}的账户或银行卡支付。您可以查看全部进展，如有疑问也可以拒绝。",
   switchToPayer: "这是{name}的手机",
-  // TODO zh
   voiceRecord: "录一段语音",
   voiceStop: "停止并发送",
-  voiceWorking: "正在把语音转成文字…",
-  voiceNote: "语音由 OpenAI 的语音识别转成文字；CarryPay 只保存文字，AI 代理看到的内容会隐去姓名。",
+  voiceWorking: "正在把您的话写成文字…",
+  voiceNote: "语音由 OpenAI 的语音识别写成文字；CarryPay 只保存文字，AI 看到时姓名会隐去。",
   voiceLabel: "语音消息",
   listen: "朗读",
   stopListening: "停止",

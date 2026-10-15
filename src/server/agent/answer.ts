@@ -41,8 +41,7 @@ export async function answerFamily(store: Store, caseId: string, question: strin
     store.log({ actor: "agent", type: "agent.answer", caseId, narration: zh ? "回答了家人的问题" : "Answered the family's question", data: { messageId: id, ...data } });
   };
   if (!cfg.apiKey || cfg.provider === "anthropic") {
-    // TODO zh
-    post(zh ? "这是录制好的演示，AI 现在不能回答新问题。在 Director 里切换到 Live 模式即可直接和 AI 对话。" : "This demo is following a recorded run, so the AI can't answer new questions right now. Switch the Director to Live mode to talk to it directly.", { model: null });
+    post(zh ? "这个演示正在回放录制内容，AI 现在不能回答新问题。在 Director 里切换到 Live 模式，就能直接和 AI 对话。" : "This demo is following a recorded run, so the AI can't answer new questions right now. Switch the Director to Live mode to talk to it directly.", { model: null });
     return;
   }
   const vault = buildVault(store.world, caseId);
@@ -57,11 +56,9 @@ export async function answerFamily(store: Store, caseId: string, question: strin
       if (!fb) throw err;
       out = await ask(fb, user);
     }
-    // TODO zh
-    post(vault.unmask(out.text) || (zh ? "抱歉，我暂时无法回答这个问题。" : "Sorry, I can't answer that right now."), { model: out.model, withheld: vault.withheld() });
+    post(vault.unmask(out.text) || (zh ? "抱歉，这个问题我暂时答不了。" : "Sorry, I can't answer that right now."), { model: out.model, withheld: vault.withheld() });
   } catch {
-    // TODO zh
-    post(zh ? "抱歉，AI 暂时无法连接，请稍后再问。" : "Sorry, I couldn't reach the AI just now. Please ask again in a moment.", { model: null, error: true });
+    post(zh ? "抱歉，刚才没能连上 AI，请您稍后再问。" : "Sorry, I couldn't reach the AI just now. Please ask again in a moment.", { model: null, error: true });
   } finally {
     store.mutate((w) => (w.agent.status = w.agent.killSwitch ? "stopped" : "idle"));
   }
