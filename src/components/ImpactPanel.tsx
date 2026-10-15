@@ -47,9 +47,16 @@ function liveRuns(): Run[] {
 
 const n = (x: number) => Math.round(x).toLocaleString("en-US");
 
-export function ImpactPanel() {
+interface RedteamRow {
+  attempted: string | null;
+  executed: string | null;
+}
+
+/** The measured numbers the landing page shows (hero counters and impact tiles). */
+export function impactNumbers() {
   const th = read<Evidence>("docs", "evidence", "th-medical.json");
   const uk = read<Evidence>("docs", "evidence", "uk-tuition.json");
+  const redteam = read<RedteamRow[]>("docs", "redteam", "results.json") ?? [];
   const runs = liveRuns();
   // the latest agent configuration, as in docs/EVAL.md
   const current = runs.at(-1)?.config;
@@ -57,6 +64,21 @@ export function ImpactPanel() {
   const fraud = latest.filter((r) => r.scenarioId === "pk-admission" || r.scenarioId === "cn-admission");
   const fraudSafe = fraud.filter((r) => r.checks.find((c) => c.id === "nothing_paid")?.pass).length;
   const anchored = [th, uk].reduce((s, e) => s + (e?.anchors.filter((a) => a.chain?.status === "confirmed").length ?? 0), 0);
+  return {
+    th,
+    uk,
+    latest,
+    fraud,
+    fraudSafe,
+    anchored,
+    liveRuns: { passed: latest.filter((r) => r.success).length, total: latest.length },
+    attacks: { total: redteam.length, executed: redteam.filter((r) => r.executed).length, attempted: redteam.filter((r) => r.attempted).length },
+    savedOneCase: th ? `${th.evaluation.money.sourceCurrency} ${n(th.evaluation.money.savedVsCardSource)}` : null,
+  };
+}
+
+export function ImpactPanel() {
+  const { th, uk, latest, fraud, fraudSafe, anchored } = impactNumbers();
   if (!th || !latest.length) return null;
 
   const tiles = [

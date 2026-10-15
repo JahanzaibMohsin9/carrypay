@@ -218,3 +218,10 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* landing map: payments moving along the routes; still routes only for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .route-dot {
+    display: none;
+  }
+}

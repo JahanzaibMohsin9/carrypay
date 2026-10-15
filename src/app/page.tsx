@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, BadgeCheck, Ban, Banknote, FileSignature, Fingerprint, Link2, Mail, OctagonX, Route, Scale } from "lucide-react";
+import { BadgeCheck, Ban, Banknote, FileSignature, Fingerprint, Link2, Mail, OctagonX, Route, Scale } from "lucide-react";
 import { Logo } from "@/components/ui";
-import { SiteNav } from "@/components/SiteNav";
 import { Flag } from "@/components/Flag";
 import { ImpactPanel } from "@/components/ImpactPanel";
+import { Hero } from "@/components/landing/Hero";
 
 const STEPS = [
   { icon: Mail, title: "It talks to the institution", text: "Emails the hospital or university's verified desk, gets the estimate, the deposit deadline and the bank details." },
@@ -24,40 +24,7 @@ const SAFETY = [
 export default function Landing() {
   return (
     <div className="min-h-dvh bg-bg text-ink">
-      <SiteNav />
-
-      <section className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-16 pt-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <div>
-          <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-brand-soft px-3 py-1 text-[12.5px] font-semibold text-brand-strong">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand" /> AI agent · cross-border hospital & tuition payments
-          </p>
-          <h1 className="text-[42px] font-bold leading-[1.05] tracking-tight sm:text-[58px]">
-            Never carry cash
-            <br />
-            across borders again.
-          </h1>
-          <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-ink-2">
-            CarryPay is an AI agent that pays your family&apos;s hospital and university bills abroad: legally, safely and for less. It deals with the hospital, the bank, the forms and the regulations. You just approve.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/demo" className="inline-flex h-12 items-center gap-2 rounded-full bg-brand px-6 text-[15px] font-semibold text-brand-ink hover:bg-brand-strong">
-              Watch it handle a real case <ArrowRight size={17} />
-            </Link>
-            <Link href="/app" className="inline-flex h-12 items-center gap-2 rounded-full border border-line-strong bg-surface px-6 text-[15px] font-semibold">
-              Open the family app
-            </Link>
-          </div>
-          <p className="mt-4 text-[12.5px] text-ink-3">Sandbox demo with simulated hospital, university and bank. No real money moves.</p>
-        </div>
-        <div className="relative mx-auto hidden w-[320px] lg:block" style={{ aspectRatio: "390 / 844" }}>
-          <div aria-hidden className="absolute -inset-16 -z-0 rounded-full bg-brand opacity-15 blur-3xl" />
-          <div className="relative h-full rounded-[48px] bg-[#1b1f1e] p-[9px] shadow-float">
-            <div className="h-full overflow-hidden rounded-[40px] bg-bg">
-              <iframe src="/app" title="CarryPay family app preview" className="h-full w-full border-0" />
-            </div>
-          </div>
-        </div>
-      </section>
+      <Hero />
 
       <section className="border-y border-line bg-surface">
         <div className="mx-auto max-w-3xl px-5 py-14">
