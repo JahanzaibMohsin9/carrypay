@@ -231,7 +231,8 @@ export function seedUpload(bill: UploadedBill, startAt = new Date().toISOString(
     { id: "p_subject", name: bill.subjectName.trim(), role: medical ? "patient" : "student", adult: true, abroad: medical && bill.alreadyAbroad, priorFxYearUSD: samePerson ? bill.priorFxYearUSD : undefined },
   ];
   if (!samePerson) {
-    people.push({ id: "p_payer", name: bill.payerName.trim(), role: medical ? "attendant" : "parent", adult: true, abroad: medical && bill.alreadyAbroad, priorFxYearUSD: bill.priorFxYearUSD });
+    // the payer is the one holding the phone: first in the list, so the app opens as them
+    people.unshift({ id: "p_payer", name: bill.payerName.trim(), role: medical ? "attendant" : "parent", adult: true, abroad: medical && bill.alreadyAbroad, priorFxYearUSD: bill.priorFxYearUSD });
   }
   const zh = bill.lang === "zh";
   w.cases.case_up = {

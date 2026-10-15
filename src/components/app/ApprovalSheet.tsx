@@ -1,10 +1,11 @@
 "use client";
 
 import { motion } from "motion/react";
-import { BadgeCheck, Check, ChevronDown, Clock, FileSignature, Fingerprint, Info, KeyRound, ShieldCheck, TriangleAlert } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, Clock, FileSignature, Fingerprint, Info, KeyRound, ShieldCheck, TriangleAlert, Users } from "lucide-react";
 import { useRef, useState } from "react";
 import { useCarry, post } from "@/lib/client";
 import { approveWithPasskey, passkeysSupported, registerPasskey } from "@/lib/passkey";
+import { setViewer, useViewer } from "@/lib/viewer";
 import { ROUTE_KEY, useT } from "@/lib/i18n";
 import { caseTz } from "@/lib/selectors";
 import { cn, dateTime, money } from "@/lib/format";
@@ -23,6 +24,7 @@ export function ApprovalSheet({ approvalId, onClose }: { approvalId: string | nu
   const [busy, setBusy] = useState(false);
 
   const a = state && approvalId ? state.world.approvals[approvalId] : undefined;
+  const viewer = useViewer(a && state ? state.world.cases[a.caseId] : undefined);
   const open = Boolean(a && (!a.decision || done));
   if (!state || !a) return <Sheet open={false} onClose={onClose}>{null}</Sheet>;
 
@@ -47,6 +49,8 @@ export function ApprovalSheet({ approvalId, onClose }: { approvalId: string | nu
   const forms = Object.values(w.docs).filter((d) => d.caseId === c.id && d.origin === "agent" && d.fields.invoice === inv.number);
   const arrivesAt = new Date(new Date(p.createdAt).getTime() + p.cost.arrivesInHours * 3_600_000).toISOString();
 
+  // family roles: only the person whose money pays can approve; anyone can decline
+  const notPayer = Boolean(viewer && payer && viewer !== payer.id);
   const canPasskey = passkeysSupported();
   const hasPasskey = canPasskey && state.passkeys.length > 0;
   const passkeyMode = hasPasskey && !useHold;
@@ -55,8 +59,8 @@ export function ApprovalSheet({ approvalId, onClose }: { approvalId: string | nu
     setError(null);
     setBusy(true);
     try {
-      if (decision === "approved" && method === "passkey") await approveWithPasskey(a.id);
-      else await post(`/api/approvals/${a.id}`, { decision, method: "hold" });
+      if (decision === "approved" && method === "passkey") await approveWithPasskey(a.id, viewer);
+      else await post(`/api/approvals/${a.id}`, { decision, method: "hold", as: viewer });
       if (decision === "approved") {
         setDone(true);
         setTimeout(onClose, 1100);
@@ -215,17 +219,27 @@ export function ApprovalSheet({ approvalId, onClose }: { approvalId: string | nu
         {error && <p className="rounded-xl bg-danger-soft px-3 py-2 text-[13px] text-danger">{error}</p>}
 
         <div className="sticky bottom-0 -mx-5 space-y-1.5 border-t border-line/60 bg-surface px-5 pb-1 pt-3">
-          {passkeyMode ? (
+          {notPayer && payer ? (
+            <div className="space-y-2 rounded-2xl bg-info-soft p-3 text-[13px] text-info">
+              <p className="flex items-start gap-1.5 font-semibold">
+                <Users size={15} className="mt-px shrink-0" />
+                {t("onlyPayerApproves").replaceAll("{name}", payer.name)}
+              </p>
+              <button onClick={() => setViewer(c, payer.id)} className="rounded-full bg-info px-3 py-1.5 text-[12.5px] font-semibold text-white">
+                {t("switchToPayer").replaceAll("{name}", payer.name)}
+              </button>
+            </div>
+          ) : passkeyMode ? (
             <PasskeyButton done={done} busy={busy} label={done ? t("approved") : t("approveWithPasskey")} onClick={() => decide("approved", "passkey")} />
           ) : (
             <HoldToApprove done={done} label={done ? t("approved") : t("holdToApprove")} onComplete={() => decide("approved")} />
           )}
-          {!done && hasPasskey && (
+          {!done && !notPayer && hasPasskey && (
             <button onClick={() => setUseHold((v) => !v)} className={cn("mx-auto block rounded-full px-3 py-1 text-[12px] font-semibold text-ink-3 hover:bg-surface-3 hover:text-ink", urdu && "urdu")}>
               {useHold ? t("approveWithPasskey") : t("holdInstead")}
             </button>
           )}
-          {!done && canPasskey && !hasPasskey && (
+          {!done && !notPayer && canPasskey && !hasPasskey && (
             <button onClick={setUp} className={cn("mx-auto flex items-center gap-1 rounded-full px-3 py-1 text-[12px] font-semibold text-brand hover:bg-brand-softer", urdu && "urdu")}>
               <KeyRound size={13} /> {t("setUpPasskey")}
             </button>

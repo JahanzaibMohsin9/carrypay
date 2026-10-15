@@ -16,6 +16,7 @@ import { Flag } from "../Flag";
 import { ApprovalSheet } from "./ApprovalSheet";
 import { ApprovalSummary } from "./Overview";
 import { MessageBanner } from "./MessageBanner";
+import { setViewer, useViewer } from "@/lib/viewer";
 
 const TABS = [
   { href: "/app", key: "overview", icon: House },
@@ -40,6 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
   const c = state ? activeCase(state) : undefined;
   const pending = useMemo(() => (state && c ? pendingApprovals(state.world, c.id) : []), [state, c]);
+  const viewer = useViewer(c);
   const threats = state ? threatCount(state.world) : 0;
 
   // follow the case language when a scenario loads
@@ -112,6 +114,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {agent.killSwitch ? t("agentStopped") : working ? t("agentWorking") : t("agentIdle")}
             {working && !agent.killSwitch && <Dots />}
           </span>
+          {c.people.length > 1 && (
+            <label className="ml-auto inline-flex items-center gap-1 text-[11px] text-ink-3" dir="ltr">
+              <span className="sr-only">{t("viewingAs")}</span>
+              <select
+                value={viewer}
+                onChange={(e) => setViewer(c, e.target.value)}
+                className="h-6 max-w-[130px] truncate rounded-full border border-line bg-surface px-2 text-[11px] font-semibold text-ink-2"
+                title={t("viewingAs")}
+              >
+                {c.people.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name.split(" ")[0]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {agent.mode !== "live" && (
             <span className="rounded-full border border-dashed border-line-strong px-2 py-0.5 text-[10.5px] font-medium text-ink-3" dir="ltr">
               {agent.mode === "replay" ? "Replay of a recorded AI run" : "Scripted demo · no AI"}

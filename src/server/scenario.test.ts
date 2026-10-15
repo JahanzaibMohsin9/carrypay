@@ -126,6 +126,36 @@ describe("London tuition scenario (scripted agent)", () => {
   });
 });
 
+describe("Family roles", () => {
+  it("only the payer can approve; anyone on the case can decline", async () => {
+    const { store, next } = await boot("uk-tuition");
+    await next(); // open
+    await next(); // fee statement: the agent proposes the transfer from the father's quota
+    const { decideApprovalIn } = await import("./runtime");
+    const a = Object.values(store.world.approvals)[0];
+    expect(store.world.payments[a.paymentId].payerId).toBe("p_linwei");
+
+    expect(() => decideApprovalIn(store, a.id, "approved", "hold", undefined, "p_yuxuan")).toThrow(/Only 林伟 Lin Wei can approve/);
+    expect(store.world.approvals[a.id].decision).toBeUndefined();
+    expect(store.world.security.at(-1)?.kind).toBe("blocked_wrong_approver");
+    expect(store.ledger.at(-1)?.type).toBe("approval.refused");
+
+    decideApprovalIn(store, a.id, "approved", "hold", undefined, "p_linwei");
+    expect(store.world.approvals[a.id].decision).toBe("approved");
+    expect(store.ledger.find((e) => e.type === "approval.approved")?.data.by).toBe("p_linwei");
+  });
+
+  it("a family member who doesn't pay can still decline", async () => {
+    const { store, next } = await boot("uk-tuition");
+    await next();
+    await next();
+    const { decideApprovalIn } = await import("./runtime");
+    const a = Object.values(store.world.approvals)[0];
+    decideApprovalIn(store, a.id, "declined", "hold", undefined, "p_yuxuan");
+    expect(store.world.payments[a.paymentId].status).toBe("cancelled");
+  });
+});
+
 describe("Fake admission scenario (scripted agent)", () => {
   it("checks the offer with the university, pays nothing and tells the family gently", async () => {
     const { store, next } = await boot("pk-admission");

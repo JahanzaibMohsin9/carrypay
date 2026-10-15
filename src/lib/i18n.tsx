@@ -163,6 +163,9 @@ const en = {
   anchorHashDiffers: "the chain holds a different hash for this anchor.",
   waSimulated: "simulated",
   waDismiss: "Dismiss",
+  viewingAs: "Who is using this phone",
+  onlyPayerApproves: "Only {name} can approve this: it is paid from their account or card. You can follow everything and decline if something looks wrong.",
+  switchToPayer: "This is {name}'s phone",
 };
 
 type Dict = typeof en;
@@ -412,6 +415,9 @@ const zh: Dict = {
   anchorHashDiffers: "链上保存的哈希值与此锚点不同。",
   waSimulated: "模拟",
   waDismiss: "关闭",
+  viewingAs: "谁在使用这部手机",
+  onlyPayerApproves: "只有{name}可以批准这笔付款：它从{name}的账户或银行卡支付。您可以查看全部进展，如有疑问也可以拒绝。",
+  switchToPayer: "这是{name}的手机",
 };
 
 export const DICTS: Record<Lang, Partial<Dict>> = { en, ur, zh };

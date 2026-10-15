@@ -179,7 +179,7 @@ Pick by value; the first three are the strongest.
 - [x] **C** *(done Oct 14)* "Why?" on every rule chip: tap a rule ID to see a plain-language explanation and its source, in the family's language
 - [x] **C** *(done Oct 14: `/pack`, print to PDF)* Receipt pack: one-tap PDF of all invoices, receipts, forms and the verified log, for insurance claims and tax records (and the "execution evidence" deliverable)
 - [x] **C** *(done Oct 15: phone-style banner when a new message arrives, labelled simulated, opens Activity)* WhatsApp-style notifications (simulated): families in Pakistan live on WhatsApp; show the agent's messages arriving there
-- [ ] **C** Family roles: the attendant can follow everything, but only the payer approves money
+- [x] **C** *(done Oct 15: "who is using this phone" per device; the server refuses approval by anyone but the payer, logs it, and anyone can still decline)* Family roles: the attendant can follow everything, but only the payer approves money
 - [x] **C** *(done Oct 15: four tiles computed at build time from docs/evidence and the live eval, nothing typed in by hand)* Impact panel on the landing page: time saved, fees saved, steps handled, using the scenario numbers
 - [ ] **Y** Urdu review of the UI and agent messages (you're the native speaker)
 

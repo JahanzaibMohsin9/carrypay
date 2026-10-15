@@ -229,6 +229,7 @@ export interface SecurityEvent {
     | "blocked_forbidden"
     | "blocked_kill_switch"
     | "blocked_recipient"
+    | "blocked_wrong_approver"
     | "suspicious_message"
     | "approval_required"
     | "validation_failed";

@@ -89,14 +89,44 @@ export type PublicState = ReturnType<typeof publicState>;
 // ---------------------------------------------------------------------------
 // Family actions
 
-export function decideApproval(approvalId: string, decision: "approved" | "declined", method: "passkey" | "hold", evidence?: Record<string, unknown>) {
-  decideApprovalIn(runtime().store, approvalId, decision, method, evidence);
+export function decideApproval(approvalId: string, decision: "approved" | "declined", method: "passkey" | "hold", evidence?: Record<string, unknown>, actingPersonId?: string) {
+  decideApprovalIn(runtime().store, approvalId, decision, method, evidence, actingPersonId);
+}
+
+/**
+ * Family roles: anyone on the case can follow it and decline a payment (a brake), but only the person
+ * whose account or card pays can approve it. The family app always says who is acting; sandbox automation
+ * (Director, scripts, tests) doesn't, and is treated as the payer.
+ */
+export function checkApprover(store: Store, approvalId: string, decision: "approved" | "declined", actingPersonId?: string) {
+  const a = store.world.approvals[approvalId];
+  if (!a || decision !== "approved" || !actingPersonId) return;
+  const p = store.world.payments[a.paymentId];
+  if (actingPersonId === p.payerId) return;
+  const people = store.world.cases[a.caseId].people;
+  const payer = people.find((x) => x.id === p.payerId)?.name ?? "the payer";
+  const actor = people.find((x) => x.id === actingPersonId)?.name ?? "someone not on the case";
+  const id = store.nextId("sec");
+  store.mutate((w) =>
+    w.security.push({
+      id,
+      at: w.now,
+      caseId: a.caseId,
+      severity: "warning",
+      kind: "blocked_wrong_approver",
+      title: "Approval by someone other than the payer was refused",
+      detail: `${actor} tried to approve "${a.summary}". Only ${payer}, whose money pays it, can approve.`,
+    }),
+  );
+  store.log({ actor: "gateway", type: "approval.refused", caseId: a.caseId, narration: `Only ${payer} can approve this payment`, data: { approvalId, paymentId: p.id, actingPersonId, payerId: p.payerId } });
+  throw new Error(`Only ${payer} can approve this payment: it is paid from their account or card. You can still decline it.`);
 }
 
 /** The family's decision on a payment, applied to a given world (the app's, or a test's). */
-export function decideApprovalIn(store: Store, approvalId: string, decision: "approved" | "declined", method: "passkey" | "hold", evidence?: Record<string, unknown>) {
+export function decideApprovalIn(store: Store, approvalId: string, decision: "approved" | "declined", method: "passkey" | "hold", evidence?: Record<string, unknown>, actingPersonId?: string) {
   const a = store.world.approvals[approvalId];
   if (!a || a.decision) throw new Error("This approval is no longer pending.");
+  checkApprover(store, approvalId, decision, actingPersonId);
   const p = store.world.payments[a.paymentId];
   store.mutate((w) => {
     w.approvals[approvalId].decision = decision;
@@ -108,7 +138,7 @@ export function decideApprovalIn(store: Store, approvalId: string, decision: "ap
     type: decision === "approved" ? "approval.approved" : "approval.declined",
     caseId: a.caseId,
     narration: decision === "approved" ? `You approved: ${a.summary}` : `You declined: ${a.summary}`,
-    data: { approvalId, paymentId: a.paymentId, method, ...(evidence ? { passkey: evidence } : {}) },
+    data: { approvalId, paymentId: a.paymentId, method, ...(actingPersonId ? { by: actingPersonId } : {}), ...(evidence ? { passkey: evidence } : {}) },
   });
   if (decision === "approved") {
     setPaymentStatus(store, p.id, "approved", `Approved by family (${method})`);

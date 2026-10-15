@@ -51,7 +51,7 @@ export async function registerPasskey() {
   return post("/api/passkey/register", { credentialId: cred.id, publicKey: toB64u(publicKey), alg: res.getPublicKeyAlgorithm(), clientDataJSON: toB64u(res.clientDataJSON), label });
 }
 
-export async function approveWithPasskey(approvalId: string) {
+export async function approveWithPasskey(approvalId: string, as?: string) {
   const { challenge, allowCredentials } = (await post(`/api/approvals/${approvalId}/challenge`, {})) as { challenge: string; allowCredentials: string[] };
   const cred = (await navigator.credentials.get({
     publicKey: {
@@ -66,6 +66,7 @@ export async function approveWithPasskey(approvalId: string) {
   return post(`/api/approvals/${approvalId}`, {
     decision: "approved",
     method: "passkey",
+    as,
     assertion: { credentialId: cred.id, clientDataJSON: toB64u(res.clientDataJSON), authenticatorData: toB64u(res.authenticatorData), signature: toB64u(res.signature) },
   });
 }
