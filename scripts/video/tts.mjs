@@ -1,6 +1,6 @@
 // Voiceover for the demo video with OpenAI TTS (the key is read from .env.local, never printed).
-//   node scripts/video/tts.mjs samples            # scene 1 in several voices -> video/out/samples/
-//   node scripts/video/tts.mjs scenes <voice>     # every scene of docs/VIDEO_SCRIPT.md -> video/out/voice/
+//   node scripts/video/tts.mjs samples [voice]    # scene 1 in several voices (or one) -> video/out/samples/
+//   node scripts/video/tts.mjs scenes [voice]     # every scene of docs/VIDEO_SCRIPT.md (default cedar) -> video/out/voice/
 import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
@@ -17,7 +17,7 @@ const env = Object.fromEntries(
 const client = new OpenAI({ apiKey: env.OPENAI_API_KEY ?? process.env.OPENAI_API_KEY });
 
 export const DIRECTION =
-  "Calm, warm documentary narrator. Measured pace with natural pauses at full stops. Clear and sincere, never salesy or excited. Numbers spoken plainly.";
+  "Calm, warm documentary narrator. Unhurried pace, about 140 words a minute, with a short pause after each sentence. Clear and sincere, never salesy or excited. Numbers spoken plainly.";
 
 /** Scene id -> narration text, read from the script (lines starting with "> " under each "## n · title"). */
 export function scenesFromScript() {
@@ -51,9 +51,9 @@ async function speak(text, voice, file) {
 const [cmd, arg] = process.argv.slice(2);
 if (cmd === "samples") {
   const s1 = scenesFromScript()[0].parts.map((p) => p.text).join(" ");
-  for (const voice of ["sage", "coral", "ash", "onyx"]) console.log(path.relative(ROOT, await speak(s1, voice, path.join(OUT, "samples", `scene1-${voice}.mp3`))));
+  for (const voice of (arg ? [arg] : ["sage", "coral", "ash", "onyx"])) console.log(path.relative(ROOT, await speak(s1, voice, path.join(OUT, "samples", `scene1-${voice}.mp3`))));
 } else if (cmd === "scenes") {
-  const voice = arg ?? "sage";
+  const voice = arg ?? "cedar";
   for (const s of scenesFromScript()) for (const p of s.parts) console.log(path.relative(ROOT, await speak(p.text, voice, path.join(OUT, "voice", `${p.id}.mp3`))));
 } else {
   console.log("commands: samples | scenes <voice>");
