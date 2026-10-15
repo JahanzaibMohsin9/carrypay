@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "redteam:llm": "vitest run --config vitest.redteam.config.mts",
-    "eval:live": "vitest run --config vitest.live.config.mts"
+    "eval:live": "vitest run --config vitest.live.config.mts",
+    "docs:pdf": "node scripts/docs-pdf.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
@@ -39,6 +40,7 @@
     "@types/topojson-client": "^3.1.5",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
+    "marked": "^15.0.12",
     "playwright-core": "^1.64.1",
     "solc": "^0.8.28",
     "tailwindcss": "^4",

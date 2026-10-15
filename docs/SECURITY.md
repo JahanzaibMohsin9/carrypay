@@ -1,6 +1,6 @@
 # CarryPay: security self-assessment
 
-*Draft, Oct 14 2026: passkey approvals, the privacy firewall and the LLM-level red team (section 5) are in.*
+Version 1.0 · 15 October 2026 · companion to [TECHNICAL.md](TECHNICAL.md)
 
 ## 1. Threat model
 
