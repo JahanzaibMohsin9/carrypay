@@ -50,3 +50,10 @@ next-env.d.ts
 
 # demo video build output (voice, frames, renders)
 /video/out/
+
+# internal notes and AI-tool settings: kept locally, not published
+/docs/internal/
+/CLAUDE.md
+/AGENTS.md
+/.claude/
+/.mimocode/

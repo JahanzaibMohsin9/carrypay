@@ -2,19 +2,17 @@
 
 CarryPay is one long-running Node process: the agent, the sandbox world, the timers and the live activity stream (server-sent events) all live in memory, with the world and the hash-chained log saved to a data folder. It needs a small server, not serverless functions.
 
-## Where it runs now (15 Oct)
+## Where it runs now
 
-https://carrypay.duckdns.org (also https://carrypay.169-58-44-4.sslip.io): a VPS in France that also hosts another project. CarryPay lives in `/opt/carrypay` (`docker-compose.shared.yml` + `deploy/compose.join-proxy.yml`, `PROXY_NETWORK=citelyra_default`) and joins that project's Caddy container's network as `carrypay`, with no port published. Its site block (both names) was appended to `/opt/citelyra/Caddyfile` (backup next to it, `Caddyfile.bak-before-carrypay-*`); Caddy got the Let's Encrypt certificate itself. `carrypay.duckdns.org` is a free DuckDNS name pointed at the server's IP (DuckDNS account: the project owner's). Passkeys belong to one hostname, so register them on the DuckDNS name. The public world is set to Replay mode, so visitors cost no AI credits.
+https://carrypay.duckdns.org: a small VPS in Europe that also hosts another project. CarryPay runs with `docker-compose.shared.yml` + `deploy/compose.join-proxy.yml` and joins that project's Caddy container's network, with no port published (see "On a server that already runs other sites" below). `carrypay.duckdns.org` is a free DuckDNS name; Caddy gets the Let's Encrypt certificate itself. Passkeys belong to one hostname, so register them on that name. The public demo starts every visitor in Replay mode, so visitors cost no AI credits.
 
-Update after a push: `ssh root@169.58.44.4 'cd /opt/carrypay && git pull && PROXY_NETWORK=citelyra_default docker compose -f docker-compose.shared.yml -f deploy/compose.join-proxy.yml up -d --build'`.
-
-The server and a local `npm run dev` use the same testnet anchor wallet. Don't anchor from both at the same moment (transactions from one wallet must go one at a time); if it happens, the anchor service retries.
+The server and a local `npm run dev` can share one testnet anchor wallet. Don't anchor from both at the same moment (transactions from one wallet must go one at a time); if it happens, the anchor service retries.
 
 ## What to rent
 
 - **Region:** outside mainland China but close to it, so judges in Shenzhen and families in Pakistan both get a fast page: Singapore, Hong Kong or Tokyo. No ICP licence is needed outside the mainland.
 - **Size:** 1 vCPU, 1–2 GB RAM and 10 GB disk are enough. The model runs at DeepSeek/OpenAI, not on the server.
-- **Domain:** any domain with an A record pointing at the server (`carrypay.app` and `carrypayments.com` were free on 14 Oct). HTTPS is required: passkeys and installing the app (PWA) only work on HTTPS.
+- **Domain:** any domain with an A record pointing at the server. HTTPS is required: passkeys and installing the app (PWA) only work on HTTPS.
 - **Outbound access** to `api.deepseek.com`, `api.openai.com` and, for anchors, `evmtestnet.confluxrpc.com`.
 
 ## Run it (Docker)

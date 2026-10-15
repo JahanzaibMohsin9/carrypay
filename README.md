@@ -12,14 +12,13 @@ Built for the 2026 Shenzhen International FinTech Competition, International Tra
 
 | Doc | What's in it |
 |---|---|
-| [docs/PLAN.md](docs/PLAN.md) | Build plan to the Oct 20 deadline, owners, submission checklist |
-| [docs/COMPETITION.md](docs/COMPETITION.md) | What the official competition brief says: topic, scoring, submission items, timeline |
 | [docs/TECHNICAL.md](docs/TECHNICAL.md) | Architecture, core algorithms, LLM integration, ledger |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, permission tiers, controls, red-team results, known risks |
-| [docs/MIMO_PROMPTS.md](docs/MIMO_PROMPTS.md) | Prompts for MiMo v2.6 Pro: Chinese UI review, scenario content, subtitles |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Deploying: server, Docker + Caddy (HTTPS), checks after deploying, known limits of the public demo |
 
 > **Sandbox.** The hospital, university, banks and card network are simulated. Institutions are fictional and exchange rates are illustrative. Regulations are real and cited, each marked *official*, *reported*, *assumed* (verify with a bank) or *policy* (CarryPay's own rule).
+
+> **How it was built.** The team built CarryPay with AI coding assistants: Claude for code, MiMo for reviewing the Chinese text.
 
 ---
 

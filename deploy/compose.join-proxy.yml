@@ -1,6 +1,6 @@
 # Overlay for a server whose reverse proxy itself runs in Docker (e.g. another project's Caddy container):
 # CarryPay joins that proxy's network as "carrypay" and publishes no port at all.
-#   PROXY_NETWORK=citelyra_default docker compose -f docker-compose.shared.yml -f deploy/compose.join-proxy.yml up -d --build
+#   PROXY_NETWORK=<proxy network> docker compose -f docker-compose.shared.yml -f deploy/compose.join-proxy.yml up -d --build
 # Then in the proxy's Caddyfile:  <hostname> { reverse_proxy carrypay:3000 { flush_interval -1 } }
 services:
   app:

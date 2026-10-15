@@ -1,6 +1,6 @@
 // Voiceover for the demo video with OpenAI TTS (the key is read from .env.local, never printed).
 //   node scripts/video/tts.mjs samples [voice]    # scene 1 in several voices (or one) -> video/out/samples/
-//   node scripts/video/tts.mjs scenes [voice]     # every scene of docs/VIDEO_SCRIPT.md (default cedar) -> video/out/voice/
+//   node scripts/video/tts.mjs scenes [voice]     # every scene of docs/internal/VIDEO_SCRIPT.md (kept out of git) (default cedar) -> video/out/voice/
 import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
@@ -22,7 +22,7 @@ export const DIRECTION =
 
 /** Scene id -> narration text, read from the script (lines starting with "> " under each "## n · title"). */
 export function scenesFromScript() {
-  const text = fs.readFileSync(path.join(ROOT, "docs", "VIDEO_SCRIPT.md"), "utf8");
+  const text = fs.readFileSync(path.join(ROOT, "docs", "internal", "VIDEO_SCRIPT.md"), "utf8");
   const scenes = [];
   let cur = null;
   let part = "";
