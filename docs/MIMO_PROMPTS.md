@@ -168,3 +168,13 @@ Context:
 
 Review, improve, and remove each "// TODO zh" comment when done. Do not commit. Run `npx tsc --noEmit` and `npm test`, then list every change as: file, key, original, new, reason.
 ```
+
+---
+
+## Prompt 10: Voice notes and answers (small, before the video)
+
+Commit first. Paste the shared context, then:
+
+```
+A few new Chinese strings are marked with "// TODO zh": in src/lib/i18n.tsx (voice notes: recording, sending, the privacy note that OpenAI writes the voice down, "Listen"), in src/server/agent/answer.ts (replies when the AI can't answer: a recorded demo, a connection problem) and in src/server/runtime.ts (the daily question limit). Parents read these on their phone. Make them natural and short, keep the meaning, remove each "// TODO zh" when done, don't commit. Run `npx tsc --noEmit` and `npm test`, then list each change: file, original, new, reason.
+```

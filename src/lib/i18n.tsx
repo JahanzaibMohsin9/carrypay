@@ -423,6 +423,7 @@ const zh: Dict = {
   viewingAs: "谁在使用这部手机",
   onlyPayerApproves: "只有{name}可以批准这笔付款：它从{name}的账户或银行卡支付。您可以查看全部进展，如有疑问也可以拒绝。",
   switchToPayer: "这是{name}的手机",
+  // TODO zh
   voiceRecord: "录一段语音",
   voiceStop: "停止并发送",
   voiceWorking: "正在把语音转成文字…",
