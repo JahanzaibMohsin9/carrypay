@@ -2,6 +2,14 @@
 
 CarryPay is one long-running Node process: the agent, the sandbox world, the timers and the live activity stream (server-sent events) all live in memory, with the world and the hash-chained log saved to a data folder. It needs a small server, not serverless functions.
 
+## Where it runs now (15 Oct)
+
+https://carrypay.169-58-44-4.sslip.io: a VPS in France that also hosts another project. CarryPay lives in `/opt/carrypay` (`docker-compose.shared.yml` + `deploy/compose.join-proxy.yml`, `PROXY_NETWORK=citelyra_default`) and joins that project's Caddy container's network as `carrypay`, with no port published. Its site block was appended to `/opt/citelyra/Caddyfile` (backup next to it, `Caddyfile.bak-before-carrypay-*`); Caddy got the Let's Encrypt certificate itself. The public world is set to Replay mode, so visitors cost no AI credits.
+
+Update after a push: `ssh root@169.58.44.4 'cd /opt/carrypay && git pull && PROXY_NETWORK=citelyra_default docker compose -f docker-compose.shared.yml -f deploy/compose.join-proxy.yml up -d --build'`.
+
+The server and a local `npm run dev` use the same testnet anchor wallet. Don't anchor from both at the same moment (transactions from one wallet must go one at a time); if it happens, the anchor service retries.
+
 ## What to rent
 
 - **Region:** outside mainland China but close to it, so judges in Shenzhen and families in Pakistan both get a fast page: Singapore, Hong Kong or Tokyo. No ICP licence is needed outside the mainland.
