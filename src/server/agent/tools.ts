@@ -44,6 +44,7 @@ function tool<S extends z.ZodObject>(spec: ToolSpec<S>): ToolSpec<S> {
 
 function security(ctx: ToolCtx, ev: Omit<SecurityEvent, "id" | "at" | "caseId">) {
   const { store } = ctx;
+  if (ctx.source === "mcp") ev = { ...ev, detail: `Asked for by an outside AI assistant over MCP. ${ev.detail}` };
   const id = store.nextId("sec");
   store.mutate((w) => w.security.push({ ...ev, id, at: w.now, caseId: ctx.caseId }));
   return id;

@@ -1,5 +1,6 @@
 // Voiceover for the demo video with OpenAI TTS (the key is read from .env.local, never printed).
 //   node scripts/video/tts.mjs samples [voice]    # scene 1 in several voices (or one) -> video/out/samples/
+//   node scripts/video/tts.mjs part <id> [voice]  # one narration part only, e.g. 5b (the others are kept)
 //   node scripts/video/tts.mjs scenes [voice]     # every scene of docs/internal/VIDEO_SCRIPT.md (kept out of git) (default cedar) -> video/out/voice/
 import fs from "node:fs";
 import path from "node:path";
@@ -60,6 +61,11 @@ if (cmd === null) {
 } else if (cmd === "scenes") {
   const voice = arg ?? "cedar";
   for (const s of scenesFromScript()) for (const p of s.parts) console.log(path.relative(ROOT, await speak(p.text, voice, path.join(OUT, "voice", `${p.id}.mp3`))));
+} else if (cmd === "part") {
+  const id = arg;
+  const p = scenesFromScript().flatMap((s) => s.parts).find((x) => x.id === id);
+  if (!p) throw new Error(`No narration part ${id} in the script`);
+  console.log(path.relative(ROOT, await speak(p.text, process.argv[4] ?? "cedar", path.join(OUT, "voice", `${p.id}.mp3`))));
 } else {
-  console.log("commands: samples | scenes <voice>");
+  console.log("commands: samples | part <id> [voice] | scenes <voice>");
 }

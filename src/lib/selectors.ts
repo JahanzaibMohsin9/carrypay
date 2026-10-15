@@ -119,7 +119,7 @@ export type FeedItem =
   | { kind: "error"; entry: LedgerEntry }
   | { kind: "summary"; entry: LedgerEntry };
 
-const EVENT_TYPES = new Set(["mail.received", "payment.submitted", "payment.completed", "payment.returned", "refund.received", "case.opened", "agent.stopped", "agent.resumed"]);
+const EVENT_TYPES = new Set(["mail.received", "payment.submitted", "payment.completed", "payment.returned", "refund.received", "case.opened", "agent.stopped", "agent.resumed", "mcp.connected"]);
 
 export function feed(s: PublicState, caseId: string): FeedItem[] {
   const msgs = new Map(s.world.messages.map((m) => [m.id, m]));

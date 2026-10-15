@@ -60,6 +60,8 @@ describe("MCP server", () => {
     expect(Object.keys(store.world.payments)).toHaveLength(before);
     const entry = store.ledger.findLast((e) => e.type === "tool.propose_payment")!;
     expect(entry.data).toMatchObject({ decision: "blocked", source: "mcp" });
+    // the family's Security Centre says where the request came from
+    expect(store.world.security.at(-1)!.detail).toMatch(/outside AI assistant over MCP/);
   });
 
   it("a valid proposal waits for the family's approval; nothing moves", () => {
