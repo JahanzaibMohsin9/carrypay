@@ -1,0 +1,196 @@
+{
+  "th-medical": {
+    "at": "2026-10-15T13:21:56.021Z",
+    "mode": "replay",
+    "entries": 123,
+    "chainOk": true,
+    "success": true,
+    "failed": [],
+    "anchors": [
+      {
+        "seq": 7,
+        "note": "case opened",
+        "hash": "330ee58f1c844636985011887365dcc6daf35db3e2aa67cc8cd554e2d3203ef1",
+        "tx": "0xdec2f5b6282fc60379fe1dc5431d576fe5b4f219a77e06d4798cfb189d349d9d",
+        "block": 265311970,
+        "url": "https://evmtestnet.confluxscan.org/tx/0xdec2f5b6282fc60379fe1dc5431d576fe5b4f219a77e06d4798cfb189d349d9d",
+        "matchesChain": true
+      },
+      {
+        "seq": 34,
+        "note": "payment approved",
+        "hash": "a4371b47be5d428185e1ed69efe1bfc994332b08bbc54f121ec0740c742cb168",
+        "tx": "0x65ed84008cfe574edc8e272e56fe609a2910165ba5fee6e8a65ce9be191428ad",
+        "block": 265311985,
+        "url": "https://evmtestnet.confluxscan.org/tx/0x65ed84008cfe574edc8e272e56fe609a2910165ba5fee6e8a65ce9be191428ad",
+        "matchesChain": true
+      },
+      {
+        "seq": 43,
+        "note": "payment received",
+        "hash": "3feee6a74477e2e7b25b51ab4152740bb932317edd6a18b15fd78fa1c75f74f2",
+        "tx": "0xe3abc3e885ca13074301c342ea5ef71b3dc37bbce2ebef57ff2dcf5c6abbf086",
+        "block": 265311995,
+        "url": "https://evmtestnet.confluxscan.org/tx/0xe3abc3e885ca13074301c342ea5ef71b3dc37bbce2ebef57ff2dcf5c6abbf086",
+        "matchesChain": true
+      },
+      {
+        "seq": 68,
+        "note": "payment approved, payment received",
+        "hash": "b6b5793b65a832adca75ae5f7a27aee3df9148f777abee5d4a71255b51a7beb6",
+        "tx": "0x2b6b07ffba7e71a0e7fd1286e35bc0de7c1ae857e634588936f63b7b0619116a",
+        "block": 265312005,
+        "url": "https://evmtestnet.confluxscan.org/tx/0x2b6b07ffba7e71a0e7fd1286e35bc0de7c1ae857e634588936f63b7b0619116a",
+        "matchesChain": true
+      },
+      {
+        "seq": 80,
+        "note": "fraud flagged",
+        "hash": "aa759b32067781390054da546761a738e338c7ff2eb6c7d6fbb403c62aab3e1b",
+        "tx": "0xba7a55d8c349defb266f13c62fdcc840d5f73134fe353fd41cf45d49fef51595",
+        "block": 265312020,
+        "url": "https://evmtestnet.confluxscan.org/tx/0xba7a55d8c349defb266f13c62fdcc840d5f73134fe353fd41cf45d49fef51595",
+        "matchesChain": true
+      },
+      {
+        "seq": 123,
+        "note": "refund received, case closed",
+        "hash": "7cd6951e941f004f451105f0cca7f61638959b85ca903a4d93862a59f8afc1b3",
+        "tx": "0x5997d3e56e76eab931ad8989c5f4a760b7d2d1233a203e2295995ed048fdd603",
+        "block": 265312035,
+        "url": "https://evmtestnet.confluxscan.org/tx/0x5997d3e56e76eab931ad8989c5f4a760b7d2d1233a203e2295995ed048fdd603",
+        "matchesChain": true
+      }
+    ]
+  },
+  "uk-tuition": {
+    "at": "2026-10-15T13:21:56.022Z",
+    "mode": "replay",
+    "entries": 59,
+    "chainOk": true,
+    "success": true,
+    "failed": [],
+    "anchors": [
+      {
+        "seq": 7,
+        "note": "case opened",
+        "hash": "030a5fc859bce63fba8d3a02f235d619004ed689585e8011d8d6dd2861937fce",
+        "tx": "0x62375a7563e37b163a7b1a59427b5d5db5d39003c2ebaff9975941826545de1b",
+        "block": 265312055,
+        "url": "https://evmtestnet.confluxscan.org/tx/0x62375a7563e37b163a7b1a59427b5d5db5d39003c2ebaff9975941826545de1b",
+        "matchesChain": true
+      },
+      {
+        "seq": 37,
+        "note": "payment approved",
+        "hash": "0fdabb42b95a3f163676b56b759575d6b40eb6509c8874cd9a2ee930c3152a08",
+        "tx": "0x170e926392696d9e857d6a5c7f745da5e5e3712d05419ecb3003caf52e42c225",
+        "block": 265312070,
+        "url": "https://evmtestnet.confluxscan.org/tx/0x170e926392696d9e857d6a5c7f745da5e5e3712d05419ecb3003caf52e42c225",
+        "matchesChain": true
+      },
+      {
+        "seq": 51,
+        "note": "payment received",
+        "hash": "e1dbfe802e79d223cde02bf6b24f3d8892647e8cf9a9dcb6d0b6ffed4fe869bd",
+        "tx": "0xe2616f770e19948ab99351b6c787f19607c1d60007631dd69148976fc4b99607",
+        "block": 265312080,
+        "url": "https://evmtestnet.confluxscan.org/tx/0xe2616f770e19948ab99351b6c787f19607c1d60007631dd69148976fc4b99607",
+        "matchesChain": true
+      },
+      {
+        "seq": 59,
+        "note": "case closed",
+        "hash": "2e8e615841146caae8703f9b69f3ff700720a3f5a9c0f74cbba7e8d5d332bf8a",
+        "tx": "0x8440d25065dac75a659aeb85f75c2a93f7f043ad2c3a5bc9d619b7bc74643b84",
+        "block": 265312090,
+        "url": "https://evmtestnet.confluxscan.org/tx/0x8440d25065dac75a659aeb85f75c2a93f7f043ad2c3a5bc9d619b7bc74643b84",
+        "matchesChain": true
+      }
+    ]
+  },
+  "pk-admission": {
+    "at": "2026-10-15T13:21:56.022Z",
+    "mode": "replay",
+    "entries": 30,
+    "chainOk": true,
+    "success": true,
+    "failed": [],
+    "anchors": [
+      {
+        "seq": 8,
+        "note": "case opened, fraud flagged",
+        "hash": "621b8e40c83ade945f182122d108a967dd11187ad3fb8b5fc2e1cda3f99378f5",
+        "tx": "0x73a347b259777c311edc7dc03ef8857dca0bf57a6016768a0cfcd52317f8ba6e",
+        "block": 265312105,
+        "url": "https://evmtestnet.confluxscan.org/tx/0x73a347b259777c311edc7dc03ef8857dca0bf57a6016768a0cfcd52317f8ba6e",
+        "matchesChain": true
+      }
+    ]
+  },
+  "cn-admission": {
+    "at": "2026-10-15T13:21:56.022Z",
+    "mode": "replay",
+    "entries": 29,
+    "chainOk": true,
+    "success": true,
+    "failed": [],
+    "anchors": [
+      {
+        "seq": 8,
+        "note": "case opened, fraud flagged",
+        "hash": "80c14c10d0b4b07ab96e527b2bfbf9c5982f1b5f6443a56869c1ad0ec148227f",
+        "tx": "0x4a7e792d76dba51aec10f945712a22901474604546aa34335a0cd0cc6594786e",
+        "block": 265312125,
+        "url": "https://evmtestnet.confluxscan.org/tx/0x4a7e792d76dba51aec10f945712a22901474604546aa34335a0cd0cc6594786e",
+        "matchesChain": true
+      },
+      {
+        "seq": 29,
+        "note": "case closed",
+        "hash": "4fe9efa5e12fd5c139c86e9ef11f4a9de8f372c79eb74d4b4fd5db29cd9d3c72",
+        "tx": "0xa995391d1a6fac477a25fe6089419925d13b0ba59346d54f977892f0b9960413",
+        "block": 265312140,
+        "url": "https://evmtestnet.confluxscan.org/tx/0xa995391d1a6fac477a25fe6089419925d13b0ba59346d54f977892f0b9960413",
+        "matchesChain": true
+      }
+    ]
+  },
+  "upload": {
+    "at": "2026-10-15T13:21:56.022Z",
+    "mode": "scripted",
+    "entries": 25,
+    "chainOk": true,
+    "success": true,
+    "failed": [],
+    "anchors": [
+      {
+        "seq": 7,
+        "note": "case opened",
+        "hash": "afc27a681654b062b0459228d8c03a7e1d44a39c888d7c49153ace2c5db4d685",
+        "tx": "0x0e837f35492c6a24a865dffe84548b891281e2ad95660aa65a69d84cbed4cd0f",
+        "block": 265312162,
+        "url": "https://evmtestnet.confluxscan.org/tx/0x0e837f35492c6a24a865dffe84548b891281e2ad95660aa65a69d84cbed4cd0f",
+        "matchesChain": true
+      },
+      {
+        "seq": 16,
+        "note": "institution verified",
+        "hash": "b3d12d2379c6e54a2aae7fffc884f55257689ebb9b55604dfc38c68ab62c6683",
+        "tx": "0xd2c3b7e106433849f298c3ab2e70bb62525d7980abb731ddeedea00367498692",
+        "block": 265312180,
+        "url": "https://evmtestnet.confluxscan.org/tx/0xd2c3b7e106433849f298c3ab2e70bb62525d7980abb731ddeedea00367498692",
+        "matchesChain": true
+      },
+      {
+        "seq": 25,
+        "note": "payment approved, payment received, case closed",
+        "hash": "72b77189d81b867b9e0fa4567d60fa481bc35c81c4d4a347ef6ee69db77091cd",
+        "tx": "0x407ba32b773340b59b25fd2950e4fea00fc77dbd6de6912e4b4a007767c587ec",
+        "block": 265312190,
+        "url": "https://evmtestnet.confluxscan.org/tx/0x407ba32b773340b59b25fd2950e4fea00fc77dbd6de6912e4b4a007767c587ec",
+        "matchesChain": true
+      }
+    ]
+  }
+}

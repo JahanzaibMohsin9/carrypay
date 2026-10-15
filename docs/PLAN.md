@@ -178,9 +178,9 @@ Pick by value; the first three are the strongest.
 - [x] **C** *(both done Oct 14: chaos buttons in the Director, `/bank/officer`)* **A5** Chaos mode *or* **A6** bank-officer view (whichever is further along)
 - [x] **C** *(done Oct 14)* "Why?" on every rule chip: tap a rule ID to see a plain-language explanation and its source, in the family's language
 - [x] **C** *(done Oct 14: `/pack`, print to PDF)* Receipt pack: one-tap PDF of all invoices, receipts, forms and the verified log, for insurance claims and tax records (and the "execution evidence" deliverable)
-- [ ] **C** WhatsApp-style notifications (simulated): families in Pakistan live on WhatsApp; show the agent's messages arriving there
+- [x] **C** *(done Oct 15: phone-style banner when a new message arrives, labelled simulated, opens Activity)* WhatsApp-style notifications (simulated): families in Pakistan live on WhatsApp; show the agent's messages arriving there
 - [ ] **C** Family roles: the attendant can follow everything, but only the payer approves money
-- [ ] **C** Impact panel on the landing page: time saved, fees saved, steps handled, using the scenario numbers
+- [x] **C** *(done Oct 15: four tiles computed at build time from docs/evidence and the live eval, nothing typed in by hand)* Impact panel on the landing page: time saved, fees saved, steps handled, using the scenario numbers
 - [ ] **Y** Urdu review of the UI and agent messages (you're the native speaker)
 
 ### Oct 18: Polish and deploy, then feature freeze
@@ -196,7 +196,7 @@ Pick by value; the first three are the strongest.
 - [ ] **M** Bilingual subtitles 中英双语 from the final script (prompt 4), then **a native Chinese speaker checks them**
 - [ ] **T** Deck (≤10 min, ~12 slides), including the **A7** business-model slide, the **A3** evaluation chart and **A4** interview quotes
 - [ ] **C** Finalise [TECHNICAL.md](TECHNICAL.md) and [SECURITY.md](SECURITY.md) with the DeepSeek results and the red-team numbers
-- [ ] **C** Export execution evidence: ledger JSON + verification + anchors for each scenario
+- [x] **C** *(done Oct 15: `node scripts/evidence.mjs` → [evidence/README.md](evidence/README.md); 5 scenarios, all checks pass, 16 anchors on Conflux eSpace testnet, all match the chain)* Export execution evidence: ledger JSON + verification + anchors for each scenario
 - [ ] **All** **Submit the full package tonight**
 
 ### Oct 20: Buffer

@@ -161,6 +161,8 @@ const en = {
   anchorCheckBad: "Doesn't match:",
   anchorLogChanged: "the log was changed after it was anchored, at entry",
   anchorHashDiffers: "the chain holds a different hash for this anchor.",
+  waSimulated: "simulated",
+  waDismiss: "Dismiss",
 };
 
 type Dict = typeof en;
@@ -408,6 +410,8 @@ const zh: Dict = {
   anchorCheckBad: "与链上不一致：",
   anchorLogChanged: "记录在锚定后被改动，位置：条目",
   anchorHashDiffers: "链上保存的哈希值与此锚点不同。",
+  waSimulated: "模拟",
+  waDismiss: "关闭",
 };
 
 export const DICTS: Record<Lang, Partial<Dict>> = { en, ur, zh };

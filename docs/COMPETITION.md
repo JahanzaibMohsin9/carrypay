@@ -44,7 +44,7 @@ Registration and submission share the same deadline. A bilingual reminder email 
 | 03 | Demo video | Optional, no longer than 5 minutes | to make |
 | 04 | Source code | README, GitHub repository link, deployment instructions, test cases | https://github.com/JahanzaibMohsin9/carrypay + [README](../README.md) |
 | 05 | Security self-assessment | Permission-tier implementation and known-risk list | [SECURITY.md](SECURITY.md) |
-| 06 | Execution evidence | For non-on-chain topics: simulated-account / sandbox operation logs **and** demo video | `/api/ledger` export + video |
+| 06 | Execution evidence | For non-on-chain topics: simulated-account / sandbox operation logs **and** demo video | [evidence/](evidence/README.md) (per-scenario logs, checks, on-chain anchors) + [EVAL.md](EVAL.md) + video |
 
 Note: item 04 needs a **GitHub repository link**, so the repo must be pushed to GitHub before submission.
 

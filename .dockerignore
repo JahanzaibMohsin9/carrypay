@@ -6,6 +6,5 @@ node_modules
 .env*
 !.env.local.example
 coverage
-docs/eval
 *.log
 tsconfig.tsbuildinfo

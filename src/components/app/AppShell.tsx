@@ -15,6 +15,7 @@ import { Dots, Logo } from "../ui";
 import { Flag } from "../Flag";
 import { ApprovalSheet } from "./ApprovalSheet";
 import { ApprovalSummary } from "./Overview";
+import { MessageBanner } from "./MessageBanner";
 
 const TABS = [
   { href: "/app", key: "overview", icon: House },
@@ -166,6 +167,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </ul>
       </nav>
+
+      {/* simulated WhatsApp notification; not on the Activity tab, where the message is already in view */}
+      <MessageBanner messages={state.world.messages.filter((m) => m.caseId === c.id)} hidden={pathname === "/app/activity" || approvalId !== null} />
 
       <ApprovalSheet key={approvalId ?? "none"} approvalId={approvalId} onClose={() => setApprovalId(null)} />
     </div>

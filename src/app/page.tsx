@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, BadgeCheck, Ban, Banknote, FileSignature, Fingerprint, Link2, Mail, OctagonX, Route, Scale } from "lucide-react";
 import { Logo } from "@/components/ui";
 import { Flag } from "@/components/Flag";
+import { ImpactPanel } from "@/components/ImpactPanel";
 
 const STEPS = [
   { icon: Mail, title: "It talks to the institution", text: "Emails the hospital or university's verified desk, gets the estimate, the deposit deadline and the bank details." },
@@ -14,7 +15,7 @@ const SAFETY = [
   { icon: BadgeCheck, title: "Verified accounts only", text: "Bank details from any email or document are checked against a verified record before money can move." },
   { icon: Ban, title: "Untrusted content stays data", text: "Instructions hidden in invoices or look-alike emails are flagged, never followed." },
   { icon: FileSignature, title: "Rules as code", text: "Limits and forms live in versioned rule files, so a policy change is one line, not a new app." },
-  { icon: Link2, title: "Tamper-evident log", text: "Every action is SHA-256 hash-chained. Anyone can verify the log in their own browser." },
+  { icon: Link2, title: "Tamper-evident log", text: "Every action is SHA-256 hash-chained and anchored on a public blockchain at each milestone. Anyone can verify it." },
   { icon: Banknote, title: "Money needs you", text: "A separate safety layer re-checks every payment the AI proposes. The AI cannot override it." },
   { icon: OctagonX, title: "Emergency stop", text: "One switch pauses everything instantly." },
 ];
@@ -98,6 +99,8 @@ export default function Landing() {
         </div>
       </section>
 
+      <ImpactPanel />
+
       <section className="bg-[#0b1312] text-[#e9f1ee]">
         <div className="mx-auto max-w-6xl px-5 py-16">
           <h2 className="text-[28px] font-bold tracking-tight">Safe by construction</h2>
@@ -120,7 +123,12 @@ export default function Landing() {
         <div className="mt-8 grid gap-4 md:grid-cols-2">
           <Corridor from="PK" to="TH" title="Pakistan → Thailand · medical treatment" rules="SBP: USD 50,000 per case direct to hospital, Appendix V-68 form, card tax 0.5% from July 2026" />
           <Corridor from="CN" to="GB" title="China → United Kingdom · university fees" rules="SAFE: USD 50,000 yearly quota, above it with proof of tuition, no 蚂蚁搬家 splitting" />
+          <Corridor from="PK" to="GB" title="Pakistan → United Kingdom · an offer through an agent" rules="No tuition until the university itself confirms the admission; fees only to its own account" />
+          <Corridor from="CN" to="GB" title="China → United Kingdom · a 留学中介 promises 保录取" rules="Same check, plus no buying pounds in relatives' names to dodge the quota" />
         </div>
+        <p className="mt-4 text-[13.5px] text-ink-2">
+          Or upload any hospital or university bill from 13 countries: CarryPay prices it under your home country&apos;s rules at once, and pays only after the bank has verified the institution.
+        </p>
       </section>
 
       <footer className="border-t border-line">
