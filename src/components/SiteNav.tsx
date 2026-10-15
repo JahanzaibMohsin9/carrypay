@@ -13,6 +13,7 @@ import { InstallApp } from "./InstallApp";
 export const MAIN = [
   { href: "/demo", label: "Watch the demo" },
   { href: "/app", label: "Family app" },
+  { href: "/attack", label: "Try to fool it" },
   { href: "/#how", label: "How it works" },
 ];
 

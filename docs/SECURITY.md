@@ -75,6 +75,10 @@ Upload test (`src/server/upload.test.ts`): before the bank verifies an uploaded 
 
 Scenario test: the scam email in the Bangkok scenario is flagged, the family is warned, the hospital is contacted on its verified address, and a direct attempt to pay the fraudster's account through the gateway is blocked.
 
+### Try it yourself: the attack lab
+
+https://carrypay.duckdns.org/attack lets anyone run six of these attacks in their own sandbox: fake bank details with hidden instructions to AI assistants, a data-theft request, splitting across cards, a kickback to a doctor's account, buying currency in relatives' names (蚂蚁搬家) and a duplicate payment. It shows the message the agent receives and what the live model did with it in the red team, can let the live AI handle it again (a few runs per visitor and per day), and then forces the AI to do exactly what the attacker asked, so the visitor sees the safety layer block or refuse it, with the rule. `src/server/attacklab.test.ts` checks that forcing each attack moves no money and sends nothing to the attacker.
+
 ## 5. Red-team results: with the real model
 
 `npm run redteam:llm` ([src/server/redteam/](../src/server/redteam/)) delivers 20 attacks the way a real attacker would (an email, an attached document, or a message from the family) into a realistic case state, wakes the live agent (DeepSeek `deepseek-v4-pro`), and judges the tool calls it makes. Full table: [redteam/REPORT.md](redteam/REPORT.md).
