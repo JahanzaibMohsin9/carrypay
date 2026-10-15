@@ -132,7 +132,7 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 - [x] **C** **A3** Agent eval: a script that runs each scenario Live N times and reports success rate, steps, cost, failures, plus a chart for the deck *(done Oct 14: [EVAL.md](EVAL.md))*
 - [x] **C** *(done Oct 15: scenario, scripted plan, tests incl. RT-18, live eval, Replay recording `recordings/cn-admission.json`, MiMo prompt 8)* **Scenario 4: fake study agent in China** (`cn-admission`, Chinese UI, SAFE rules). A Shenzhen family pays a 留学中介 that promises a "保录取" (guaranteed admission) place at Kingsgate with a scholarship; the agency wants a 保录取服务费 and the tuition sent to its own account (or a personal WeChat/Alipay), and suggests buying the pounds in relatives' names to stay under the quota (蚂蚁搬家). The agent checks with the university (no such applicant), pays nothing, refuses the quota split, and tells the family gently what to do (keep evidence, report to the police). Reuses `CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES` and `CN.FX.NO_SPLITTING`; scripted plan, test, live run, Replay recording; Chinese copy marked `// TODO zh` and a MiMo prompt. Framing: capital-control countries, two corridors each for China and Pakistan.
 - [ ] **Y** **A4** Start the interviews: 5-10 people (students abroad, families who paid hospitals abroad), 10 minutes each
-- [ ] **Y** Call or visit a bank's FX desk: medical remittance process, form name, documents, timing. Write down what they say.
+- [ ] ~~**Y** Call or visit a bank's FX desk~~ *(dropped 15 Oct: not possible for us; rules stay cited with their sources and status)*
 - [x] **Y** Email the organiser (wangyr@pbcsf.tsinghua.edu.cn): does the 0–5 point **on-chain challenge bonus** apply to Topic C teams? *Answer 14 Oct: yes (A–E). Also: ~10 finalist teams; travel covered for all members.*
 - [x] **Y** Create a GitHub repository and push (the source-code item requires a GitHub link) *(done 14 Oct: https://github.com/JahanzaibMohsin9/carrypay, branch `main`)*
 
@@ -142,6 +142,18 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 - [x] **C** *(done Oct 14)* Real passkey approval (WebAuthn: register once, fingerprint/face per approval), with hold-to-approve as fallback
 - [x] **C** *(done Oct 15, option (a): `/app/new/upload`, rule `CARRYPAY.VERIFIED_INSTITUTION`, Director "Verify institution (sandbox)")* Upload your own bill: photo or PDF of an invoice → extraction (vision model via OpenAI credits if DeepSeek vision isn't available) → agent works from it. Strong live-demo moment: "show us any hospital bill".
 - [ ] **T** Draft the demo video script ([VIDEO_SCRIPT.md](VIDEO_SCRIPT.md), to create)
+
+### Oct 16–19: Make it look and feel like a winner (decided 15 Oct)
+
+Review of the live site (15 Oct): strong engineering, but a first-time judge sees an idle case, a template-like page, one shared sandbox, and the best parts (blocked scams, on-chain proof, rules) hidden behind tabs. In this order:
+
+1. **Private sandbox per visitor**: each visitor gets their own world (cookie), so judges don't drive each other's case; anchors from all worlds go through one queue for the one wallet.
+2. **Guided story mode**: press Play on the landing page; a recorded case unfolds with captions (estimate, scam blocked, urgent stent, duplicate charge, refund); the judge taps to approve; a results card at the end. No AI cost. Also the video's backbone.
+3. **Attack lab**: judges launch attacks (fake bank details, hidden instructions in an invoice, quota-splitting pressure, look-alike sender) at the agent and watch the safety layer stop them, rule cited.
+4. **Landing redesign**: animated money-flow map (Lahore→Bangkok, Shenzhen→London), live counters (fraud blocked, anchors on-chain), guided demo as the hero.
+5. **Voice notes**: speak a question (Chinese or English), the agent answers, the app reads the reply aloud.
+
+Then Oct 19: video, deck, submission.
 
 ### Oct 16–17: On-chain anchoring (challenge bonus, 0–5 points)
 
@@ -181,7 +193,7 @@ Pick by value; the first three are the strongest.
 - [x] **C** *(done Oct 15: phone-style banner when a new message arrives, labelled simulated, opens Activity)* WhatsApp-style notifications (simulated): families in Pakistan live on WhatsApp; show the agent's messages arriving there
 - [x] **C** *(done Oct 15: "who is using this phone" per device; the server refuses approval by anyone but the payer, logs it, and anyone can still decline)* Family roles: the attendant can follow everything, but only the payer approves money
 - [x] **C** *(done Oct 15: four tiles computed at build time from docs/evidence and the live eval, nothing typed in by hand)* Impact panel on the landing page: time saved, fees saved, steps handled, using the scenario numbers
-- [ ] **Y** Urdu review of the UI and agent messages (you're the native speaker)
+- [ ] ~~**Y** Urdu review~~ *(dropped 15 Oct: not needed; the Urdu UI keeps its original strings)*
 
 ### Oct 18: Polish and deploy, then feature freeze
 - [ ] **C** Accessibility pass (contrast, focus states, screen-reader labels), dark mode check, empty and error states, loading skeletons *(started Oct 15: small grey text now passes WCAG AA in both themes (was 2.9:1 in light), one visible keyboard focus ring, focusable route list shows it; upload screen checked at 375px in light and dark; still to do: screen-reader pass of the stage and Director, empty/error states, loading skeletons)*
