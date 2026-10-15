@@ -169,7 +169,7 @@ const voiceInputs = parts.flatMap((p) => ["-i", path.join(OUT, "voice", `${p.id}
 const delays = parts.map((p, i) => `[${i}:a]aresample=44100,adelay=${Math.round(p.voiceStart * 1000)}:all=1[v${i}]`).join(";");
 ff([...voiceInputs, "-filter_complex", `${delays};${parts.map((_, i) => `[v${i}]`).join("")}amix=inputs=${parts.length}:normalize=0,apad=whole_dur=${total}[v]`, "-map", "[v]", "-ac", "2", path.join(WORK, "voice.wav")]);
 music(total, path.join(WORK, "music.wav"));
-ff(["-i", "voice.wav", "-i", "music.wav", "-filter_complex", "[1:a]volume=0.32[m];[m][0:a]sidechaincompress=threshold=0.015:ratio=6:attack=40:release=600[md];[0:a][md]amix=inputs=2:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[a]", "-map", "[a]", "-t", String(total), "mix.wav"], WORK);
+ff(["-i", "voice.wav", "-i", "music.wav", "-filter_complex", "[1:a]volume=0.32[m];[m][0:a]sidechaincompress=threshold=0.015:ratio=6:attack=40:release=600[md];[0:a][md]amix=inputs=2:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[a]", "-map", "[a]", "-t", String(total), "mix.wav"], WORK);
 
 // subtitles and the final file
 srt(parts, path.join(WORK, "subtitles.en.srt"));
