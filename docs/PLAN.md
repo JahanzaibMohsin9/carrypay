@@ -155,6 +155,21 @@ Review of the live site (15 Oct): strong engineering, but a first-time judge see
 
 Then Oct 19: video, deck, submission.
 
+### The video and the deck (decided 15 Oct): Claude makes both
+
+**Video (under 5 min, 1920×1080 MP4), fully scripted so edits are cheap:** `docs/VIDEO_SCRIPT.md` (narration per scene; you edit the words) → voiceover per scene with **OpenAI TTS**, **neutral narrator** ("one family", not first person) → Chrome driven by a script at 1920×1080, frames captured at high quality, agent waits sped up → **ffmpeg** assembly with title cards, burned-in English subtitles, a Chinese `.srt` for the 中英双语 version, and **soft music** composed with ffmpeg (no downloaded track, no licence). Re-running one scene rebuilds only that scene.
+
+Storyboard (about 4:30): hook (the Bangkok family, USD 10,000 in cash, over the money-flow map) · what CarryPay is · the Bangkok case in story mode (approval by fingerprint, urgent stent, fake bank-change email, duplicate charge, refund) · China: the fake study agent and 蚂蚁搬家 · attack lab: forced to obey, blocked · upload any bill, held until the bank verifies · proof: hash chain, on-chain check, tamper demo, 43/45 live runs, 0/20 attacks · scale, business model, URL and GitHub.
+
+**Deck (about 12 slides, under 10 minutes):** problem · solution · demo highlights · how it works · safety and compliance · results · corridors and scale · business model · roadmap · team; built as a slide deck that downloads as PPTX or PDF, with the video's screenshots. Needs from you: team names, roles (and photos if wanted), any interview quotes.
+
+| Day | Work |
+|---|---|
+| Oct 16 | Camera-ready pass (MiMo for new Chinese strings, polish below the hero, recording mode), script draft, voice samples |
+| Oct 17 | Recording pipeline, first full cut, your review |
+| Oct 18 | Second cut with edits, deck draft |
+| Oct 19 | Final video, subtitles, final deck; you upload to YouTube and Bilibili; submit |
+
 ### Oct 16–17: On-chain anchoring (challenge bonus, 0–5 points)
 
 **Goal:** anyone can check, without trusting us, that CarryPay's activity log wasn't edited after the fact. At each case milestone the log's head hash (SHA-256, already chained) is written to a public test network; the Security Centre links each anchor to the block explorer and re-checks it against the chain.
