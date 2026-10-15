@@ -18,11 +18,24 @@ export interface CommitInput {
 }
 
 export interface Anchor {
+  id: string;
   seq: number;
   hash: string;
   at: string;
   simAt: string;
   note: string;
+  /** the copy on a public chain, when anchoring is configured (see src/server/anchor) */
+  chain?: OnChainAnchor;
+}
+
+export interface OnChainAnchor {
+  chainId: number;
+  contract: string;
+  status: "pending" | "confirmed" | "failed";
+  txHash?: string;
+  blockNumber?: number;
+  explorerUrl?: string;
+  error?: string;
 }
 
 export interface Trigger {
@@ -90,6 +103,7 @@ export class Store extends EventEmitter {
     fs.appendFileSync(LEDGER_FILE, JSON.stringify(entry) + "\n");
     this.scheduleSave();
     this.changed();
+    this.emit("logged", entry);
     return entry;
   }
 
@@ -106,6 +120,7 @@ export class Store extends EventEmitter {
   addAnchor(note: string): Anchor {
     const head = this.ledger.at(-1);
     const anchor: Anchor = {
+      id: `anc_${Date.now().toString(36)}_${this.anchors.length + 1}`,
       seq: head?.seq ?? 0,
       hash: head?.hash ?? GENESIS_HASH,
       at: new Date().toISOString(),
@@ -116,6 +131,15 @@ export class Store extends EventEmitter {
     fs.writeFileSync(ANCHOR_FILE, JSON.stringify(this.anchors, null, 2));
     this.changed();
     return anchor;
+  }
+
+  /** Record what happened to an anchor's on-chain copy. An anchor from before a reset is gone: ignore it. */
+  updateAnchor(id: string, chain: OnChainAnchor) {
+    const a = this.anchors.find((x) => x.id === id);
+    if (!a) return;
+    a.chain = chain;
+    fs.writeFileSync(ANCHOR_FILE, JSON.stringify(this.anchors, null, 2));
+    this.changed();
   }
 
   /** Test hook for the "tamper" demo: edit a stored entry without re-hashing. */

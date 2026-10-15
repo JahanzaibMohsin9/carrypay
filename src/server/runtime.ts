@@ -6,12 +6,16 @@ import { hoursFrom } from "./sim/factory";
 import { verifyChain } from "./hash";
 import { listPasskeys } from "./passkey";
 import type { AgentMode, UploadedBill } from "@/domain/types";
+import { AnchorService, milestoneOf } from "./anchor/service";
+import { ANCHOR_CHAIN, anchorConfig, explorerAddress, viemPublisher } from "./anchor/chain";
 
 interface Runtime {
   store: Store;
   runner: AgentRunner;
   autoplayTimer: NodeJS.Timeout;
   runnerClass: typeof AgentRunner;
+  /** on-chain anchoring, when the testnet key and contract are configured */
+  anchors?: AnchorService;
 }
 
 const g = globalThis as unknown as { __carrypay?: Runtime };
@@ -25,7 +29,15 @@ export function runtime(): Runtime {
     const runner = new AgentRunner(store);
     runner.resetSession();
     const autoplayTimer = setInterval(() => autoplayTick(g.__carrypay!.store, g.__carrypay!.runner), 1500);
-    g.__carrypay = { store, runner, autoplayTimer, runnerClass: AgentRunner };
+    const cfg = anchorConfig();
+    const anchors = cfg ? new AnchorService(store, viemPublisher(cfg)) : undefined;
+    if (anchors) {
+      store.on("logged", (e) => {
+        const m = milestoneOf(e);
+        if (m) anchors.milestone(m);
+      });
+    }
+    g.__carrypay = { store, runner, autoplayTimer, runnerClass: AgentRunner, anchors };
   } else if (g.__carrypay.runnerClass !== AgentRunner && !g.__carrypay.runner.isBusy) {
     // dev hot reload: keep the world, swap in the new agent code
     // (in dev, API routes can also load separate copies of this module: keep the recording going either way)
@@ -60,6 +72,9 @@ export function publicState() {
     world: store.world,
     ledger: store.ledger,
     anchors: store.anchors,
+    anchoring: anchorConfig()
+      ? { chain: ANCHOR_CHAIN.name, chainId: ANCHOR_CHAIN.id, contract: anchorConfig()!.contract, contractUrl: explorerAddress(anchorConfig()!.contract) }
+      : null,
     chain: verifyChain(store.ledger),
     agentBusy: runner.isBusy || store.world.agent.status === "working",
     nextEvent: next ? { at: next.at, label: next.label } : null,
@@ -183,9 +198,13 @@ export function directorAction(body: Record<string, unknown>) {
     case "verify_institution":
       verifyInstitution(store);
       return;
-    case "anchor":
-      store.addAnchor(String(body.note ?? "Manual anchor"));
+    case "anchor": {
+      const note = String(body.note ?? "Manual anchor").slice(0, 60);
+      const { anchors } = runtime();
+      if (anchors) anchors.flush(note);
+      else store.addAnchor(note);
       return;
+    }
     case "tamper":
       store.tamper(Number(body.seq), String(body.narration ?? "Paid THB 250,000 to SR Medical Services Co."));
       return;

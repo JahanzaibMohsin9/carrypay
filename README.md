@@ -42,7 +42,7 @@ Open:
 | `http://localhost:3000/pack` | Printable case pack (Save as PDF): payments, every bill, receipt and form, and the log verification |
 | `http://localhost:3000/director` | Director controls + raw agent log, including **chaos mode** (bank outage, card declined, institution silent) |
 
-Run the tests (67: rules engine, all four scenarios end to end, uploaded bills, 18 red-team attacks on the safety layer, sandbox institutions, chaos mode, privacy firewall, passkey verification):
+Run the tests (73: rules engine, all four scenarios end to end, uploaded bills, on-chain anchoring, 18 red-team attacks on the safety layer, sandbox institutions, chaos mode, privacy firewall, passkey verification):
 
 ```bash
 npm test
@@ -144,7 +144,7 @@ The family enters their names, then uploads a PDF or a photo of a hospital or un
 | Emergency stop | One switch blocks every tool call instantly. |
 | Passkey approval | The family approves with fingerprint or face (WebAuthn). The passkey signs a digest of the exact payment, checked on the server. |
 | Privacy firewall | Names, hospital and student numbers, card and passport numbers and medical details are replaced with placeholders before anything reaches the LLM, and restored only inside CarryPay's code. |
-| Tamper-evident log | Each entry is SHA-256 hashed with the previous entry's hash. Verify in the Security Centre (recomputed in the browser), export from `/api/ledger`, and publish anchors so the head hash exists outside the system. |
+| Tamper-evident log | Each entry is SHA-256 hashed with the previous entry's hash. Verify in the Security Centre (recomputed in the browser), export from `/api/ledger`. At each milestone the head hash is anchored on the **Conflux eSpace testnet** ([contract](https://evmtestnet.confluxscan.org/address/0x7cebbc3ac1a2ec61607025a589efa01b597c42cf), source verified); "Check against the chain" proves the log wasn't edited afterwards. |
 
 Red-team results: `src/server/redteam.test.ts` (17 attacks on the safety layer, all blocked) and [docs/redteam/REPORT.md](docs/redteam/REPORT.md) (20 attacks on the live DeepSeek agent: 0 executed; a naive prompt tried 2, the gateway blocked both).
 

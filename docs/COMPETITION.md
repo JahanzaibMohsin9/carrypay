@@ -25,7 +25,7 @@ How CarryPay maps to it:
 | Security & compliance | **30%** | Safety gateway, permission tiers, verified accounts, rules engine, hash-chained log, red-team results |
 | Innovation & interaction | **30%** | Event-driven agent, rules-as-files, bilingual UI, approval UX, demo stage |
 
-**Challenge bonus: on-chain exploration, 0–5 points.** Listed under the shared scoring section; the Topic F text also mentions it. **Confirmed by the organiser (14 Oct): the bonus is available to Topics A–E as well, so it applies to us.** Our natural fit is anchoring the activity log's head hash on a public test network, so anyone can check the log wasn't changed after the fact (see PLAN.md).
+**Challenge bonus: on-chain exploration, 0–5 points.** Listed under the shared scoring section; the Topic F text also mentions it. **Confirmed by the organiser (14 Oct): the bonus is available to Topics A–E as well, so it applies to us.** Our natural fit is anchoring the activity log's head hash on a public test network, so anyone can check the log wasn't changed after the fact. **Built 15 Oct:** anchors on the Conflux eSpace testnet, [contract](https://evmtestnet.confluxscan.org/address/0x7cebbc3ac1a2ec61607025a589efa01b597c42cf) with verified source; see TECHNICAL.md §5.1.
 
 ## Eligibility and team
 

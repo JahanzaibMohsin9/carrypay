@@ -148,6 +148,19 @@ const en = {
   onHoldUnverified: "Nothing will be paid until the bank has verified this institution and its account.",
   verifiedByBank: "Verified by the bank",
   notVerified: "Not verified yet",
+  anchorsTitle: "Anchored on a public blockchain",
+  anchorsLocal: "Anchors (kept in the app only)",
+  anchorsHint: "At each milestone the log's latest hash is written to the Conflux eSpace testnet, so anyone can check the log wasn't changed after that point. Only hashes go on-chain: no names, amounts or accounts.",
+  anchorContract: "Contract",
+  anchorPending: "Sending…",
+  anchorConfirmed: "On-chain",
+  anchorFailed: "Not sent",
+  anchorView: "View on ConfluxScan",
+  anchorCheck: "Check against the chain",
+  anchorCheckOk: "Matches the chain: the log up to here is unchanged.",
+  anchorCheckBad: "Doesn't match:",
+  anchorLogChanged: "the log was changed after it was anchored, at entry",
+  anchorHashDiffers: "the chain holds a different hash for this anchor.",
 };
 
 type Dict = typeof en;
@@ -381,6 +394,20 @@ const zh: Dict = {
   onHoldUnverified: "在银行核实这家机构及其账户之前，不会支付任何款项。",
   verifiedByBank: "已由银行核实",
   notVerified: "尚未核实",
+  // TODO zh
+  anchorsTitle: "已锚定到公链",
+  anchorsLocal: "锚点（仅保存在应用内）",
+  anchorsHint: "每到关键节点，记录的最新哈希值都会写入 Conflux eSpace 测试网，任何人都可以核验此后记录未被改动。链上只有哈希值，没有姓名、金额或账户。",
+  anchorContract: "合约",
+  anchorPending: "发送中…",
+  anchorConfirmed: "已上链",
+  anchorFailed: "未发送",
+  anchorView: "在 ConfluxScan 查看",
+  anchorCheck: "与链上记录核对",
+  anchorCheckOk: "与链上一致：截至此处的记录未被改动。",
+  anchorCheckBad: "与链上不一致：",
+  anchorLogChanged: "记录在锚定后被改动，位置：条目",
+  anchorHashDiffers: "链上保存的哈希值与此锚点不同。",
 };
 
 export const DICTS: Record<Lang, Partial<Dict>> = { en, ur, zh };

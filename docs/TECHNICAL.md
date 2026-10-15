@@ -135,7 +135,19 @@ Every action (tool call, policy decision, email, bank event, approval) is a ledg
 
 - The Security Centre recomputes the whole chain **in the user's browser** (Web Crypto) and reports the first broken entry, if any.
 - `/api/ledger` exports the log with the verification result: this is the execution evidence.
-- Anchors record the head hash at a moment in time. Publishing them outside the system (submission email, git commit) prevents someone with database access from silently recomputing the whole chain.
+- Anchors record the head hash at a moment in time, so someone with database access can't silently recompute the whole chain.
+
+### 5.1 On-chain anchoring (Conflux eSpace testnet)
+
+At each case milestone (case opened, payment approved, payment received or returned, refund received, institution verified, fraud flagged, case closed) the head hash is written to a public blockchain, where nobody, including us, can change it later.
+
+- **Chain:** Conflux eSpace testnet (EVM, chain ID 71). A public chain built in China whose explorer, ConfluxScan, opens from mainland China. For a bank deployment the same contract runs on any EVM chain, or the anchor service writes to the bank's own consortium chain (e.g. FISCO BCOS).
+- **Contract:** `CarryPayAnchor` ([contracts/CarryPayAnchor.sol](../contracts/CarryPayAnchor.sol), about 20 lines). `anchor(head, seq, label)` emits `Anchored(index, head, seq, label, timestamp)`; only the deploying wallet may write. Deployed at [`0x7cebbc3ac1a2ec61607025a589efa01b597c42cf`](https://evmtestnet.confluxscan.org/address/0x7cebbc3ac1a2ec61607025a589efa01b597c42cf) with the source verified on ConfluxScan. Compiled with solc 0.8.28 (`evmVersion: paris`) by `node scripts/anchor-contract.mjs compile`; the ABI and bytecode are committed in `src/server/anchor/artifact.json`.
+- **What goes on-chain:** the 32-byte head hash, the entry number and a label such as `th-medical:payment received`. No names, amounts, accounts or case text. A SHA-256 head hash reveals nothing about the log, and it commits to every earlier entry, so one anchor covers the whole log up to that point.
+- **Service** (`src/server/anchor/`): milestones from the log within 2.5 s share one anchor; transactions are sent one at a time from one wallet, retried on network errors, and confirmed; each anchor records its transaction, block and explorer link (`anchors.json`, the Security Centre, the `/api/ledger` export). It never blocks the agent or a payment, and it isn't an agent tool: the model can't call it and never sees the key.
+- **Check:** "Check against the chain" in the Security Centre reads the transaction's `Anchored` event over RPC, compares it with the anchor, and recomputes the log up to that entry. After the Director's tamper demo the check fails with the entry that changed, while the chain still holds the original hash.
+- **Key:** a testnet-only wallet created by `node scripts/anchor-key.mjs` straight into `.env.local` (never printed or committed). Without the key and contract the app works as before and anchors stay local.
+- **What it proves, and what it doesn't:** it proves the log wasn't changed after an anchor, and when. It can't prove that what was logged was true, and an operator could still withhold the log entirely; that is what the hash chain, the bank's own records and the family's copies are for.
 
 ## 6. Data and state
 
@@ -143,7 +155,7 @@ Sandbox state lives in `.data/` (world snapshot, ledger as JSONL, anchors, recor
 
 ## 7. Testing
 
-`npm test` runs 48 tests:
+`npm test` runs 73 tests (the list below is the core; also: all four scenarios, uploaded bills, on-chain anchoring with a fake chain, retrying dropped LLM connections):
 - rules engine: tax history, pricing order, Pakistan caps, card limits, carried-cash rule, anti-splitting, SAFE quota and prohibited purposes, deadline-aware comparison
 - both scenarios end to end with the scripted agent, including the returned transfer, the scam email, the bill dispute, the refund and a tamper check, scored by the same evaluator as the live runs
 - 18 red-team attacks on the safety layer (see [SECURITY.md](SECURITY.md))
@@ -155,6 +167,6 @@ Beyond unit tests:
 - `node scripts/eval.mjs run <scenario> <n>` plays a scenario Live end to end N times and scores each run with `src/server/evaluate.ts` (task checks, safety checks, wake-ups, emails, tokens, AI cost, money saved vs paying by card). `report` writes [EVAL.md](EVAL.md) and a chart.
 - `npm run redteam:llm` runs 20 attacks against the live model, with an ablation using a naive prompt (`REDTEAM_AGENT=naive`); see [redteam/REPORT.md](redteam/REPORT.md).
 
-## 8. Deployment **(update after deploy)**
+## 8. Deployment
 
-Long-running Node process (`npm run build && npm start`) on a server outside mainland China, on our own domain, HTTPS. The server calls the LLM; the browser never does. Demo video hosted as MP4 plus a link reachable from China.
+Long-running Node process on a server outside mainland China (Singapore, Hong Kong or Tokyo), on our own domain, HTTPS: Docker with Caddy, see [DEPLOY.md](DEPLOY.md). The server calls the LLM and the chain; the browser never does. Demo video hosted as MP4 plus a link reachable from China.

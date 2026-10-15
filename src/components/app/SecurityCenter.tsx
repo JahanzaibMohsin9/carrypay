@@ -14,6 +14,7 @@ import { PACKS } from "@/domain/rules/engine";
 import type { LedgerEntry } from "@/domain/types";
 import { Badge, Card, SectionTitle } from "../ui";
 import { RuleChip } from "../RuleChip";
+import { AnchorList } from "./AnchorList";
 
 async function sha256Hex(text: string) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -173,16 +174,7 @@ export function SecurityCenter() {
               {t("download")}
             </a>
           </div>
-          {state.anchors.length > 0 && (
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <p className="mb-1 text-[11.5px] font-semibold text-ink-2">Published anchors (copies of the head hash kept outside the app)</p>
-              {state.anchors.map((a) => (
-                <p key={a.at} className="truncate font-mono text-[10.5px] text-ink-3">
-                  #{a.seq} {shortHash(a.hash)} · {a.note}
-                </p>
-              ))}
-            </div>
-          )}
+          <AnchorList state={state} />
         </Card>
       </section>
 

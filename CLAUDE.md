@@ -12,11 +12,12 @@ The user is a student in Pakistan; the Bangkok scenario is based on their family
 
 ```bash
 npm run dev                      # http://localhost:3000 (/stage, /app, /hospital, /bank, /director)
-npm test                         # 67 tests: rules engine, four scenarios, uploaded bills, 18 red-team attacks, institutions, chaos, privacy, passkeys
+npm test                         # 73 tests: rules engine, four scenarios, uploaded bills, on-chain anchors, 18 red-team attacks, institutions, chaos, privacy, passkeys
 node scripts/eval.mjs run uk-tuition 10 && node scripts/eval.mjs report   # live evaluation -> docs/EVAL.md
 npm run redteam:llm              # 20 attacks on the live model -> docs/redteam/REPORT.md (REDTEAM_AGENT=naive for the ablation)
 npx tsc --noEmit && npx eslint src
 node scripts/drive.mjs reset th-medical live   # then: next | approve | run 16 | log 30
+node scripts/anchor-contract.mjs status        # on-chain anchors: wallet balance, contract, count (compile | deploy | verify)
 ```
 
 This is **Next.js 16** with breaking changes from older versions: read `AGENTS.md` and `node_modules/next/dist/docs/` before using a Next API you haven't checked.
@@ -28,6 +29,8 @@ This is **Next.js 16** with breaking changes from older versions: read `AGENTS.m
 ## LLM provider
 
 DeepSeek (`deepseek-v4-pro`) by default via the OpenAI SDK; OpenAI (`gpt-5.4-mini`) is the automatic fallback; Anthropic path still exists. Selection: `CARRYPAY_PROVIDER`, `CARRYPAY_MODEL`, keys in `.env.local` (never print or commit keys). DeepSeek with tools requires `reasoning_content` to be sent back on every request; the runner does this.
+
+On-chain anchoring: `src/server/anchor/` writes the log's head hash to the Conflux eSpace testnet at case milestones (contract in `contracts/`, deployed address in `.env.local` as `ANCHOR_CONTRACT`). Testnet-only key in `.env.local`; never print it. Without key and contract, anchors stay local.
 
 Agent modes: **Live** (LLM), **Replay** (re-executes the latest recorded live run from `.data/recordings/`), **Scripted** (hand-written, no AI, labelled as such in the UI; never present it as the AI).
 

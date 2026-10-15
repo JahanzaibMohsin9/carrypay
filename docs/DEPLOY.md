@@ -7,13 +7,14 @@ CarryPay is one long-running Node process: the agent, the sandbox world, the tim
 - **Region:** outside mainland China but close to it, so judges in Shenzhen and families in Pakistan both get a fast page: Singapore, Hong Kong or Tokyo. No ICP licence is needed outside the mainland.
 - **Size:** 1 vCPU, 1–2 GB RAM and 10 GB disk are enough. The model runs at DeepSeek/OpenAI, not on the server.
 - **Domain:** any domain with an A record pointing at the server (`carrypay.app` and `carrypayments.com` were free on 14 Oct). HTTPS is required: passkeys and installing the app (PWA) only work on HTTPS.
-- **Outbound access** to `api.deepseek.com` and `api.openai.com`.
+- **Outbound access** to `api.deepseek.com`, `api.openai.com` and, for anchors, `evmtestnet.confluxrpc.com`.
 
 ## Run it (Docker)
 
 ```bash
 git clone https://github.com/JahanzaibMohsin9/carrypay && cd carrypay
-cp .env.local.example .env.production     # fill in DEEPSEEK_API_KEY, OPENAI_API_KEY
+cp .env.local.example .env.production     # fill in DEEPSEEK_API_KEY, OPENAI_API_KEY, and for on-chain anchors
+                                          # ANCHOR_CHAIN, ANCHOR_PRIVATE_KEY, ANCHOR_CONTRACT (copy from your .env.local)
 echo "CARRYPAY_DOMAIN=carrypay.app" > .env  # your domain, read by docker compose
 docker compose up -d --build
 ```

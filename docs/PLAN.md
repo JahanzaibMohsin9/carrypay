@@ -160,6 +160,8 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 - Ledger export (`/api/ledger`, execution evidence) includes the anchor transactions.
 - Tests run with a mocked RPC transport (no network in `npm test`): encoding, queue and retry, verification, and the tamper case.
 
+**Status, 15 Oct evening (done early):** wallet funded (1000 test CFX); contract deployed at [`0x7cebbc3ac1a2ec61607025a589efa01b597c42cf`](https://evmtestnet.confluxscan.org/address/0x7cebbc3ac1a2ec61607025a589efa01b597c42cf) and its source verified on ConfluxScan; anchoring service, milestone hooks, Security Centre list with explorer links and "Check against the chain", 6 tests with a fake chain; checked live: a scenario 4 Replay produced two confirmed anchors, and after the tamper demo both checks fail at the edited entry. Still to do: a live run of each scenario with anchors on, a moment for the video, the stage view.
+
 **Oct 16:** contract, compile and deploy script, anchoring service, milestone hooks, tests; deploy to the testnet once the wallet is funded.
 **Oct 17:** Security Centre UI, export, TECHNICAL.md and SECURITY.md (what anchoring proves and what it doesn't: it proves the log wasn't changed after an anchor; it can't prove the events were true), a live run of each scenario with real anchors, and a moment for the video.
 
@@ -170,7 +172,7 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 
 ### Oct 17: More reasons to win
 Pick by value; the first three are the strongest.
-- [ ] **C** **(confirmed: bonus applies to Topic C; planned above, Oct 16–17)** **Anchor the log on-chain**: publish the activity log's head hash to a public test network at each case milestone, link the transaction from the Security Centre. Real on-chain hashes, cheap, and it strengthens tamper-evidence. (½ day)
+- [x] **C** *(done Oct 15, see the on-chain section above)* **(confirmed: bonus applies to Topic C)** **Anchor the log on-chain**: publish the activity log's head hash to a public test network at each case milestone, link the transaction from the Security Centre. Real on-chain hashes, cheap, and it strengthens tamper-evidence. (½ day)
 - [x] **C** *(done Oct 14: Money tab, "Across currencies")* **Multi-currency view** (named in Topic C): per case, what left in PKR/CNY, what arrived in THB/GBP, fees and tax per route, refunds back in home currency
 - [x] **C** *(done Oct 14: scenario `pk-admission`, rule `CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES`)* **A1** Admission-fraud protection and **scenario 3 (PK to UK/US tuition, fake agent)**, which also delivers the third corridor (rules already in `pk-sbp.json`)
 - [x] **C** *(both done Oct 14: chaos buttons in the Director, `/bank/officer`)* **A5** Chaos mode *or* **A6** bank-officer view (whichever is further along)

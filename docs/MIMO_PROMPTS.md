@@ -152,3 +152,19 @@ The Chinese text is a first draft, not checked by a native speaker. Each place i
 
 Afterwards run `npx tsc --noEmit` and `npm test` and report the results, then list every change as: file, location, original, new, reason.
 ```
+
+---
+
+## Prompt 9: Review the upload screen and the on-chain anchor strings
+
+Commit first. Paste the shared context, then:
+
+```
+New Chinese strings were added in src/lib/i18n.tsx, inside `const zh: Dict = { ... }`, under "// TODO zh" comments: the "upload your own bill" screen (keys starting with upload..., onHoldUnverified, verifiedByBank, notVerified) and the on-chain anchors in the Security Centre (keys starting with anchor...). Also src/domain/rules/explain.ts, rule CARRYPAY.VERIFIED_INSTITUTION, and the two Chinese texts in src/server/agent/scripted.ts under "const UP" and in src/server/scenarios.ts, function seedUpload (case title and default message). Compare each with the English entry of the same key in `const en`.
+
+Context:
+- Upload: a family uploads a hospital or university bill (PDF or photo). CarryPay reads it and explains the cost under their home country's rules, but pays nothing until the bank has verified the hospital or university and its account.
+- Anchors: at each milestone, the latest hash of CarryPay's activity log is written to a public blockchain (Conflux eSpace testnet), so anyone can check the log was not changed afterwards. Only hashes go on-chain. Use 区块链/公链, 哈希值, 上链, 锚定 as appropriate for a general (non-technical) parent, but keep it accurate.
+
+Review, improve, and remove each "// TODO zh" comment when done. Do not commit. Run `npx tsc --noEmit` and `npm test`, then list every change as: file, key, original, new, reason.
+```
