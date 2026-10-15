@@ -72,8 +72,11 @@ Put it behind any HTTPS reverse proxy that doesn't buffer `text/event-stream` (f
 4. Install the app from the browser menu on Android (Chrome) and iPhone (Safari, Share → Add to Home Screen); check it opens full-screen on `/app`.
 5. Test the URL with a "website speed test from China" tool, and from Pakistan if possible.
 
+## Private sandboxes
+
+With `CARRYPAY_SESSIONS=per-visitor` (set on the live server) each visitor gets their own world: `src/proxy.ts` gives the first page they open a cookie, and every API call works on that visitor's world, stored under `/data/sessions/<id>/`. Requests without the cookie (scripts, curl) share one world. Idle worlds are removed after `CARRYPAY_SESSION_IDLE_HOURS` (default 6) and the oldest beyond `CARRYPAY_MAX_SESSIONS` (default 80). `CARRYPAY_DEFAULT_MODE=replay` makes new worlds start in Replay, so visitors cost no AI credits until someone switches to Live. Anchors from every world go through one queue, since one wallet signs them all.
+
 ## Known limits of the public demo
 
-- **One shared sandbox.** Everyone who opens the link sees and drives the same world; the Director's Reset starts it over. Fine for judging and the video; a product would give each family its own world.
 - **Costs.** Live mode and reading uploaded photos call paid APIs. Keep Replay as the default for the public link, keep provider credit low, and watch usage during judging. The Director page is not protected, by design for the judges.
 - **Sandbox only.** No real money, banks or institutions are involved; every institution, account and person in the scenarios is fictional, and the rates are sandbox rates.

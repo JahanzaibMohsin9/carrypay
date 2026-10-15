@@ -54,9 +54,9 @@ export function rpIdFrom(origin: string) {
 // ---------------------------------------------------------------------------
 // Registration
 
-export function registrationOptions(origin: string) {
+export function registrationOptions(origin: string, scope = "default") {
   const challenge = b64u(crypto.randomBytes(32));
-  challenges.set("register", { value: challenge, expires: Date.now() + CHALLENGE_TTL_MS });
+  challenges.set(`${scope}:register`, { value: challenge, expires: Date.now() + CHALLENGE_TTL_MS });
   return {
     challenge,
     rp: { name: "CarryPay", id: rpIdFrom(origin) },
@@ -75,9 +75,9 @@ function readClientData(b64: string): ClientData {
   return JSON.parse(unb64u(b64).toString("utf8")) as ClientData;
 }
 
-export function register(body: { credentialId: string; publicKey: string; alg: number; clientDataJSON: string; label?: string }, origin: string): StoredPasskey {
-  const issued = challenges.get("register");
-  challenges.delete("register");
+export function register(body: { credentialId: string; publicKey: string; alg: number; clientDataJSON: string; label?: string }, origin: string, scope = "default"): StoredPasskey {
+  const issued = challenges.get(`${scope}:register`);
+  challenges.delete(`${scope}:register`);
   const cd = readClientData(body.clientDataJSON);
   if (!issued || issued.expires < Date.now()) throw new Error("The registration request expired. Try again.");
   if (cd.type !== "webauthn.create" || cd.challenge !== issued.value) throw new Error("Registration challenge mismatch.");
@@ -110,10 +110,10 @@ function paymentDigest(w: World, approvalId: string, nonce: string) {
   return b64u(sha256(canonical));
 }
 
-export function approvalChallenge(w: World, approvalId: string) {
+export function approvalChallenge(w: World, approvalId: string, scope = "default") {
   const nonce = b64u(crypto.randomBytes(16));
   const value = paymentDigest(w, approvalId, nonce);
-  challenges.set(`approval:${approvalId}`, { value, nonce, expires: Date.now() + CHALLENGE_TTL_MS });
+  challenges.set(`${scope}:approval:${approvalId}`, { value, nonce, expires: Date.now() + CHALLENGE_TTL_MS });
   return { challenge: value, allowCredentials: listPasskeys().map((k) => k.id) };
 }
 
@@ -125,9 +125,9 @@ export interface Assertion {
 }
 
 /** Verifies the assertion for this approval; returns evidence for the activity log. */
-export function verifyApproval(w: World, approvalId: string, as: Assertion, origin: string) {
-  const issued = challenges.get(`approval:${approvalId}`);
-  challenges.delete(`approval:${approvalId}`);
+export function verifyApproval(w: World, approvalId: string, as: Assertion, origin: string, scope = "default") {
+  const issued = challenges.get(`${scope}:approval:${approvalId}`);
+  challenges.delete(`${scope}:approval:${approvalId}`);
   if (!issued || issued.expires < Date.now()) throw new Error("The approval request expired. Try again.");
   // recomputed from the payment as it is now: if anything changed since the challenge, this fails
   const expected = paymentDigest(w, approvalId, issued.nonce!);

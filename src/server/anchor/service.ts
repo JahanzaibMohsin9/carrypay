@@ -35,10 +35,12 @@ export interface AnchorCheck {
   reason?: string;
 }
 
+/** One wallet signs for every visitor's world, so its transactions go out one at a time (one nonce sequence). */
+const queues = new WeakMap<ChainPublisher, Promise<void>>();
+
 export class AnchorService {
   private pending = new Set<string>();
   private timer: NodeJS.Timeout | null = null;
-  private queue: Promise<void> = Promise.resolve();
 
   constructor(
     private store: Store,
@@ -65,13 +67,13 @@ export class AnchorService {
     return anchor;
   }
 
-  /** Send one anchor at a time (one wallet, so one nonce sequence), retrying network errors. */
+  /** Queue this anchor behind every other world's, retrying network errors. */
   publish(anchor: Anchor) {
     const base = { chainId: this.publisher.chainId, contract: this.publisher.contract };
     this.store.updateAnchor(anchor.id, { ...base, status: "pending" });
     // the on-chain label says what kind of moment it was, never who or how much
     const label = `${this.store.world.scenarioId}:${anchor.note}`.slice(0, 96);
-    this.queue = this.queue.then(async () => {
+    const queue = (queues.get(this.publisher) ?? Promise.resolve()).then(async () => {
       let lastError = "";
       for (let attempt = 1; attempt <= (this.opts.retries ?? 3); attempt++) {
         try {
@@ -87,6 +89,7 @@ export class AnchorService {
       }
       this.store.updateAnchor(anchor.id, { ...base, status: "failed", error: lastError.slice(0, 200) });
     });
+    queues.set(this.publisher, queue);
   }
 
   /** Re-check an anchor against the chain and against the log as it is now. */

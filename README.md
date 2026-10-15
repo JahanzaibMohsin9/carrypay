@@ -44,7 +44,7 @@ Open:
 | `http://localhost:3000/pack` | Printable case pack (Save as PDF): payments, every bill, receipt and form, and the log verification |
 | `http://localhost:3000/director` | Director controls + raw agent log, including **chaos mode** (bank outage, card declined, institution silent) |
 
-Run the tests (75: rules engine, all four scenarios end to end, uploaded bills, on-chain anchoring, 18 red-team attacks on the safety layer, sandbox institutions, chaos mode, privacy firewall, passkey verification):
+Run the tests (77: rules engine, all four scenarios end to end, uploaded bills, on-chain anchoring, 18 red-team attacks on the safety layer, sandbox institutions, chaos mode, privacy firewall, passkey verification):
 
 ```bash
 npm test

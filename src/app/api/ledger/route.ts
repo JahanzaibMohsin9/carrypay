@@ -1,9 +1,10 @@
 import { runtime } from "@/server/runtime";
 import { verifyChain } from "@/server/hash";
+import { sessionId } from "@/server/session";
 
 /** Downloadable execution evidence: every action, hash-chained, plus published anchors. */
-export async function GET() {
-  const { store } = runtime();
+export async function GET(request: Request) {
+  const { store } = runtime(sessionId(request));
   const body = {
     product: "CarryPay sandbox execution log",
     scenario: store.world.scenarioId,

@@ -1,7 +1,8 @@
 import { runtime } from "@/server/runtime";
+import { sessionId } from "@/server/session";
 
 export async function GET(request: Request) {
-  const { store } = runtime();
+  const { store } = runtime(sessionId(request));
   const encoder = new TextEncoder();
   let cleanup = () => {};
   const stream = new ReadableStream({

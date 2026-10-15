@@ -1,4 +1,6 @@
-import { Store } from "./store";
+import fs from "node:fs";
+import path from "node:path";
+import { DATA_DIR, Store } from "./store";
 import { AgentRunner, hasApiCredentials, MODEL } from "./agent/runner";
 import { SCENARIOS, seedScenario, seedUpload } from "./scenarios";
 import { advanceTo, advanceToNext, injectChaos, nextScheduled, runBeat, setPaymentStatus, submitPayment, verifyInstitution, type ChaosKind } from "./sim/engine";
@@ -7,48 +9,115 @@ import { verifyChain } from "./hash";
 import { listPasskeys } from "./passkey";
 import type { AgentMode, UploadedBill } from "@/domain/types";
 import { AnchorService, milestoneOf } from "./anchor/service";
-import { ANCHOR_CHAIN, anchorConfig, explorerAddress, viemPublisher } from "./anchor/chain";
+import { ANCHOR_CHAIN, anchorConfig, explorerAddress, viemPublisher, type ChainPublisher } from "./anchor/chain";
+import { DEFAULT_SESSION } from "./session";
 
 interface Runtime {
+  id: string;
   store: Store;
   runner: AgentRunner;
   autoplayTimer: NodeJS.Timeout;
   runnerClass: typeof AgentRunner;
   /** on-chain anchoring, when the testnet key and contract are configured */
   anchors?: AnchorService;
+  lastSeen?: number;
 }
 
-const g = globalThis as unknown as { __carrypay?: Runtime };
+// One sandbox world per visitor (see ./session). The default world keeps its old slot and folder, so
+// local development, the scripts and the tests see no difference.
+const g = globalThis as unknown as {
+  __carrypay?: Runtime;
+  __carrypaySessions?: Map<string, Runtime>;
+  __carrypayPublisher?: ChainPublisher | null;
+  __carrypaySweep?: NodeJS.Timeout;
+};
+const sessions = (g.__carrypaySessions ??= new Map());
+const MAX_SESSIONS = Number(process.env.CARRYPAY_MAX_SESSIONS ?? 80);
+const IDLE_MS = Number(process.env.CARRYPAY_SESSION_IDLE_HOURS ?? 6) * 3_600_000;
 
-export function runtime(): Runtime {
-  if (!g.__carrypay) {
-    const store = new Store();
-    store.setMaxListeners(200);
-    store.load(() => seedScenario("th-medical"));
-    if (!hasApiCredentials() && store.ledger.length === 0) store.world.agent.mode = "scripted";
-    const runner = new AgentRunner(store);
-    runner.resetSession();
-    const autoplayTimer = setInterval(() => autoplayTick(g.__carrypay!.store, g.__carrypay!.runner), 1500);
+/** One wallet signs every anchor, from every world. */
+function publisher(): ChainPublisher | null {
+  if (g.__carrypayPublisher === undefined) {
     const cfg = anchorConfig();
-    const anchors = cfg ? new AnchorService(store, viemPublisher(cfg)) : undefined;
-    if (anchors) {
-      store.on("logged", (e) => {
-        const m = milestoneOf(e);
-        if (m) anchors.milestone(m);
-      });
-    }
-    g.__carrypay = { store, runner, autoplayTimer, runnerClass: AgentRunner, anchors };
-  } else if (g.__carrypay.runnerClass !== AgentRunner && !g.__carrypay.runner.isBusy) {
-    // dev hot reload: keep the world, swap in the new agent code
-    // (in dev, API routes can also load separate copies of this module: keep the recording going either way)
-    const prev = g.__carrypay.runner;
-    prev.dispose();
-    g.__carrypay.store.removeAllListeners("trigger");
-    g.__carrypay.runner = new AgentRunner(g.__carrypay.store);
-    g.__carrypay.runner.adoptSession(prev);
-    g.__carrypay.runnerClass = AgentRunner;
+    g.__carrypayPublisher = cfg ? viemPublisher(cfg) : null;
   }
-  return g.__carrypay;
+  return g.__carrypayPublisher;
+}
+
+function create(id: string): Runtime {
+  const dir = id === DEFAULT_SESSION ? DATA_DIR : path.join(DATA_DIR, "sessions", id);
+  const store = new Store(dir);
+  store.setMaxListeners(200);
+  store.load(() => seedScenario("th-medical"));
+  if (store.ledger.length === 0) {
+    const preferred = process.env.CARRYPAY_DEFAULT_MODE as AgentMode | undefined;
+    if (preferred && ["live", "replay", "scripted"].includes(preferred)) store.world.agent.mode = preferred;
+    else if (!hasApiCredentials()) store.world.agent.mode = "scripted";
+  }
+  const runner = new AgentRunner(store);
+  runner.resetSession();
+  const rt: Runtime = { id, store, runner, runnerClass: AgentRunner, autoplayTimer: setInterval(() => autoplayTick(rt.store, rt.runner), 1500) };
+  const pub = publisher();
+  if (pub) {
+    const anchors = new AnchorService(store, pub);
+    store.on("logged", (e) => {
+      const m = milestoneOf(e);
+      if (m) anchors.milestone(m);
+    });
+    rt.anchors = anchors;
+  }
+  return rt;
+}
+
+function dispose(rt: Runtime) {
+  clearInterval(rt.autoplayTimer);
+  rt.runner.dispose();
+  rt.anchors?.dispose();
+  rt.store.removeAllListeners();
+  if (rt.id !== DEFAULT_SESSION) fs.rmSync(rt.store.dataDir, { recursive: true, force: true });
+}
+
+/** Drop worlds nobody has looked at for a while, and the oldest ones beyond the limit. */
+function sweep() {
+  const now = Date.now();
+  const byAge = [...sessions.values()].sort((a, b) => (a.lastSeen ?? 0) - (b.lastSeen ?? 0));
+  for (const rt of byAge) {
+    const tooMany = sessions.size > MAX_SESSIONS;
+    if (!tooMany && now - (rt.lastSeen ?? 0) < IDLE_MS) break;
+    if (rt.runner.isBusy) continue;
+    sessions.delete(rt.id);
+    dispose(rt);
+  }
+}
+g.__carrypaySweep ??= setInterval(sweep, 10 * 60_000);
+
+function hotSwap(rt: Runtime) {
+  // dev hot reload: keep the world, swap in the new agent code
+  // (in dev, API routes can also load separate copies of this module: keep the recording going either way)
+  if (rt.runnerClass === AgentRunner || rt.runner.isBusy) return;
+  const prev = rt.runner;
+  prev.dispose();
+  rt.store.removeAllListeners("trigger");
+  rt.runner = new AgentRunner(rt.store);
+  rt.runner.adoptSession(prev);
+  rt.runnerClass = AgentRunner;
+}
+
+export function runtime(sid: string = DEFAULT_SESSION): Runtime {
+  if (sid === DEFAULT_SESSION) {
+    g.__carrypay ??= create(DEFAULT_SESSION);
+    hotSwap(g.__carrypay);
+    return g.__carrypay;
+  }
+  let rt = sessions.get(sid);
+  if (!rt) {
+    rt = create(sid);
+    sessions.set(sid, rt);
+    if (sessions.size > MAX_SESSIONS) sweep();
+  }
+  rt.lastSeen = Date.now();
+  hotSwap(rt);
+  return rt;
 }
 
 function pendingApprovals(store: Store) {
@@ -65,8 +134,8 @@ function autoplayTick(store: Store, runner: AgentRunner) {
   advanceToNext(store);
 }
 
-export function publicState() {
-  const { store, runner } = runtime();
+export function publicState(sid?: string) {
+  const { store, runner } = runtime(sid);
   const next = nextScheduled(store);
   return {
     world: store.world,
@@ -89,8 +158,8 @@ export type PublicState = ReturnType<typeof publicState>;
 // ---------------------------------------------------------------------------
 // Family actions
 
-export function decideApproval(approvalId: string, decision: "approved" | "declined", method: "passkey" | "hold", evidence?: Record<string, unknown>, actingPersonId?: string) {
-  decideApprovalIn(runtime().store, approvalId, decision, method, evidence, actingPersonId);
+export function decideApproval(approvalId: string, decision: "approved" | "declined", method: "passkey" | "hold", evidence?: Record<string, unknown>, actingPersonId?: string, sid?: string) {
+  decideApprovalIn(runtime(sid).store, approvalId, decision, method, evidence, actingPersonId);
 }
 
 /**
@@ -149,16 +218,16 @@ export function decideApprovalIn(store: Store, approvalId: string, decision: "ap
   store.trigger({ caseId: a.caseId, reason: "approval_decided", detail: `${decision}: ${a.summary}` });
 }
 
-export function familyMessage(caseId: string, text: string) {
-  const { store } = runtime();
+export function familyMessage(caseId: string, text: string, sid?: string) {
+  const { store } = runtime(sid);
   const id = store.nextId("msg");
   store.mutate((w) => w.messages.push({ id, caseId, from: "family", text, at: w.now }));
   store.log({ actor: "family", type: "family.message", caseId, narration: text, data: { messageId: id } });
   store.trigger({ caseId, reason: "family_message", detail: text });
 }
 
-export function setKillSwitch(on: boolean) {
-  const { store } = runtime();
+export function setKillSwitch(on: boolean, sid?: string) {
+  const { store } = runtime(sid);
   store.mutate((w) => {
     w.agent.killSwitch = on;
     w.agent.status = on ? "stopped" : "idle";
@@ -167,8 +236,8 @@ export function setKillSwitch(on: boolean) {
 }
 
 /** The family sent their own bill: start a new case from it straight away (the agent mode stays as it was). */
-export function startUploadedCase(bill: UploadedBill) {
-  const { store, runner } = runtime();
+export function startUploadedCase(bill: UploadedBill, sid?: string) {
+  const { store, runner } = runtime(sid);
   const mode = store.world.agent.mode;
   store.reset(seedUpload(bill));
   store.mutate((w) => (w.agent.mode = mode));
@@ -180,8 +249,8 @@ export function startUploadedCase(bill: UploadedBill) {
 // ---------------------------------------------------------------------------
 // Director (demo controls)
 
-export function directorAction(body: Record<string, unknown>) {
-  const { store, runner } = runtime();
+export function directorAction(body: Record<string, unknown>, sid?: string) {
+  const { store, runner, anchors } = runtime(sid);
   switch (body.action) {
     case "reset": {
       const id = String(body.scenarioId ?? store.world.scenarioId);
@@ -212,7 +281,7 @@ export function directorAction(body: Record<string, unknown>) {
       store.mutate((w) => (w.autoReply = Boolean(body.on)));
       return;
     case "kill":
-      setKillSwitch(Boolean(body.on));
+      setKillSwitch(Boolean(body.on), sid);
       return;
     case "beat":
       runBeat(store, String(body.beat));
@@ -230,7 +299,6 @@ export function directorAction(body: Record<string, unknown>) {
       return;
     case "anchor": {
       const note = String(body.note ?? "Manual anchor").slice(0, 60);
-      const { anchors } = runtime();
       if (anchors) anchors.flush(note);
       else store.addAnchor(note);
       return;
