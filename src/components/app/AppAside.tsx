@@ -32,8 +32,8 @@ export function AppAside() {
       </div>
       <div className="flex flex-col items-start gap-1.5 text-[13px] font-semibold">
         <InstallApp className="h-9 bg-ink px-3.5 text-[13px] text-bg" />
-        <Link href="/stage" className="inline-flex items-center gap-1.5 rounded-full px-1 py-1 text-brand hover:underline">
-          <Play size={13} /> Watch the demo with the hospital and bank beside it
+        <Link href="/demo" className="inline-flex items-center gap-1.5 rounded-full px-1 py-1 text-brand hover:underline">
+          <Play size={13} /> Watch a real case, step by step
         </Link>
         <Link href="/director" className="inline-flex items-center gap-1.5 rounded-full px-1 py-1 text-ink-2 hover:text-ink">
           <Settings2 size={13} /> Drive the sandbox (Director)

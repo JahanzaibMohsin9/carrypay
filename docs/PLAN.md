@@ -148,7 +148,7 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 Review of the live site (15 Oct): strong engineering, but a first-time judge sees an idle case, a template-like page, one shared sandbox, and the best parts (blocked scams, on-chain proof, rules) hidden behind tabs. In this order:
 
 1. *(done 15 Oct)* **Private sandbox per visitor**: each visitor gets their own world (cookie), so judges don't drive each other's case; anchors from all worlds go through one queue for the one wallet.
-2. **Guided story mode**: press Play on the landing page; a recorded case unfolds with captions (estimate, scam blocked, urgent stent, duplicate charge, refund); the judge taps to approve; a results card at the end. No AI cost. Also the video's backbone.
+2. *(done 15 Oct: /demo)* **Guided story mode**: press Play on the landing page; a recorded case unfolds with captions (estimate, scam blocked, urgent stent, duplicate charge, refund); the judge taps to approve; a results card at the end. No AI cost. Also the video's backbone.
 3. **Attack lab**: judges launch attacks (fake bank details, hidden instructions in an invoice, quota-splitting pressure, look-alike sender) at the agent and watch the safety layer stop them, rule cited.
 4. **Landing redesign**: animated money-flow map (Lahore→Bangkok, Shenzhen→London), live counters (fraud blocked, anchors on-chain), guided demo as the hero.
 5. **Voice notes**: speak a question (Chinese or English), the agent answers, the app reads the reply aloud.

@@ -11,13 +11,14 @@ import { InstallApp } from "./InstallApp";
 // One navigation for every page, so nobody gets lost: the three things a visitor can do, and the
 // sandbox's inner workings under "Behind the scenes", each with what it is.
 export const MAIN = [
-  { href: "/stage", label: "Watch the demo" },
+  { href: "/demo", label: "Watch the demo" },
   { href: "/app", label: "Family app" },
   { href: "/#how", label: "How it works" },
 ];
 
 export const BEHIND = [
   { href: "/director", label: "Director", hint: "Drive the sandbox: next event, agent mode, chaos, tamper demo" },
+  { href: "/stage", label: "Demo stage", hint: "Hospital, phone and agent side by side, with controls: the screen for recording the video" },
   { href: "/hospital", label: "Hospital & university desk", hint: "The institution's inbox: what the agent emails and what it gets back" },
   { href: "/bank", label: "Payment rails", hint: "The sandbox bank and card network moving the money" },
   { href: "/bank/officer", label: "Bank officer", hint: "The bank's view: a remittance package ready to approve" },
@@ -61,7 +62,7 @@ export function SiteNav({ tone = "light", className }: { tone?: "light" | "dark"
         <nav aria-label="Main" className="ml-auto hidden items-center gap-1 md:flex">
           {MAIN.map((m) => (
             <Link key={m.href} href={m.href} className={link(path === m.href)}>
-              {m.href === "/stage" && <Play size={13} className="mr-1 inline" />}
+              {m.href === "/demo" && <Play size={13} className="mr-1 inline" />}
               {m.label}
             </Link>
           ))}

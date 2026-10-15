@@ -40,7 +40,7 @@ export default function Landing() {
             CarryPay is an AI agent that pays your family&apos;s hospital and university bills abroad: legally, safely and for less. It deals with the hospital, the bank, the forms and the regulations. You just approve.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/stage" className="inline-flex h-12 items-center gap-2 rounded-full bg-brand px-6 text-[15px] font-semibold text-brand-ink hover:bg-brand-strong">
+            <Link href="/demo" className="inline-flex h-12 items-center gap-2 rounded-full bg-brand px-6 text-[15px] font-semibold text-brand-ink hover:bg-brand-strong">
               Watch it handle a real case <ArrowRight size={17} />
             </Link>
             <Link href="/app" className="inline-flex h-12 items-center gap-2 rounded-full border border-line-strong bg-surface px-6 text-[15px] font-semibold">

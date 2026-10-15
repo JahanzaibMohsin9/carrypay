@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { HeartPulse, Smartphone, Terminal } from "lucide-react";
 import { useCarry } from "@/lib/client";
 import { activeCase } from "@/lib/selectors";
@@ -12,20 +12,12 @@ import { BankConsole } from "./BankConsole";
 import { DirectorPanel } from "./DirectorPanel";
 import { HospitalDesk } from "./HospitalDesk";
 import { StageAnchors } from "./StageAnchors";
+import { PhoneFrame } from "./PhoneFrame";
 
 /** One screen for the demo video: the outside world, the family's phone, and the machine's view. */
 export function Stage() {
   const { state } = useCarry();
   const [showDirector, setShowDirector] = useState(true);
-  const slot = useRef<HTMLDivElement>(null);
-  const [phoneH, setPhoneH] = useState(0);
-  useEffect(() => {
-    const el = slot.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([e]) => setPhoneH(Math.min(e.contentRect.height, 880)));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
   const c = state ? activeCase(state) : undefined;
   const inst = state && c ? state.world.institutions[c.institutionId] : undefined;
 
@@ -62,16 +54,7 @@ export function Stage() {
 
         <section className="flex min-h-0 flex-col items-center gap-3">
           <Label icon={<Smartphone size={13} />}>The family&apos;s phone</Label>
-          <div ref={slot} className="flex min-h-0 w-full flex-1 justify-center">
-          <div className="relative" style={{ height: phoneH, width: Math.round((phoneH * 390) / 844) }}>
-            <div className="absolute inset-0 rounded-[52px] bg-[#1b1f1e] p-[10px] shadow-[0_40px_120px_-30px_rgba(0,0,0,0.9),0_0_0_1px_rgba(255,255,255,0.08)]">
-              <div className="relative h-full w-full overflow-hidden rounded-[42px] bg-bg">
-                <iframe src="/app" title="CarryPay family app" className="h-full w-full border-0" />
-                <div className="pointer-events-none absolute left-1/2 top-2 h-[26px] w-[96px] -translate-x-1/2 rounded-full bg-black" />
-              </div>
-            </div>
-          </div>
-          </div>
+          <PhoneFrame />
         </section>
 
         <section className="hidden min-h-0 flex-col gap-3 lg:flex">
