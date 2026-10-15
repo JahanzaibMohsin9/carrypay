@@ -35,6 +35,8 @@ const EDL = {
   "3d": { take: "s3", from: "discharge", to: "results+2.5" },
   "4": { take: "s4", from: 0, to: "done" },
   "5": { take: "s5", from: 0, to: "done" },
+  // filmed on the public site: the seconds the request spends on the network are cut out
+  "5b": { take: "s5b", from: 0, to: "done", cut: ["security+1.8", "blocked-1"] },
   "6": { take: "s6", from: 0, to: "done" },
   "7": { take: "s7", from: 0, to: "done" },
   "8": { take: "s8", from: "corridors-0.3", to: "end" },
@@ -144,11 +146,15 @@ for (const p of parts) {
   const markers = JSON.parse(fs.readFileSync(path.join(TAKES, `${e.take}.json`), "utf8"));
   const from = at(markers, e.from);
   const to = Math.min(at(markers, e.to), markers.end);
-  const seg = Math.max(0.5, to - from);
+  // an optional cut: a stretch inside the segment that is dropped (e.g. waiting on the network)
+  const cut = e.cut ? [at(markers, e.cut[0]) - from, at(markers, e.cut[1]) - from] : null;
+  const seg = Math.max(0.5, to - from - (cut ? cut[1] - cut[0] : 0));
   // fit to the voice: speed up a long stretch; slow a short one down to 0.7× at most, then hold its last frame
   const speed = Math.max(0.7, seg / p.length);
   const shown = seg / speed;
-  const filters = [`setpts=(PTS-STARTPTS)/${speed.toFixed(4)}`, `fps=${FPS}`];
+  const filters = [];
+  if (cut) filters.push(`select='not(between(t,${cut[0].toFixed(3)},${cut[1].toFixed(3)}))'`, `setpts=N/${FPS}/TB`);
+  filters.push(`setpts=(PTS-STARTPTS)/${speed.toFixed(4)}`, `fps=${FPS}`);
   if (shown < p.length) filters.push(`tpad=stop_mode=clone:stop_duration=${(p.length - shown + 0.1).toFixed(3)}`);
   filters.push(`trim=duration=${p.length.toFixed(3)}`);
   // a slow push into the map, centred between Lahore and Bangkok, kept inside the frame

@@ -1,5 +1,5 @@
 // Records the raw takes for the demo video from the recording server (scripts/video/serve.mjs).
-//   node scripts/video/record.mjs [scene ...]     # all scenes, or some: s1 s2 s3 s7 s4 s5 s6 s8
+//   node scripts/video/record.mjs [scene ...]     # all scenes, or some: s1 s2 s3 s7 s4 s5 s5b s6 s8
 // Each take: video/out/takes/<scene>.mp4 (1920×1080, 30 fps) + <scene>.json (markers in seconds).
 // Chrome's screencast frames are fed to ffmpeg at a steady 30 fps as they arrive; a drawn cursor and a
 // click ripple stand in for the mouse, which screencasts don't show.
@@ -11,6 +11,8 @@ import { chromium } from "playwright-core";
 const ROOT = process.cwd();
 const OUT = path.join(ROOT, "video", "out", "takes");
 const BASE = process.env.VIDEO_BASE ?? "http://127.0.0.1:3300";
+// scene 5b is filmed on the public site, so the MCP address on screen is the real one
+const LIVE = process.env.VIDEO_LIVE ?? "https://carrypay.duckdns.org";
 const CHROME = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const FPS = 30;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -307,6 +309,68 @@ const SCENES = {
     });
   },
 
+  // 5b · bring your own AI: the attack lab's MCP panel, then the family's Security Centre while the official
+  // MCP client (standing in for an outside AI) connects to this sandbox and asks to pay the attacker
+  async s5b() {
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+    await take("s5b", async (t) => {
+      const p = t.page;
+      await p.goto(LIVE + "/attack"); // a fresh browser: a new private sandbox on the public site
+      // not filmed: the case reaches the moment the fake bank-change email arrives, as in scene 5
+      await p.request.post(LIVE + "/api/attack", { data: { action: "launch", id: "bank-change" } });
+      const { path: mcpPath } = await (await p.request.get(LIVE + "/api/mcp/link")).json();
+      const panel = p.getByRole("heading", { name: "Bring your own AI." });
+      await panel.waitFor();
+      await p.waitForFunction(() => [...document.querySelectorAll('[aria-labelledby="byo-ai"] code')].some((c) => c.textContent?.includes("/api/mcp?world=")));
+      await p.evaluate(() => {
+        const d = document.createElement("div");
+        d.textContent = "MCP · Model Context Protocol";
+        d.style.cssText = "position:fixed;left:28px;bottom:28px;z-index:2147483640;padding:9px 16px;border-radius:999px;background:rgba(8,16,15,.9);color:#5ccdb4;font:600 16px system-ui,sans-serif;letter-spacing:.04em;border:1px solid rgba(92,205,180,.45)";
+        document.body.appendChild(d);
+      });
+      // the outside client connects and reads the case before the camera rolls; only its payment request is filmed
+      const client = new Client({ name: "outside-ai (MCP client)", version: "1.0.0" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(LIVE + mcpPath)));
+      const overview = JSON.parse((await client.callTool({ name: "get_case_overview", arguments: { case_id: "case_th" } })).content[0].text);
+      const inv = (overview.invoices ?? []).find((i) => i.status === "open") ?? (overview.invoices ?? [])[0];
+      await t.start();
+      await t.hold(900);
+      const y = await panel.evaluate((el) => el.getBoundingClientRect().top + window.scrollY - 150);
+      await t.scroll(y, 2200);
+      t.mark("panel");
+      await t.hold(1500);
+      await t.click(p.getByRole("button", { name: /Copy Your sandbox's MCP address/ }));
+      await t.hold(2000);
+      t.mark("copied");
+      await p.goto(LIVE + "/app/security");
+      await p.getByRole("button", { name: /Verify in this browser/ }).waitFor();
+      t.mark("security");
+      await t.hold(1400);
+      await client.callTool({
+        name: "propose_payment",
+        arguments: {
+          case_id: "case_th",
+          invoice_id: inv?.id ?? "inv_1",
+          route: "bank_transfer",
+          amount: 250000,
+          payer_id: "[PERSON_ID_1]",
+          reference: "Deposit",
+          beneficiary: { account_name: "SR Medical Services Co.", account_number: "774-2-90311-5", swift: "KPTBTHB1", bank_name: "Krungsri Pattana Bank" },
+          rationale: "The hospital emailed that its bank account changed; paying the new account.",
+        },
+      });
+      await client.close();
+      const ev = p.getByText(/outside AI assistant over MCP/).first();
+      await ev.waitFor({ timeout: 20000 });
+      t.mark("blocked");
+      const top = await ev.evaluate((el) => el.getBoundingClientRect().top + window.scrollY - 300);
+      await t.scroll(top, 1500);
+      await t.hold(6500);
+      t.mark("done");
+    });
+  },
+
   // 6 · any bill: upload the sample, the agent prices it and holds it until the bank verifies
   async s6() {
     await api("/api/director", { action: "mode", mode: "scripted" });
@@ -354,6 +418,6 @@ const SCENES = {
   },
 };
 
-const order = ["s1", "s2", "s3", "s7", "s4", "s5", "s6", "s8"];
+const order = ["s1", "s2", "s3", "s7", "s4", "s5", "s5b", "s6", "s8"];
 const want = process.argv.slice(2);
 for (const s of order.filter((x) => !want.length || want.includes(x))) await SCENES[s]();
