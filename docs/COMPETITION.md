@@ -40,8 +40,8 @@ Registration and submission share the same deadline. A bilingual reminder email 
 | # | Item | Requirement | Our file |
 |---|---|---|---|
 | 01 | Technical documentation | System architecture, core algorithm description, security design | [TECHNICAL.md](TECHNICAL.md) |
-| 02 | Presentation deck | Final presentation no longer than 10 minutes | to make |
-| 03 | Demo video | Optional, no longer than 5 minutes | to make |
+| 02 | Presentation deck | Final presentation no longer than 10 minutes | Draft (15 slides, speaker notes): Slides artifact, export to PPTX or PDF for submission; team slide and market figure still to fill |
+| 03 | Demo video | Optional, no longer than 5 minutes | First cut (3:30): built by `scripts/video/edit.mjs`, English and 中英双语 versions, `.srt` files; to upload to YouTube and Bilibili |
 | 04 | Source code | README, GitHub repository link, deployment instructions, test cases | https://github.com/JahanzaibMohsin9/carrypay + [README](../README.md) + [DEPLOY.md](DEPLOY.md); live at https://carrypay.duckdns.org |
 | 05 | Security self-assessment | Permission-tier implementation and known-risk list | [SECURITY.md](SECURITY.md) |
 | 06 | Execution evidence | For non-on-chain topics: simulated-account / sandbox operation logs **and** demo video | [evidence/](evidence/README.md) (per-scenario logs, checks, on-chain anchors) + [EVAL.md](EVAL.md) + video |
