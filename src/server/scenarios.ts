@@ -189,8 +189,7 @@ function seedCnAdmission(): World {
     openedAt: start,
     status: "active",
     brief:
-      // TODO zh
-      "我女儿陈思雨通过深圳的「英途留学」中介申请了伦敦 Kingsgate University 的金融硕士，明年1月入学。中介的王老师说他们是学校的合作机构，可以“保录取”，还帮她拿到了40%奖学金，录取通知书我已经上传了。他说周五前要交 3.8 万元保录取服务费，第一年学费 18,500 英镑也要先打到他们公司账户，由他们统一转给学校，不然名额就给别人了。之前已经交了 2 万元定金。我今年的购汇额度用了 2.9 万美元左右。麻烦帮我们把学费付了。",
+      "我女儿陈思雨通过深圳的「英途留学」中介申请了伦敦 Kingsgate University 的金融硕士，明年1月入学。中介的王老师说他们是学校的合作机构，能“保录取”，还帮她拿到了40%的奖学金。录取通知书我已经上传了。他说周五之前要交 3.8 万元保录取服务费，第一年学费 18,500 英镑也得先打到他们公司账户，说是他们会统一转给学校，不然名额就给别人了。之前还交了 2 万元定金。我今年的购汇额度已经用了大概 2.9 万美元。麻烦帮我们把学费付了。",
     people: [
       { id: "p_chenjg", name: "陈建国 Chen Jianguo", role: "parent", adult: true, abroad: false, priorFxYearUSD: 29000, passport: "E52817330" },
       { id: "p_siyu", name: "陈思雨 Chen Siyu", role: "student", adult: true, abroad: false, passport: "E90364127" },
@@ -239,7 +238,6 @@ export function seedUpload(bill: UploadedBill, startAt = new Date().toISOString(
     id: "case_up",
     type: bill.type,
     corridor: `${bill.home}-${bill.country}` as CorridorId,
-    // TODO zh
     title: zh ? `${bill.institution.name} 的账单` : `Bill from ${bill.institution.name}`,
     lang: bill.lang,
     institutionId: "upl",
@@ -247,8 +245,7 @@ export function seedUpload(bill: UploadedBill, startAt = new Date().toISOString(
     status: "active",
     brief:
       bill.note?.trim() ||
-      // TODO zh
-      (zh ? "我上传了一张账单，请帮我们按规定付款。" : "I've uploaded a bill. Please pay it for us under our country's rules."),
+      (zh ? "我上传了一张账单，麻烦按我们国家的规定帮我们付款。" : "I've uploaded a bill. Please pay it for us under our country's rules."),
     people,
     notes: [],
   };

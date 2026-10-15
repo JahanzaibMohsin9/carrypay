@@ -254,8 +254,7 @@ export function runBeat(store: Store, beat: string) {
         kind: "other",
         title: "录取通知书（中介发来）Offer letter (sent by the agency)",
         text:
-          // TODO zh (the forged letter is meant to read like a scam: mixed languages, odd wording)
-          "KINGSGATE UNIVERSITY LONDON\nOFFICE OF INTERNATIONAL ADMISSIONS · 中国区招生办公室\nRef: KGU/CN/2026/30519        Date: 26 October 2026\n\nDear Ms Chen Siyu 陈思雨同学：\n\nCONGRATULATIONS! 恭喜您被录取 MSc Finance (January 2027)，并获得 40% International Excellence Scholarship 国际卓越奖学金。\n\n本录取由我校中国区独家合作机构 深圳英途教育咨询有限公司 保录取办理。To secure your place, the following must be paid within 5 days through our authorised partner:\n  保录取服务费 Guaranteed admission service fee   RMB 38,000\n  First-year tuition (after scholarship) 第一年学费   GBP 18,500\n  Scholarship processing fee 奖学金手续费          GBP 900\n\n收款方 Pay to: 深圳英途教育咨询有限公司\n  开户行: 深南商业银行 福田支行\n  账号: 6228 4801 2299 0175 316\n  或微信/支付宝转账给王老师（顾问）\n\n如购汇额度不足，我司可协助安排亲属名义分批购汇。\n\nQueries: kgu.china.admission@163.com · 微信 yingtu_wang88\n\nDr. James Whitmore\nDirector of Admissions",
+          "KINGSGATE UNIVERSITY LONDON\nOFFICE OF INTERNATIONAL ADMISSIONS · 中国区招生办公室\nRef: KGU/CN/2026/30519        Date: 26 October 2026\n\nDear Ms Chen Siyu 陈思雨同学：\n\nCONGRATULATIONS! 兹祝贺您被我校正式录取为 MSc Finance (January 2027) 硕士研究生，并授予 40% International Excellence Scholarship 国际卓越奖学金。\n\n本录取名额由我校中国区独家授权合作机构 深圳英途教育咨询有限公司 以“保录取”方式办理。To secure your place, the following must be paid within 5 days through our authorised partner:\n  保录取服务费 Guaranteed admission service fee   RMB 38,000\n  First-year tuition (after scholarship) 第一年学费   GBP 18,500\n  Scholarship processing fee 奖学金手续费          GBP 900\n\n收款方 Pay to: 深圳英途教育咨询有限公司\n  开户行: 深南商业银行 福田支行\n  账号: 6228 4801 2299 0175 316\n  或微信/支付宝转账给王老师（顾问）\n\n如购汇额度不足，我司可协助安排以亲属名义分批购汇，确保按时缴费。\n\nQueries: kgu.china.admission@163.com · 微信 yingtu_wang88\n\nDr. James Whitmore\nDirector of Admissions",
         fields: { reference: "KGU/CN/2026/30519", serviceFeeCNY: 38000, tuition: 18500, scholarshipFee: 900, currency: "GBP" },
         origin: "family",
       });
@@ -267,8 +266,7 @@ export function runBeat(store: Store, beat: string) {
       familySays(
         store,
         "case_cn",
-        // TODO zh
-        "王老师刚又打电话了，说学校今晚就要关闭名额，让我们先转 5 万元到他个人微信，剩下的学费他来想办法。他还说我额度不够没关系，可以用我爱人、我弟弟和思雨奶奶的名义各换 5,000 英镑，转到他给的账户就行。我们是不是先交了吧？名额没了就太可惜了。",
+        "王老师刚才又打电话来，说学校今晚就要关闭名额，让我们先转 5 万元到他个人微信，剩下的学费他来想办法。他还说，我额度不够也没关系，可以用我爱人、我弟弟和思雨奶奶的名义各换 5,000 英镑，转到他给的账户就行。我们要不先交了吧？名额没了就太可惜了。",
       );
       return;
     case "uk.split_request":

@@ -23,6 +23,27 @@ Caddy gets and renews the certificate on its own, and passes the event stream th
 
 Update: `git pull && docker compose up -d --build`. Logs: `docker compose logs -f app`.
 
+## On a server that already runs other sites
+
+If ports 80/443 are taken by your own reverse proxy, run only the app and point the proxy at it:
+
+```bash
+cp .env.local.example .env.production     # keys; ANCHOR_* for on-chain anchors
+docker compose -f docker-compose.shared.yml up -d --build    # app on 127.0.0.1:3010 only
+```
+
+Then add a site to your proxy: `deploy/nginx-carrypay.conf` for nginx (it switches off buffering for the event stream and allows 8 MB uploads), and get a certificate with `certbot --nginx -d <hostname>`. With Caddy it is one line: `<hostname> { reverse_proxy 127.0.0.1:3010 }`. With Traefik, give the `app` service the usual router labels instead of the port mapping.
+
+## No domain? Free hostnames
+
+HTTPS needs a hostname, not a bare IP. Free options, best first:
+
+1. **A subdomain of a domain you already have** for another project: add an A record `carrypay.<your-domain>` → the server's IP. Costs nothing and is the most reliable.
+2. **DuckDNS** (free, sign in with GitHub or Google): register `carrypay` (or the first free name) at duckdns.org, point it at the server's IP, and you get `carrypay.duckdns.org`. Let's Encrypt certificates work as usual.
+3. **sslip.io** (no sign-up at all): `carrypay.<ip-with-dashes>.sslip.io`, e.g. `carrypay.51-15-20-30.sslip.io`, resolves to that IP by itself. Let's Encrypt works for it too. The name is uglier but there is nothing to register.
+
+Whichever you pick, check it from China with a "website speed test from China" tool before submitting: free DNS services are occasionally slow or filtered there, and a European server adds some latency (fine for this app, which loads once and then streams small updates).
+
 ## Without Docker
 
 ```bash

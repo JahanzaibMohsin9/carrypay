@@ -56,8 +56,7 @@ const EXPLAIN: Record<string, Explainer> = {
   }),
   "CARRYPAY.VERIFIED_INSTITUTION": () => ({
     en: "A bill you upload yourself comes from an institution CarryPay doesn't know yet. It can read the bill, price it and explain the rules, but it pays nothing until the bank has verified the hospital or university and its account.",
-    // TODO zh
-    zh: "您自己上传的账单来自 CarryPay 尚未核实的机构。CarryPay 可以读取账单、计算费用并解释规定，但在银行核实该医院或学校及其账户之前，不会支付任何款项。",
+    zh: "您自己上传的账单，来自 CarryPay 还不认识的机构。CarryPay 可以读取账单、核算费用并解释规定，但在银行核实这家医院或学校及其账户之前，不会支付任何款项。",
   }),
   "CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES": () => ({
     en: "CarryPay pays no tuition until the university itself confirms the admission through its verified address. An offer letter from an agent or consultant is never enough: fake admissions are a common scam.",
