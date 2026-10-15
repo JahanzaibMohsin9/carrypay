@@ -37,10 +37,17 @@ How CarryPay maps to it:
 
 Registration and submission share the same deadline. A bilingual reminder email is sent 24 hours before. Submissions can be updated until the deadline; the latest version counts.
 
+**How to submit (organiser's email after registration, 15 Oct):** send the deliverables **by email**, as a reply to the organiser's address, "as soon as possible", deadline 20 Oct Beijing time. **Mandatory: items 01 and 02.** Items 03–06 are optional; we send all six. What this means for us:
+
+- **Review is online, from the files alone.** The deck must make sense without a presenter (speaker notes may not be read), and the technical documentation goes as a PDF, not a link to Markdown.
+- **Attachments:** PDFs for 01, 02 (also PPTX), 05 and a zipped `evidence/`; the video as YouTube and Bilibili links (the 1080p file is about 35 MB, too big for most mail). Put the GitHub link, the live demo link and the video links in the email body.
+- **The GitHub repository is public** (checked 15 Oct); keep it so.
+- Send on **19 Oct** (Pakistan time) to leave a day for problems; a later email can update it before the deadline.
+
 | # | Item | Requirement | Our file |
 |---|---|---|---|
 | 01 | Technical documentation | System architecture, core algorithm description, security design | [TECHNICAL.md](TECHNICAL.md) |
-| 02 | Presentation deck | Final presentation no longer than 10 minutes | Draft (15 slides, speaker notes): Slides artifact, export to PPTX or PDF for submission; team slide and market figure still to fill |
+| 02 | Presentation deck | Final presentation no longer than 10 minutes | Draft (15 slides, speaker notes, team and sourced market figures): Slides artifact, export to PPTX and PDF for submission |
 | 03 | Demo video | Optional, no longer than 5 minutes | First cut (3:30): built by `scripts/video/edit.mjs`, English and 中英双语 versions, `.srt` files; to upload to YouTube and Bilibili |
 | 04 | Source code | README, GitHub repository link, deployment instructions, test cases | https://github.com/JahanzaibMohsin9/carrypay + [README](../README.md) + [DEPLOY.md](DEPLOY.md); live at https://carrypay.duckdns.org |
 | 05 | Security self-assessment | Permission-tier implementation and known-risk list | [SECURITY.md](SECURITY.md) |
