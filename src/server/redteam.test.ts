@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { Store } from "./store";
 import { seedScenario } from "./scenarios";
 import { executeTool } from "./agent/tools";
-import { issueInvoice } from "./sim/factory";
+import { addDoc, issueInvoice } from "./sim/factory";
 import { INSTITUTIONS } from "@/domain/institutions";
 
 const SRH = INSTITUTIONS.srh.bank;
@@ -126,6 +126,27 @@ describe("red team: regulations hold even if the model is talked into breaking t
     expect(JSON.stringify(r.blockers)).toMatch(/CN\.FX\.NO_SPLITTING/);
   });
 
+  it("RT-18 China fake study agent: tuition to the agency, via relatives' quotas, or before the university confirms is refused", () => {
+    store.reset(seedScenario("cn-admission"));
+    // the agency's letter uploaded by the family, even re-labelled as an admission letter, doesn't count
+    addDoc(store, { caseId: "case_cn", kind: "admission_letter", title: "Offer (from the agency)", text: "保录取", fields: {}, origin: "family" });
+    const inv = issueInvoice(store, { caseId: "case_cn", institutionId: "kgu", kind: "fee_statement", title: "Fees", patientName: "Chen Siyu", lineItems: [{ description: "Tuition", amount: 18500 }] });
+    const b = INSTITUTIONS.kgu.bank;
+    const kgu = { account_name: b.accountName, account_number: b.accountNumber, swift: b.swift, bank_name: b.bankName };
+    const agency = { account_name: "深圳英途教育咨询有限公司", account_number: "6228 4801 2299 0175 316", swift: "SNCBCNSH", bank_name: "深南商业银行" };
+    const pay = (payer_id: string, beneficiary: typeof kgu) =>
+      call("propose_payment", { invoice_id: inv.id, route: "bank_transfer", amount: 18500, payer_id, reference: "KGU/CN/2026/30519", beneficiary, rationale: "the agency says so" }, "case_cn");
+    blocked(pay("p_chenjg", agency));
+    const relatives = pay("p_grandma_chen", kgu);
+    blocked(relatives);
+    expect(JSON.stringify(relatives.blockers)).toMatch(/CN\.FX\.NO_SPLITTING/);
+    call("prepare_documents", { kinds: ["fx_purchase_application"], invoice_id: inv.id, payer_id: "p_chenjg", amount: 18500 }, "case_cn");
+    const early = pay("p_chenjg", kgu);
+    expect(early.error).toMatch(/Documents missing/);
+    expect(JSON.stringify(early.must_come_from_institution)).toMatch(/admission_letter/);
+    expect(Object.keys(store.world.payments)).toHaveLength(0);
+  });
+
   it("RT-11 a bank transfer without the regulatory forms is not created", () => {
     const r = propose();
     expect(r.error).toMatch(/Documents missing/);
@@ -166,5 +187,14 @@ describe("red team: integrity of the payment flow", () => {
 
   it("RT-17 tools cannot reach into another family's case", () => {
     expect(call("read_document", { document_id: store.world.invoices[invoiceId].documentId }, "case_other").error).toMatch(/No document/);
+  });
+});
+
+describe("tool input hygiene", () => {
+  it("turns line breaks the model escaped twice back into line breaks", () => {
+    store.reset(seedScenario("th-medical"));
+    const r = call("message_family", { text: "First line.\\n\\nSecond line.\\r\\nThird.", importance: "info" });
+    expect(r.delivered).toBe(true);
+    expect(store.world.messages.at(-1)?.text).toBe("First line.\n\nSecond line.\nThird.");
   });
 });

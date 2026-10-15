@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { DocumentKind, Payment, Route, SecurityEvent } from "@/domain/types";
+import type { DocumentKind, Payment, Route, SecurityEvent, World } from "@/domain/types";
 import { INSTITUTIONS } from "@/domain/institutions";
 import { ROUTE_SHORT } from "@/domain/corridors";
 import { compareRoutes, evaluateRoute, priceRoute } from "@/domain/rules/engine";
@@ -55,9 +55,11 @@ function familyMessage(ctx: ToolCtx, text: string, importance: "info" | "action"
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-function checkBeneficiary(institutionId: string, b: { account_name: string; account_number: string; swift: string }) {
-  const inst = INSTITUTIONS[institutionId];
+function checkBeneficiary(w: World, institutionId: string, b: { account_name: string; account_number: string; swift: string }) {
+  const inst = w.institutions[institutionId];
   const mismatches: string[] = [];
+  // details read from a bill the family uploaded are not verified until the bank has checked the institution
+  if (inst.origin === "uploaded_bill" && !inst.verifiedAt) mismatches.push("institution not yet verified by the bank");
   if (norm(b.account_number) !== norm(inst.bank.accountNumber)) mismatches.push("account number");
   if (norm(b.swift) !== norm(inst.bank.swift)) mismatches.push("SWIFT code");
   if (norm(b.account_name) !== norm(inst.bank.accountName)) mismatches.push("account name");
@@ -94,7 +96,7 @@ export const TOOLS = [
       const m = ctx.store.world.mail[i.mail_id];
       if (!m || m.caseId !== ctx.caseId) return { decision: "error", result: { error: `No email ${i.mail_id} on this case` } };
       ctx.store.mutate((w) => (w.mail[m.id].read = true));
-      const inst = INSTITUTIONS[ctx.store.world.cases[ctx.caseId].institutionId];
+      const inst = ctx.store.world.institutions[ctx.store.world.cases[ctx.caseId].institutionId];
       return {
         decision: "allowed",
         result: {
@@ -150,7 +152,14 @@ export const TOOLS = [
     }),
     run: (i, ctx) => {
       const c = ctx.store.world.cases[ctx.caseId];
-      const r = checkBeneficiary(c.institutionId, i);
+      const r = checkBeneficiary(ctx.store.world, c.institutionId, i);
+      if (r.inst.origin === "uploaded_bill" && !r.inst.verifiedAt) {
+        return {
+          decision: "allowed",
+          ruleIds: ["CARRYPAY.VERIFIED_INSTITUTION"],
+          result: { verified: false, institution: r.inst.name, note: "This institution comes from a bill the family uploaded and the bank has not verified it yet, so there is no verified account to compare with. Nothing can be paid until it is verified; you will be woken when that happens." },
+        };
+      }
       if (!r.verified) {
         security(ctx, {
           severity: "warning",
@@ -192,7 +201,7 @@ export const TOOLS = [
       if (!inv || inv.caseId !== c.id) return { decision: "error", result: { error: `No invoice ${i.invoice_id}` } };
       const amount = i.amount ?? Math.max(0, outstanding(ctx, inv.id).remaining);
       const payer = c.people.find((p) => p.id === i.payer_id);
-      const options = compareRoutes({ world: w, caseFile: c, payer, institution: INSTITUTIONS[inv.institutionId], amount, deadline: inv.dueAt, invoiceId: inv.id });
+      const options = compareRoutes({ world: w, caseFile: c, payer, institution: w.institutions[inv.institutionId], amount, deadline: inv.dueAt, invoiceId: inv.id });
       return {
         decision: "allowed",
         result: {
@@ -293,7 +302,17 @@ export const TOOLS = [
     }),
     run: (i, ctx) => {
       const c = ctx.store.world.cases[ctx.caseId];
-      const inst = INSTITUTIONS[c.institutionId];
+      const inst = ctx.store.world.institutions[c.institutionId];
+      if (inst.origin === "uploaded_bill" && (!inst.verifiedAt || !inst.email)) {
+        security(ctx, {
+          severity: "info",
+          kind: "blocked_recipient",
+          title: "Email to an unverified institution was not sent",
+          detail: `${inst.name} comes from a bill the family uploaded. Its contact details are not verified, so CarryPay does not write to it yet.`,
+          ruleIds: ["CARRYPAY.VERIFIED_INSTITUTION"],
+        });
+        return { decision: "blocked", ruleIds: ["CARRYPAY.VERIFIED_INSTITUTION"], result: { error: `Blocked: ${inst.name} has no verified contact address yet (it comes from a bill the family uploaded).` }, narration: `Did not email ${inst.name}: its address isn't verified yet` };
+      }
       if (i.to.trim().toLowerCase() !== inst.email) {
         security(ctx, {
           severity: "warning",
@@ -347,7 +366,7 @@ export const TOOLS = [
       const inv = w.invoices[i.invoice_id];
       const payer = c.people.find((p) => p.id === i.payer_id);
       if (!inv || !payer) return { decision: "error", result: { error: "Unknown invoice or payer" } };
-      const inst = INSTITUTIONS[inv.institutionId];
+      const inst = w.institutions[inv.institutionId];
       const created: { id: string; kind: DocumentKind; title: string }[] = [];
       for (const kind of i.kinds) {
         const existing = Object.values(w.docs).find((d) => d.caseId === c.id && d.kind === kind && d.fields.invoice === inv.number);
@@ -483,7 +502,7 @@ export const TOOLS = [
 
       // 1. Beneficiary must match the verified registry (independent of what the model believes).
       //    Checked first so every attempt to pay an unverified account is recorded.
-      const ben = checkBeneficiary(inv.institutionId, i.beneficiary);
+      const ben = checkBeneficiary(w, inv.institutionId, i.beneficiary);
       if (!ben.verified) {
         security(ctx, {
           severity: "critical",
@@ -544,7 +563,7 @@ export const TOOLS = [
       const dup = Object.values(w.payments).find((p) => p.invoiceId === inv.id && p.route === i.route && p.status === "awaiting_approval");
       if (dup) return { decision: "error", result: { error: `A payment on this invoice is already waiting for the family's approval (${dup.id}).` } };
 
-      const cost = priceRoute({ corridor: c.corridor, route: i.route as Route, deliverAmount: i.amount, institution: INSTITUTIONS[inv.institutionId], simDate: w.now })!;
+      const cost = priceRoute({ corridor: c.corridor, route: i.route as Route, deliverAmount: i.amount, institution: w.institutions[inv.institutionId], simDate: w.now })!;
       const paymentId = store.nextId("pay");
       const approvalId = store.nextId("apr");
       const payment: Payment = {
@@ -573,7 +592,7 @@ export const TOOLS = [
           caseId: c.id,
           paymentId,
           requestedAt: ww.now,
-          summary: `${ROUTE_SHORT[payment.route]}: ${inv.currency} ${i.amount.toLocaleString()} to ${INSTITUTIONS[inv.institutionId].name}`,
+          summary: `${ROUTE_SHORT[payment.route]}: ${inv.currency} ${i.amount.toLocaleString()} to ${w.institutions[inv.institutionId].name}`,
         };
       });
       return {
@@ -600,7 +619,7 @@ export const TOOLS = [
       const p = ctx.store.world.payments[i.payment_id];
       if (!p || p.caseId !== ctx.caseId) return { decision: "error", result: { error: `No payment ${i.payment_id}` } };
       if (p.status !== "returned") return { decision: "error", result: { error: `Payment is ${p.status}, only returned payments can be resubmitted.` } };
-      const ben = checkBeneficiary(p.institutionId, { account_name: p.beneficiary.accountName, account_number: p.beneficiary.accountNumber, swift: p.beneficiary.swift });
+      const ben = checkBeneficiary(ctx.store.world, p.institutionId, { account_name: p.beneficiary.accountName, account_number: p.beneficiary.accountNumber, swift: p.beneficiary.swift });
       if (!ben.verified) return { decision: "blocked", ruleIds: ["CARRYPAY.VERIFIED_BENEFICIARY"], result: { error: "BLOCKED: beneficiary no longer verified" } };
       ctx.store.mutate((w) => {
         const pp = w.payments[p.id];
@@ -643,7 +662,7 @@ export function executeTool(name: string, rawInput: unknown, ctx: ToolCtx): stri
     return JSON.stringify({ error: "The family switched on the emergency stop. Do nothing further." });
   }
   if (!spec) return JSON.stringify({ error: `Unknown tool ${name}` });
-  const parsed = (spec.schema as z.ZodObject).safeParse(rawInput);
+  const parsed = (spec.schema as z.ZodObject).safeParse(unescapeNewlines(rawInput));
   if (!parsed.success) {
     store.log({ actor: "gateway", type: "tool.invalid", caseId: ctx.caseId, data: { tool: name, issues: parsed.error.issues.slice(0, 5) } });
     return JSON.stringify({ error: "INVALID_INPUT", issues: parsed.error.issues.slice(0, 5).map((x) => `${x.path.join(".")}: ${x.message}`) });
@@ -664,6 +683,17 @@ export function executeTool(name: string, rawInput: unknown, ctx: ToolCtx): stri
     data: { tool: name, tier: spec.tier, decision: outcome.decision, ruleIds: outcome.ruleIds, input: args, result: summarise(outcome.result) },
   });
   return JSON.stringify(outcome.result);
+}
+
+/**
+ * Models sometimes escape line breaks twice inside tool arguments, so a message would show a backslash
+ * and an "n" to the family. No field we accept needs that pair, so turn it back into a line break.
+ */
+function unescapeNewlines<T>(v: T): T {
+  if (typeof v === "string") return v.replace(/(\\r)?\\n/g, "\n") as T;
+  if (Array.isArray(v)) return v.map(unescapeNewlines) as T;
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unescapeNewlines(x)])) as T;
+  return v;
 }
 
 /** Keep the ledger readable: drop long text fields from results. */

@@ -54,6 +54,11 @@ const EXPLAIN: Record<string, Explainer> = {
     en: "Money only goes to an institution's bank account that CarryPay has verified independently, never to details from an email or a document alone. This stops 'our bank details have changed' scams.",
     zh: "资金只会汇入经 CarryPay 独立核实的机构账户，绝不凭邮件或文件中的账户信息付款。这能防范“银行账户已变更”这类诈骗。",
   }),
+  "CARRYPAY.VERIFIED_INSTITUTION": () => ({
+    en: "A bill you upload yourself comes from an institution CarryPay doesn't know yet. It can read the bill, price it and explain the rules, but it pays nothing until the bank has verified the hospital or university and its account.",
+    // TODO zh
+    zh: "您自己上传的账单来自 CarryPay 尚未核实的机构。CarryPay 可以读取账单、计算费用并解释规定，但在银行核实该医院或学校及其账户之前，不会支付任何款项。",
+  }),
   "CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES": () => ({
     en: "CarryPay pays no tuition until the university itself confirms the admission through its verified address. An offer letter from an agent or consultant is never enough: fake admissions are a common scam.",
     zh: "在校方通过已核实的地址确认录取之前，CarryPay 不支付任何学费。仅凭中介或顾问提供的录取信远远不够：伪造录取是常见骗局。",

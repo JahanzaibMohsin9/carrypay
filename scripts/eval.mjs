@@ -8,6 +8,12 @@ import path from "node:path";
 const BASE = process.env.CARRYPAY_URL || "http://localhost:3000";
 const OUT_DIR = path.join(process.cwd(), "docs", "eval");
 const RUNS_FILE = path.join(OUT_DIR, "runs.jsonl");
+
+// What changed inside a configuration while its runs were being collected, so the report says so.
+const CONFIG_NOTES = {
+  "v3.1 (China fake-agent scenario, explicit no-blame wording)":
+    "Within this configuration, the make-up runs after the DeepSeek outage of 15 Oct also had the uploaded-bill prompt section and gateway checks (they only act on uploaded bills), and the last two Bangkok runs also retried connections that DeepSeek dropped mid-response. Two earlier Bangkok runs that failed only because of such a dropped connection (all task checks passed) count as failures.",
+};
 const MAX_STEPS = 45;
 
 // USD per million tokens, DeepSeek peak-hour list prices (api-docs.deepseek.com/quick_start/pricing, read 14 Oct 2026).
@@ -81,7 +87,7 @@ if (cmd === "run") {
 
 function report() {
   const runs = fs.existsSync(RUNS_FILE) ? fs.readFileSync(RUNS_FILE, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
-  const current = process.env.EVAL_CONFIG ?? "v3 (privacy firewall, case closing)";
+  const current = process.env.EVAL_CONFIG ?? "v3.1 (China fake-agent scenario, explicit no-blame wording)";
   const excluded = runs.filter((r) => r.excluded);
   const live = runs.filter((r) => r.mode === "live" && !r.excluded && (r.config ?? current) === current);
   const earlier = runs.filter((r) => r.mode === "live" && r.config && r.config !== current);
@@ -120,6 +126,7 @@ function report() {
     "",
     `Agent configuration: **${current}**. AI cost uses the token counts the provider reported and DeepSeek's peak-hour list prices in \`scripts/eval.mjs\` (off-peak is half; re-check prices before quoting).`,
     "",
+    ...(CONFIG_NOTES[current] ? [CONFIG_NOTES[current], ""] : []),
     ...(excluded.length ? [`Excluded: ${excluded.length} run${excluded.length > 1 ? "s" : ""} that stopped because the model provider was unavailable (${[...new Set(excluded.map((r) => r.excluded))].join("; ")}); they say nothing about the agent and are kept in runs.jsonl.`, ""] : []),
     ...(earlier.length
       ? [`Earlier configuration${new Set(earlier.map((r) => r.config)).size > 1 ? "s" : ""} (${[...new Set(earlier.map((r) => r.config))].join(", ")}): ${earlier.filter((r) => r.success).length}/${earlier.length} live runs succeeded (${[...new Set(earlier.map((r) => r.scenarioId))].join(", ")}).`, ""]
@@ -151,7 +158,7 @@ function chart(rows) {
   const H = top + rows.length * rowH + 30;
   const barW = W - left - right;
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  const label = { "th-medical": "Bangkok medical", "uk-tuition": "London tuition", "pk-admission": "Fake admission" };
+  const label = { "th-medical": "Bangkok medical", "uk-tuition": "London tuition", "pk-admission": "Fake admission (PK)", "cn-admission": "Fake study agent (CN)", upload: "Uploaded bill" };
   const bars = rows
     .map((r, i) => {
       const y = top + i * rowH;

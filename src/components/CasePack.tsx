@@ -4,7 +4,7 @@ import { Printer, ShieldCheck, ShieldX } from "lucide-react";
 import { useCarry } from "@/lib/client";
 import { activeCase, caseTz } from "@/lib/selectors";
 import { dateTime, money, shortHash } from "@/lib/format";
-import { CORRIDORS, ROUTE_SHORT } from "@/domain/corridors";
+import { corridorOf, ROUTE_SHORT } from "@/domain/corridors";
 import type { Doc } from "@/domain/types";
 
 // One printable pack per case: everything a family needs for an insurance claim,
@@ -37,7 +37,7 @@ export function CasePack() {
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5b6f6a]">CarryPay case pack · sandbox</p>
           <h1 className="text-[22px] font-bold leading-tight">{c.title}</h1>
           <p className="text-[#5b6f6a]">
-            {CORRIDORS[c.corridor].label} · {inst.name} · opened {dateTime(c.openedAt, tz)}
+            {corridorOf(c.corridor).label} · {inst.name} · opened {dateTime(c.openedAt, tz)}
           </p>
           <p className="text-[#5b6f6a]">{c.people.map((p) => `${p.name} (${p.role})`).join(" · ")}</p>
         </div>

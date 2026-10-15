@@ -146,7 +146,7 @@ Sandbox state lives in `.data/` (world snapshot, ledger as JSONL, anchors, recor
 `npm test` runs 48 tests:
 - rules engine: tax history, pricing order, Pakistan caps, card limits, carried-cash rule, anti-splitting, SAFE quota and prohibited purposes, deadline-aware comparison
 - both scenarios end to end with the scripted agent, including the returned transfer, the scam email, the bill dispute, the refund and a tamper check, scored by the same evaluator as the live runs
-- 17 red-team attacks on the safety layer (see [SECURITY.md](SECURITY.md))
+- 18 red-team attacks on the safety layer (see [SECURITY.md](SECURITY.md))
 - sandbox institutions: multi-question replies, "final bill on discharge", transfer in flight, refund started once, follow-up skipping and cancelling
 - privacy firewall: nothing personal in the masked snapshot, real values restored in tool inputs, Chinese names
 - passkeys: a software P-256 authenticator signs approvals; changed amount, replay, missing user verification, wrong site, forged signature and unknown key are all rejected

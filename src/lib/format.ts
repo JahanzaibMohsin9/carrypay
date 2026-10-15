@@ -17,7 +17,7 @@ export function money(amount: number, currency: Currency | string, opts: { decim
   return sym ? `${sym}${n}` : `${currency} ${n}`;
 }
 
-export const CASE_TZ: Record<CorridorId, string> = {
+export const CASE_TZ: Partial<Record<CorridorId, string>> = {
   "PK-TH": "Asia/Bangkok",
   "CN-GB": "Asia/Shanghai",
   "PK-GB": "Asia/Karachi",

@@ -57,6 +57,14 @@ export function Flag({ code, className = "" }: { code: "PK" | "TH" | "CN" | "GB"
         </svg>
       );
     default:
-      return <span className={className}>{code}</span>;
+      // countries an uploaded bill can come from: a neutral tag with the country code
+      return (
+        <svg {...common}>
+          <rect width="30" height="20" fill="var(--surface-3)" />
+          <text x="15" y="14.5" textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--ink-2)">
+            {code}
+          </text>
+        </svg>
+      );
   }
 }

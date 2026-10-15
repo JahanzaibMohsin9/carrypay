@@ -360,7 +360,7 @@ const HANDLERS: Record<Intent, (c: ReplyCtx) => Answer | null> = {
     if (c.inst.kind !== "university") return null;
     if (c.enrolled) return { text: `We confirm that ${c.enrolled.name} (Student ID ${c.enrolled.id}) holds an unconditional offer for ${c.enrolled.programme} starting ${c.enrolled.start}.` };
     return {
-      text: `We have no applicant or student named ${c.prof.subjectName || "in your message"} in our admissions records, and no offer has been issued in that name. Our offers are only sent from @kingsgate.ac.uk addresses, we never charge "visa guarantee" or processing fees, and no agent or consultant collects tuition on our behalf: fees are paid only to the university's own account, quoting a Kingsgate Student ID, after a genuine offer has been accepted. The letter you describe is not from us. We recommend reporting it to the police, and we have alerted our fraud team.`,
+      text: `We have no applicant or student named ${c.prof.subjectName || "in your message"} in our admissions records, and no offer has been issued in that name. Our offers are only sent from @kingsgate.ac.uk addresses, we never charge "guaranteed admission", "visa guarantee", scholarship processing or other such fees, and no agent, consultant or agency collects tuition on our behalf: fees are paid only to the university's own account, quoting a Kingsgate Student ID, after a genuine offer has been accepted. The letter you describe is not from us. We recommend reporting it to the police, and we have alerted our fraud team.`,
     };
   },
 };

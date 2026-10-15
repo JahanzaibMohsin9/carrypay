@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ArrowRight, GraduationCap, HeartPulse, Landmark, LifeBuoy, Plane, ShieldAlert, Siren } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, GraduationCap, HeartPulse, Landmark, LifeBuoy, Plane, ShieldAlert, Siren, Upload } from "lucide-react";
 import { useState } from "react";
 import { director } from "@/lib/client";
 import { Card } from "@/components/ui";
@@ -12,6 +13,7 @@ const LIVE = [
   { id: "th-medical", icon: HeartPulse, title: "Hospital treatment abroad", corridor: ["PK", "Pakistan", "TH", "Thailand"], rules: "State Bank of Pakistan rules" },
   { id: "pk-admission", icon: ShieldAlert, title: "University offer through an agent", corridor: ["PK", "Pakistan", "GB", "United Kingdom"], rules: "State Bank of Pakistan rules · admission check first" },
   { id: "uk-tuition", icon: GraduationCap, title: "University fees abroad", corridor: ["CN", "China", "GB", "United Kingdom"], rules: "SAFE (国家外汇管理局) rules" },
+  { id: "cn-admission", icon: ShieldAlert, title: "Study agent promises a place", corridor: ["CN", "China", "GB", "United Kingdom"], rules: "SAFE rules · admission check first · no 蚂蚁搬家" },
 ];
 
 const SOON = [
@@ -54,6 +56,19 @@ export default function NewCase() {
           </button>
         ))}
       </div>
+      <Link href="/app/new/upload" className="block rounded-[var(--radius)] focus-visible:outline-2 focus-visible:outline-brand">
+        <Card className="flex items-center gap-3 border-dashed border-brand/50 bg-brand-softer p-4 transition-shadow hover:shadow-pop">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-brand text-brand-ink">
+            <Upload size={22} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-semibold">Upload your own bill</span>
+            <span className="block text-[12.5px] text-ink-2">Any hospital or university bill: PDF, photo or text</span>
+            <span className="block text-[11.5px] text-ink-3">Read and priced now · paid only after the bank verifies the institution</span>
+          </span>
+          <ArrowRight size={18} className="text-ink-3" />
+        </Card>
+      </Link>
       <div>
         <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-3">Coming next · same agent, new rules file</p>
         <div className="grid grid-cols-2 gap-3">

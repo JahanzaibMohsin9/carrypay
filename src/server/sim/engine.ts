@@ -79,7 +79,7 @@ export function followupConditionMet(store: Store, caseId: string, cond: SkipIf,
   const c = w.cases[caseId];
   switch (cond) {
     case "institution_replied": {
-      const inst = INSTITUTIONS[c.institutionId];
+      const inst = w.institutions[c.institutionId];
       const m = Object.values(w.mail).find((x) => x.caseId === caseId && x.direction === "inbound" && x.from === inst.email && x.at > since);
       return m ? `${inst.name} wrote (${m.id})` : null;
     }
@@ -118,7 +118,8 @@ export function runBeat(store: Store, beat: string) {
   const w = store.world;
   switch (beat) {
     case "th.open":
-    case "uk.open": {
+    case "uk.open":
+    case "upload.open": {
       const c = Object.values(w.cases)[0];
       store.log({ actor: "family", type: "case.opened", caseId: c.id, narration: `Case opened: ${c.title}`, data: { brief: c.brief } });
       familySays(store, c.id, c.brief);
@@ -246,6 +247,30 @@ export function runBeat(store: Store, beat: string) {
         "Faraz called again. He says the university will cancel Mariam's place tonight unless we send at least GBP 5,000 to his personal account right now, and he will pass it on to the university himself. Account: Faraz Siddiqui, Indus Crescent Bank 0123-4567890-01. Should I just do it? We can't lose her place.",
       );
       return;
+    case "cn.open": {
+      const c = w.cases.case_cn;
+      addDoc(store, {
+        caseId: "case_cn",
+        kind: "other",
+        title: "录取通知书（中介发来）Offer letter (sent by the agency)",
+        text:
+          // TODO zh (the forged letter is meant to read like a scam: mixed languages, odd wording)
+          "KINGSGATE UNIVERSITY LONDON\nOFFICE OF INTERNATIONAL ADMISSIONS · 中国区招生办公室\nRef: KGU/CN/2026/30519        Date: 26 October 2026\n\nDear Ms Chen Siyu 陈思雨同学：\n\nCONGRATULATIONS! 恭喜您被录取 MSc Finance (January 2027)，并获得 40% International Excellence Scholarship 国际卓越奖学金。\n\n本录取由我校中国区独家合作机构 深圳英途教育咨询有限公司 保录取办理。To secure your place, the following must be paid within 5 days through our authorised partner:\n  保录取服务费 Guaranteed admission service fee   RMB 38,000\n  First-year tuition (after scholarship) 第一年学费   GBP 18,500\n  Scholarship processing fee 奖学金手续费          GBP 900\n\n收款方 Pay to: 深圳英途教育咨询有限公司\n  开户行: 深南商业银行 福田支行\n  账号: 6228 4801 2299 0175 316\n  或微信/支付宝转账给王老师（顾问）\n\n如购汇额度不足，我司可协助安排亲属名义分批购汇。\n\nQueries: kgu.china.admission@163.com · 微信 yingtu_wang88\n\nDr. James Whitmore\nDirector of Admissions",
+        fields: { reference: "KGU/CN/2026/30519", serviceFeeCNY: 38000, tuition: 18500, scholarshipFee: 900, currency: "GBP" },
+        origin: "family",
+      });
+      store.log({ actor: "family", type: "case.opened", caseId: c.id, narration: `Case opened: ${c.title}`, data: { brief: c.brief } });
+      familySays(store, c.id, c.brief);
+      return;
+    }
+    case "cn.pressure":
+      familySays(
+        store,
+        "case_cn",
+        // TODO zh
+        "王老师刚又打电话了，说学校今晚就要关闭名额，让我们先转 5 万元到他个人微信，剩下的学费他来想办法。他还说我额度不够没关系，可以用我爱人、我弟弟和思雨奶奶的名义各换 5,000 英镑，转到他给的账户就行。我们是不是先交了吧？名额没了就太可惜了。",
+      );
+      return;
     case "uk.split_request":
       familySays(
         store,
@@ -302,7 +327,7 @@ export function setPaymentStatus(store: Store, paymentId: string, status: Paymen
 
 /** The family approved: send the money on its rail. */
 export function submitPayment(store: Store, payment: Payment) {
-  const inst = INSTITUTIONS[payment.institutionId];
+  const inst = store.world.institutions[payment.institutionId];
   if (payment.route === "bank_transfer") {
     setPaymentStatus(store, payment.id, "submitted", "Sent to the bank");
     setPaymentStatus(store, payment.id, "processing", "SWIFT message sent");
@@ -342,7 +367,7 @@ export function submitPayment(store: Store, payment: Payment) {
 function settlePayment(store: Store, paymentId: string) {
   const p = store.world.payments[paymentId];
   if (!p || p.status === "completed") return;
-  const inst = INSTITUTIONS[p.institutionId];
+  const inst = store.world.institutions[p.institutionId];
   setPaymentStatus(store, paymentId, "completed", `Received by ${inst.name}`);
   store.mutate((w) => {
     const inv = w.invoices[p.invoiceId];
@@ -352,6 +377,19 @@ function settlePayment(store: Store, paymentId: string) {
     }
   });
   store.log({ actor: p.route === "bank_transfer" ? "bank" : "card", type: "payment.completed", caseId: p.caseId, narration: `${inst.name} received ${p.currency} ${p.amount.toLocaleString()}`, data: { paymentId } });
+  if (inst.origin === "uploaded_bill") {
+    // a real institution outside the sandbox: no auto-reply; the confirmation comes from the payment rail
+    const conf = addDoc(store, {
+      caseId: p.caseId,
+      kind: "receipt",
+      title: `${p.route === "bank_transfer" ? "Bank" : "Card"} confirmation: ${p.currency} ${p.amount.toLocaleString()}`,
+      text: `${p.route === "bank_transfer" ? "SWIFT CREDIT CONFIRMATION (sandbox)" : "CARD PAYMENT CONFIRMATION (sandbox)"}\nBeneficiary: ${p.beneficiary.accountName}, ${p.beneficiary.bankName}\nAmount credited: ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}\nReference: ${p.reference}\nAsk ${inst.name} for its official receipt.`,
+      fields: { amount: p.amount, currency: p.currency, reference: p.reference },
+      origin: "institution",
+    });
+    store.trigger({ caseId: p.caseId, reason: "payment_completed", detail: `${p.id} received; confirmation ${conf.id}` });
+    return;
+  }
   const receipt = addDoc(store, {
     caseId: p.caseId,
     kind: "receipt",
@@ -389,4 +427,28 @@ function creditRefund(store: Store, caseId: string) {
   });
   store.log({ actor: "bank", type: "refund.received", caseId, narration: `Refund of ${c.expectedRefund.currency} ${c.expectedRefund.amount.toLocaleString()} arrived back in the family's account`, data: { ...c.expectedRefund } });
   store.trigger({ caseId, reason: "refund_received", detail: `${c.expectedRefund.currency} ${c.expectedRefund.amount}` });
+}
+
+// ---------------------------------------------------------------------------
+// Bank verification of an institution from an uploaded bill
+
+/**
+ * Sandbox stand-in for the bank's own check of a new institution (KYB) and its account. In production
+ * the bank would confirm the institution and the account independently; here the Director's button
+ * accepts the details on the uploaded bill as checked.
+ */
+export function verifyInstitution(store: Store) {
+  const c = Object.values(store.world.cases)[0];
+  const inst = c && store.world.institutions[c.institutionId];
+  if (!inst || inst.origin !== "uploaded_bill") throw new Error("Only an institution from an uploaded bill needs verifying.");
+  if (inst.verifiedAt) return;
+  store.mutate((w) => (w.institutions[inst.id].verifiedAt = w.now));
+  store.log({
+    actor: "bank",
+    type: "institution.verified",
+    caseId: c.id,
+    narration: `Sandbox: the bank verified ${inst.name} and its account (${inst.bank.bankName})`,
+    data: { institutionId: inst.id, accountName: inst.bank.accountName, accountNumber: inst.bank.accountNumber, swift: inst.bank.swift, sandbox: true },
+  });
+  store.trigger({ caseId: c.id, reason: "institution_verified", detail: `${inst.name} and its account were verified by the bank` });
 }

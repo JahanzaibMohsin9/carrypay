@@ -1,6 +1,6 @@
 "use client";
 
-import { Anchor, Bot, FastForward, Flame, Pause, Play, RotateCcw, SkipForward, Skull, Zap } from "lucide-react";
+import { BadgeCheck, Anchor, Bot, FastForward, Flame, Pause, Play, RotateCcw, SkipForward, Skull, Zap } from "lucide-react";
 import { useState } from "react";
 import { director, useCarry } from "@/lib/client";
 import { activeCase, caseTz } from "@/lib/selectors";
@@ -37,6 +37,7 @@ export function DirectorPanel({ dense = false }: { dense?: boolean }) {
             {s.title} ({s.corridor})
           </option>
         ))}
+        {w.scenarioId === "upload" && <option value="upload">Your uploaded bill ({c.corridor})</option>}
       </select>
       <div className="flex h-8 items-center rounded-lg border border-line bg-surface p-0.5" role="radiogroup" aria-label="Agent mode">
         {(["live", "replay", "scripted"] as AgentMode[]).map((m) => (
@@ -98,6 +99,19 @@ export function DirectorPanel({ dense = false }: { dense?: boolean }) {
           {armed ? " ✓" : ""}
         </button>
       ))}
+      {w.institutions[c.institutionId]?.origin === "uploaded_bill" && (
+        <>
+          <span className="mx-1 h-5 w-px bg-line" />
+          <button
+            onClick={() => run("verify_institution")}
+            disabled={Boolean(w.institutions[c.institutionId].verifiedAt) || state.agentBusy}
+            className="inline-flex h-8 items-center gap-1 rounded-lg border border-brand/50 px-2 font-semibold text-brand-strong disabled:opacity-50"
+            title="Stands in for the bank's own check of the institution and its account (sandbox)"
+          >
+            <BadgeCheck size={13} /> {w.institutions[c.institutionId].verifiedAt ? "Institution verified" : "Verify institution (sandbox)"}
+          </button>
+        </>
+      )}
       <span className="mx-1 h-5 w-px bg-line" />
       <label className="inline-flex items-center gap-1 font-semibold text-ink-2">
         <input type="checkbox" checked={w.autoReply} onChange={(e) => run("autoReply", { on: e.target.checked })} /> Auto-reply

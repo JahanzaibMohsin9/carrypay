@@ -132,3 +132,23 @@ Open recordings/uk-tuition.json. It is a recorded run of the AI agent paying a C
 
 For each message, rate it 1-5 on: natural Chinese for a parent, correct banking terms, accuracy against SAFE rules, warmth without being wordy. Then give at most 5 concrete style rules the agent should follow when writing Chinese to families (for example preferred terms, sentence length, how to state amounts in 人民币 and 英镑). Write the rules in English with Chinese examples.
 ```
+
+---
+
+## Prompt 8: Review scenario 4, the fake study agent in China (`cn-admission`)
+
+Commit first, so MiMo's edits show up as a clean diff. Paste the shared context, then:
+
+```
+A new scenario was added: a Shenzhen family is told by a study agency (留学中介) that their daughter has a "保录取" (guaranteed) place at Kingsgate University London with a 40% scholarship. The agency wants a 保录取服务费, the tuition paid to its own account or to the consultant's personal WeChat/Alipay, and suggests buying the pounds in relatives' names to stay under the USD 50,000 quota (蚂蚁搬家). CarryPay checks with the university (no such applicant), pays nothing, refuses the quota split and tells the family what to do. Everyone in it is fictional.
+
+The Chinese text is a first draft, not checked by a native speaker. Each place is marked with a comment "// TODO zh". Review it, improve it, and remove each "// TODO zh" comment when you have finished the text under it. Do not commit; leave your changes in the working tree.
+
+1. src/server/scenarios.ts, function seedCnAdmission: the family's opening message ("brief") and the case title. It should sound like a worried Shenzhen father writing on his phone: natural, not formal, and keep every fact (names, amounts, 2 万元 deposit, 2.9 万美元 quota used, Friday deadline).
+2. src/server/sim/engine.ts, case "cn.open": the forged offer letter. It is meant to look like a scam: mixed Chinese and English, slightly odd official wording. Make the Chinese realistic for a fake letter of this kind, but keep it obviously checkable (163.com address, personal WeChat, relatives' quotas). Keep the reference, amounts and account number unchanged.
+3. src/server/sim/engine.ts, case "cn.pressure": the father's second message after the agent calls again. Natural spoken Chinese, under pressure.
+4. src/server/agent/scripted.ts, const CN: the three message_family texts and every "narration". These are what the family sees in Scripted mode. Requirements: warm, short, never blame the family (keep 这不是您的错 or an equally clear sentence), say plainly that nothing was paid, tell them not to send more money, to keep evidence and to report to the police (110). Use standard SAFE wording: 便利化额度, 蚂蚁搬家, 购汇.
+5. Check the reporting advice: is "到当地派出所报案或拨打 110" the right advice in mainland China for this kind of fraud? Should we also mention the national anti-fraud hotline 96110 or the 国家反诈中心 app? Answer under "Questions for the team"; don't add a number you are not sure of.
+
+Afterwards run `npx tsc --noEmit` and `npm test` and report the results, then list every change as: file, location, original, new, reason.
+```

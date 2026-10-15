@@ -4,7 +4,7 @@ import { CircleAlert, CircleCheck, FileText, Fingerprint, Hand, Landmark, Link2,
 import { useCarry } from "@/lib/client";
 import { activeCase, caseTz } from "@/lib/selectors";
 import { cn, dateTime, money, shortHash } from "@/lib/format";
-import { CORRIDORS } from "@/domain/corridors";
+import { corridorOf } from "@/domain/corridors";
 import { evaluateRoute, findRule } from "@/domain/rules/engine";
 import type { LedgerEntry, Payment, World } from "@/domain/types";
 import { RuleChip } from "../RuleChip";
@@ -44,7 +44,7 @@ export function OfficerDesk() {
   const w = state.world;
   const c = activeCase(state)!;
   const tz = caseTz(c);
-  const corridor = CORRIDORS[c.corridor];
+  const corridor = corridorOf(c.corridor);
   const transfers = Object.values(w.payments)
     .filter((p) => p.caseId === c.id && p.route === "bank_transfer" && p.status !== "cancelled")
     .reverse();

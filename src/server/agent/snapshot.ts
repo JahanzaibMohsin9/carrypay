@@ -1,6 +1,5 @@
 import type { World } from "@/domain/types";
-import { CORRIDORS } from "@/domain/corridors";
-import { INSTITUTIONS } from "@/domain/institutions";
+import { corridorOf } from "@/domain/corridors";
 import { computeUsage, findRule } from "@/domain/rules/engine";
 import { ratePerUSD } from "@/domain/market";
 
@@ -9,8 +8,8 @@ const r0 = (n: number) => Math.round(n);
 /** Compact, model-facing view of one case. Everything the agent needs to decide its next step. */
 export function caseSnapshot(w: World, caseId: string) {
   const c = w.cases[caseId];
-  const inst = INSTITUTIONS[c.institutionId];
-  const corridor = CORRIDORS[c.corridor];
+  const inst = w.institutions[c.institutionId];
+  const corridor = corridorOf(c.corridor);
   const usage = computeUsage(w, caseId);
   const paymentsFor = Object.values(w.payments).filter((p) => p.caseId === caseId);
   const invoices = Object.values(w.invoices)
@@ -64,7 +63,16 @@ export function caseSnapshot(w: World, caseId: string) {
     institution: {
       id: inst.id,
       name: inst.name,
-      verified_email: inst.email,
+      verified_email: inst.origin === "uploaded_bill" && !inst.verifiedAt ? undefined : inst.email || undefined,
+      ...(inst.origin === "uploaded_bill"
+        ? {
+            source: "a bill the family uploaded",
+            verified_by_bank: !!inst.verifiedAt,
+            verification_note: inst.verifiedAt
+              ? "The bank has verified this institution and the account on the uploaded bill. It is outside the sandbox: it does not answer CarryPay's email automatically."
+              : "Not verified yet. Read and price the bill and explain it to the family, but nothing can be paid and no email can be sent until the bank has verified it. You will be woken when that happens.",
+          }
+        : {}),
       accepts_cards: inst.acceptsCards,
       card_surcharge_pct: inst.cardSurchargePct ?? 0,
       payment_reference_required: inst.referenceRule?.label,
@@ -115,6 +123,6 @@ export function caseSnapshot(w: World, caseId: string) {
       .filter((d) => d.caseId === caseId)
       .map((d) => ({ id: d.id, kind: d.kind, title: d.title, origin: d.origin })),
     recent_family_messages: w.messages.filter((m) => m.caseId === caseId).slice(-6).map((m) => ({ from: m.from, text: m.text, at: m.at })),
-    fx_sandbox_rates_per_usd: Object.fromEntries((["PKR", "THB", "GBP", "CNY"] as const).map((k) => [k, Math.round(ratePerUSD(k, w.now) * 1000) / 1000])),
+    fx_sandbox_rates_per_usd: Object.fromEntries([...new Set(["PKR", "THB", "GBP", "CNY", inst.bank.currency] as const)].map((k) => [k, Math.round(ratePerUSD(k, w.now) * 1000) / 1000])),
   };
 }

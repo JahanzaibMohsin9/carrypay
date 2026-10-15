@@ -5,13 +5,14 @@ import type { Invoice, Mail, World } from "@/domain/types";
 import { INSTITUTIONS } from "@/domain/institutions";
 import type { Trigger } from "../store";
 import type { RecordedStep, ScriptedRun } from "./runner";
-import { priceRoute } from "@/domain/rules/engine";
+import { compareRoutes, priceRoute } from "@/domain/rules/engine";
+import { ROUTE_LABEL } from "@/domain/corridors";
 import type { CorridorId, Route } from "@/domain/types";
 
 /** Cost difference between two routes for the same amount, rounded to the nearest 1,000 (or 100 for CNY). */
 function diff(w: World, corridor: CorridorId, inst: string, amount: number, a: Route, b: Route) {
-  const pa = priceRoute({ corridor, route: a, deliverAmount: amount, institution: INSTITUTIONS[inst], simDate: w.now })!;
-  const pb = priceRoute({ corridor, route: b, deliverAmount: amount, institution: INSTITUTIONS[inst], simDate: w.now })!;
+  const pa = priceRoute({ corridor, route: a, deliverAmount: amount, institution: w.institutions[inst], simDate: w.now })!;
+  const pb = priceRoute({ corridor, route: b, deliverAmount: amount, institution: w.institutions[inst], simDate: w.now })!;
   const step = pa.sourceCurrency === "CNY" ? 100 : 1000;
   return `${pa.sourceCurrency} ${(Math.round(Math.abs(pb.totalSource - pa.totalSource) / step) * step).toLocaleString("en-US")}`;
 }
@@ -302,4 +303,154 @@ const PK: ScriptedRun[] = [
   },
 ];
 
-export const SCRIPTS: Record<string, ScriptedRun[]> = { "th-medical": TH, "uk-tuition": UK, "pk-admission": PK };
+const cnOffer = (w: World) => Object.values(w.docs).find((d) => d.caseId === "case_cn" && d.title.startsWith("录取通知书"));
+const cnUniSaidNo = (w: World) => !!lastInbound(w, "case_cn", (m) => /no applicant/i.test(m.body));
+
+// TODO zh (family-facing text in this plan)
+const CN: ScriptedRun[] = [
+  {
+    when: (t, w) => has(t, "family_message") && !Object.values(w.mail).some((m) => m.caseId === "case_cn"),
+    steps: [
+      () => step("get_case_overview", { narration: "阅读您的说明和上传的录取通知书" }),
+      (w) => step("read_document", { document_id: cnOffer(w)!.id, narration: "检查中介发来的录取通知书" }),
+      (w) =>
+        step("flag_suspicious_message", {
+          document_id: cnOffer(w)!.id,
+          reason: "Offer letter sent by a study agency, from a 163.com address: 'guaranteed admission' service fee, scholarship processing fee, tuition payable to the agency's account or a personal WeChat/Alipay, and an offer to buy the pounds in relatives' names (quota splitting). Universities don't sell guaranteed places or collect tuition through agents.",
+          narration: "标记这封录取通知书里的可疑之处",
+        }),
+      () =>
+        step("send_email", {
+          to: "student.finance@kingsgate.ac.uk",
+          subject: "Please confirm an offer of admission: Chen Siyu (ref KGU/CN/2026/30519)",
+          body:
+            "Dear Kingsgate University,\n\nCarryPay is helping the family of Chen Siyu pay university fees. They received an offer letter (ref KGU/CN/2026/30519, MSc Finance, January 2027, with a 40% scholarship) through a study agency in Shenzhen, which asks for a 'guaranteed admission' service fee and for the tuition to be paid to the agency's own account.\n\nCould you please confirm whether Chen Siyu holds a genuine offer from Kingsgate, and how fees should be paid?\n\nKind regards,\nCarryPay, on behalf of the family",
+          narration: "通过学校官方认证的邮箱，直接向学校核实录取是否真实",
+        }),
+      () =>
+        step("message_family", {
+          text: "在付任何钱之前，我正在通过 Kingsgate 大学官方认证的邮箱直接核实思雨的录取。这封通知书有几处让我担心：正规大学不卖“保录取”，也不会让学费先打到中介或个人账户。在学校回复之前，请先不要给中介转任何钱。",
+          importance: "warning",
+          narration: "请您先暂停付款，等学校回复",
+        }),
+      () => step("add_case_note", { note: "Offer letter via study agency (163.com, 保录取 fee, pay agency/personal WeChat, offers relatives' quotas). Asked KGU to confirm. No payment until the university confirms.", narration: "记录正在核实的内容" }),
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && cnUniSaidNo(w),
+    steps: [
+      (w) => step("read_email", { mail_id: lastInbound(w, "case_cn")!.id, narration: "阅读学校的回复" }),
+      () =>
+        step("message_family", {
+          text: "很遗憾，Kingsgate 大学已书面确认：没有思雨的申请记录，也从未发过录取，这封通知书不是学校发的。这不是您的错，这类骗局就是做得很像真的。通过 CarryPay 没有付出任何一笔钱。请不要再给中介转钱。请保存好通知书、聊天记录和那 2 万元定金的转账凭证，尽快到当地派出所报案或拨打 110。如果思雨想真正申请，可以从学校官网开始，有了真实录取后我再帮您付学费。",
+          importance: "warning",
+          narration: "告诉您学校的答复和下一步怎么做",
+        }),
+      () => step("add_case_note", { note: "KGU confirmed: no applicant named Chen Siyu; offer is fraudulent. Nothing paid. Family told not to pay the agency, keep evidence, report to police.", narration: "记录学校的答复" }),
+    ],
+  },
+  {
+    when: (t) => has(t, "family_message"),
+    steps: [
+      () =>
+        step("message_family", {
+          text: "请不要转钱给王老师的个人微信，也不要用亲戚的名义换英镑。学校已经书面确认没有思雨的录取，所以并没有名额会失去。用亲属额度分拆购汇就是“蚂蚁搬家”，外汇局明确禁止，参与的家人都可能被列入关注名单、暂停便利化额度。正规大学从不让学费打到个人账户，也不会几个小时内取消名额。如果他继续催，请不要再回复，把这些聊天记录一起交给警方。",
+          importance: "warning",
+          narration: "提醒您不要转钱，也不要分拆购汇",
+        }),
+    ],
+  },
+];
+
+// The family's own bill. Every number comes from the rules engine; the institution is paid only after
+// the bank has verified it (the Director's "Verify institution" button in the sandbox).
+const upInvoice = (w: World) => invoicesOf(w, "case_up")[0];
+const upPayer = (w: World) => w.cases.case_up.people.find((p) => p.id === "p_payer") ?? w.cases.case_up.people[0];
+/** Cheapest route the rules allow (setting aside the pending verification), preferring one that meets the deadline. */
+function upBest(w: World) {
+  const inv = upInvoice(w);
+  const c = w.cases.case_up;
+  const options = compareRoutes({ world: w, caseFile: c, payer: upPayer(w), institution: w.institutions[inv.institutionId], amount: inv.amountDue, deadline: inv.dueAt, invoiceId: inv.id })
+    .filter((o) => o.cost && o.evaluation.blockers.every((b) => b.ruleId === "CARRYPAY.VERIFIED_INSTITUTION"));
+  return options.find((o) => o.meetsDeadline !== false) ?? options[0];
+}
+const upMoney = (cur: string, n: number) => `${cur} ${Math.round(n).toLocaleString("en-US")}`;
+
+const UP: ScriptedRun[] = [
+  {
+    when: (t, w) => has(t, "family_message") && !Object.values(w.payments).length && !w.institutions.upl.verifiedAt,
+    steps: [
+      (w) => step("get_case_overview", { narration: w.cases.case_up.lang === "zh" ? "阅读您上传的账单" : "Reading the bill you uploaded" }),
+      (w) => step("read_document", { document_id: upInvoice(w).documentId, narration: w.cases.case_up.lang === "zh" ? "核对账单上的金额和收款信息" : "Checking the amounts and payment details on the bill" }),
+      (w) => step("compare_payment_routes", { invoice_id: upInvoice(w).id, payer_id: upPayer(w).id, narration: w.cases.case_up.lang === "zh" ? "按规定比较各种付款方式的总费用" : "Pricing every legal way to pay under your country's rules" }),
+      (w) => {
+        const inv = upInvoice(w);
+        const inst = w.institutions[inv.institutionId];
+        const best = upBest(w);
+        const docs = best?.evaluation.requiredDocs.map((d) => d.label) ?? [];
+        const zh = w.cases.case_up.lang === "zh";
+        const cost = best?.cost ? upMoney(best.cost.sourceCurrency, best.cost.totalSource) : "";
+        // TODO zh
+        const text = !best
+          ? zh
+            ? `我已读取 ${inst.name} 的账单（${upMoney(inv.currency, inv.amountDue)}）。按您所在国家的规定，目前没有可以合法支付这笔金额的方式，我会在案件记录里写明原因。在银行核实这家机构之前，不会支付任何款项。`
+            : `I've read the bill from ${inst.name} (${upMoney(inv.currency, inv.amountDue)}). Under your country's rules there is no legal way to pay this amount right now; the reasons are in the case notes. Nothing will be paid until the bank has verified this institution.`
+          : zh
+            ? `我已读取 ${inst.name} 的账单：现在需付 ${upMoney(inv.currency, inv.amountDue)}。最省钱的合法方式是${best.route === "bank_transfer" ? "电汇直接付到机构账户" : "刷卡支付"}，总费用约 ${cost}${docs.length ? `，需要：${docs.join("、")}` : ""}。\n\n这家机构还没有经过银行核实，所以在银行核实它和它的收款账户之前，我不会付任何钱。核实后我会马上请您批准付款。`
+            : `I've read the bill from ${inst.name}: ${upMoney(inv.currency, inv.amountDue)} is due now. The cheapest legal way is ${ROUTE_LABEL[best.route].toLowerCase()}, about ${cost} in total.${docs.length ? ` The bank will need: ${docs.join("; ")}.` : ""}\n\nThis institution isn't verified yet, so nothing will be paid until the bank has checked it and its account. As soon as it has, I'll ask you to approve the payment.`;
+        return step("message_family", { text, importance: "info", narration: zh ? "告诉您费用和下一步" : "Telling you the cost and what happens next" });
+      },
+      (w) => step("add_case_note", { note: `Uploaded bill ${upInvoice(w).number} priced; best route ${upBest(w)?.route ?? "none"}. Waiting for the bank to verify ${w.institutions.upl.name}. No payment before that.`, narration: w.cases.case_up.lang === "zh" ? "记录正在等待银行核实" : "Noting that we're waiting for the bank" }),
+    ],
+  },
+  {
+    when: (t, w) => has(t, "institution_verified") && !Object.values(w.payments).length,
+    steps: [
+      (w) => {
+        const b = w.institutions.upl.bank;
+        return step("verify_beneficiary", { account_name: b.accountName, account_number: b.accountNumber, swift: b.swift, source_document_id: upInvoice(w).documentId, narration: w.cases.case_up.lang === "zh" ? "核对账单上的收款账户" : "Checking the bill's bank details against the verified record" });
+      },
+      (w) => {
+        const best = upBest(w)!;
+        const kinds = best.evaluation.requiredDocs.filter((d) => !d.present && ["remittance_application", "self_declaration", "fx_purchase_application"].includes(d.kind)).map((d) => d.kind);
+        return kinds.length
+          ? step("prepare_documents", { kinds, invoice_id: upInvoice(w).id, payer_id: upPayer(w).id, amount: upInvoice(w).amountDue, narration: w.cases.case_up.lang === "zh" ? "填写所需的表格" : "Filling in the forms the bank needs" })
+          : step("add_case_note", { note: "No forms needed for this route.", narration: w.cases.case_up.lang === "zh" ? "这种方式不需要额外表格" : "No extra forms needed" });
+      },
+      (w) => {
+        const inv = upInvoice(w);
+        const b = w.institutions.upl.bank;
+        const best = upBest(w)!;
+        const zh = w.cases.case_up.lang === "zh";
+        return step("propose_payment", {
+          invoice_id: inv.id,
+          route: best.route,
+          amount: inv.amountDue,
+          payer_id: upPayer(w).id,
+          reference: inv.patientRef ? `${inv.patientRef} ${inv.number}` : inv.number,
+          beneficiary: { account_name: b.accountName, account_number: b.accountNumber, swift: b.swift, bank_name: b.bankName },
+          // TODO zh
+          rationale: zh
+            ? `银行已核实 ${w.institutions.upl.name} 及其账户。这是最省钱的合法方式，总费用约 ${upMoney(best.cost!.sourceCurrency, best.cost!.totalSource)}。`
+            : `The bank has verified ${w.institutions.upl.name} and its account. This is the cheapest legal route: about ${upMoney(best.cost!.sourceCurrency, best.cost!.totalSource)} in total.`,
+          narration: zh ? "请您批准付款" : "Asking you to approve the payment",
+        });
+      },
+    ],
+  },
+  {
+    when: (t, w) => has(t, "payment_completed") && w.cases.case_up.status === "active",
+    steps: [
+      (w) =>
+        step("message_family", {
+          // TODO zh
+          text: w.cases.case_up.lang === "zh" ? `${w.institutions.upl.name} 已收到付款，银行已确认到账。请向对方索取正式收据。` : `${w.institutions.upl.name} has received the payment; the bank confirmed it arrived. Ask them for their official receipt.`,
+          importance: "good_news",
+          narration: w.cases.case_up.lang === "zh" ? "告诉您付款已到账" : "Telling you the payment arrived",
+        }),
+      (w) => step("close_case", { summary: `Uploaded bill ${upInvoice(w).number} paid in full to ${w.institutions.upl.name} after the bank verified it.`, narration: w.cases.case_up.lang === "zh" ? "结案" : "Closing the case" }),
+    ],
+  },
+];
+
+export const SCRIPTS: Record<string, ScriptedRun[]> = { "th-medical": TH, "uk-tuition": UK, "pk-admission": PK, "cn-admission": CN, upload: UP };

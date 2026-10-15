@@ -234,6 +234,23 @@
         "title": "CarryPay safety policy",
         "url": ""
       }
+    },
+    {
+      "id": "CARRYPAY.VERIFIED_INSTITUTION",
+      "title": "No payment to an institution the bank has not verified",
+      "kind": "forbidden",
+      "appliesTo": [
+        "bank_transfer",
+        "card_payment",
+        "atm_cash",
+        "carried_cash"
+      ],
+      "status": "policy",
+      "effectiveFrom": "2026-10-15",
+      "source": {
+        "title": "CarryPay safety policy (bills the family uploads)",
+        "url": ""
+      }
     }
   ]
 }

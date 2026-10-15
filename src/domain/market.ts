@@ -1,4 +1,5 @@
 import type { CorridorId, Currency, Route } from "./types";
+import { corridorOf } from "./corridors";
 
 /**
  * Sandbox market data. These are illustrative numbers for the demo, not live
@@ -10,6 +11,15 @@ export const USD_RATES: Record<Currency, number> = {
   THB: 32.8,
   GBP: 0.742,
   CNY: 7.11,
+  EUR: 0.861,
+  SGD: 1.292,
+  MYR: 4.21,
+  AED: 3.6725,
+  SAR: 3.75,
+  TRY: 41.9,
+  HKD: 7.79,
+  AUD: 1.52,
+  CAD: 1.385,
 };
 
 /** Small deterministic daily drift so rates move a little across simulated days. */
@@ -116,3 +126,26 @@ export const PRICING: Record<CorridorId, Partial<Record<Route, RoutePricing>>> =
     },
   },
 };
+
+/**
+ * Pricing for a corridor. A derived corridor (an uploaded bill) uses its home country's scenario
+ * pricing as a template; fees fixed in the destination currency are converted at the base rate.
+ */
+export function pricingOf(id: CorridorId): Partial<Record<Route, RoutePricing>> {
+  if (PRICING[id]) return PRICING[id];
+  const c = corridorOf(id);
+  const template = c.fromCode === "CN" ? PRICING["CN-GB"] : PRICING["PK-TH"];
+  const fromTHB = (n: number) => Math.round((n / USD_RATES.THB) * USD_RATES[c.destCurrency]);
+  const out: Partial<Record<Route, RoutePricing>> = {};
+  for (const route of c.routes) {
+    const t = template[route];
+    if (!t) continue;
+    out[route] = {
+      ...t,
+      fees: t.fees.map((f) => (f.kind === "per_withdrawal_dest" ? { ...f, label: "ATM operator fee abroad", value: fromTHB(f.value) } : f)),
+      withdrawalMax: t.withdrawalMax !== undefined ? fromTHB(t.withdrawalMax) : undefined,
+      note: t.note.replace(/hospital|university/, "institution"),
+    };
+  }
+  return out;
+}

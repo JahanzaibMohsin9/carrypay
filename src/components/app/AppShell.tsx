@@ -9,7 +9,7 @@ import { useCarry } from "@/lib/client";
 import { useT } from "@/lib/i18n";
 import { activeCase, pendingApprovals, threatCount } from "@/lib/selectors";
 import { cn } from "@/lib/format";
-import { CORRIDORS } from "@/domain/corridors";
+import { corridorOf } from "@/domain/corridors";
 import type { Lang } from "@/domain/types";
 import { Dots, Logo } from "../ui";
 import { Flag } from "../Flag";
@@ -69,7 +69,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const corridor = CORRIDORS[c.corridor];
+  const corridor = corridorOf(c.corridor);
   const agent = state.world.agent;
   const working = state.agentBusy;
   const urdu = lang === "ur";

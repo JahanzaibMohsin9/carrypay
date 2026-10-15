@@ -9,7 +9,7 @@ import { passkeysSupported, registerPasskey } from "@/lib/passkey";
 import { stableStringify } from "@/lib/canonical";
 import { activeCase, caseTz } from "@/lib/selectors";
 import { cn, dateTime, shortHash } from "@/lib/format";
-import { CORRIDORS } from "@/domain/corridors";
+import { corridorOf } from "@/domain/corridors";
 import { PACKS } from "@/domain/rules/engine";
 import type { LedgerEntry } from "@/domain/types";
 import { Badge, Card, SectionTitle } from "../ui";
@@ -48,7 +48,7 @@ export function SecurityCenter() {
   const urdu = lang === "ur";
   const events = [...w.security].reverse();
   const blocked = events.filter((e) => e.severity !== "info").length;
-  const pack = PACKS[CORRIDORS[c.corridor].packId];
+  const pack = PACKS[corridorOf(c.corridor).packId];
   const kill = w.agent.killSwitch;
 
   const toolCounts = { read: 0, communicate: 0, money: 0 } as Record<string, number>;

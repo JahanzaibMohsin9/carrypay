@@ -1,11 +1,11 @@
 import { Store } from "./store";
 import { AgentRunner, hasApiCredentials, MODEL } from "./agent/runner";
-import { SCENARIOS, seedScenario } from "./scenarios";
-import { advanceTo, advanceToNext, injectChaos, nextScheduled, runBeat, setPaymentStatus, submitPayment, type ChaosKind } from "./sim/engine";
+import { SCENARIOS, seedScenario, seedUpload } from "./scenarios";
+import { advanceTo, advanceToNext, injectChaos, nextScheduled, runBeat, setPaymentStatus, submitPayment, verifyInstitution, type ChaosKind } from "./sim/engine";
 import { hoursFrom } from "./sim/factory";
 import { verifyChain } from "./hash";
 import { listPasskeys } from "./passkey";
-import type { AgentMode } from "@/domain/types";
+import type { AgentMode, UploadedBill } from "@/domain/types";
 
 interface Runtime {
   store: Store;
@@ -121,6 +121,17 @@ export function setKillSwitch(on: boolean) {
   store.log({ actor: "family", type: on ? "agent.stopped" : "agent.resumed", narration: on ? "Emergency stop: the agent is paused" : "Agent resumed", data: {} });
 }
 
+/** The family sent their own bill: start a new case from it straight away (the agent mode stays as it was). */
+export function startUploadedCase(bill: UploadedBill) {
+  const { store, runner } = runtime();
+  const mode = store.world.agent.mode;
+  store.reset(seedUpload(bill));
+  store.mutate((w) => (w.agent.mode = mode));
+  store.log({ actor: "family", type: "scenario.loaded", data: { scenarioId: "upload", mode, source: bill.source, readBy: bill.readBy } });
+  runner.resetSession();
+  advanceToNext(store);
+}
+
 // ---------------------------------------------------------------------------
 // Director (demo controls)
 
@@ -130,7 +141,10 @@ export function directorAction(body: Record<string, unknown>) {
     case "reset": {
       const id = String(body.scenarioId ?? store.world.scenarioId);
       const mode = (body.mode as AgentMode) ?? store.world.agent.mode;
-      store.reset(seedScenario(id));
+      // the family's own bill can be replayed from the start; there is no seed for it without one
+      const upload = id === "upload" ? store.world.upload : undefined;
+      if (id === "upload" && !upload) throw new Error("No uploaded bill to restart from. Upload one in the app.");
+      store.reset(upload ? seedUpload(upload) : seedScenario(id));
       store.mutate((w) => (w.agent.mode = mode));
       store.log({ actor: "director", type: "scenario.loaded", data: { scenarioId: id, mode } });
       runner.resetSession();
@@ -165,6 +179,9 @@ export function directorAction(body: Record<string, unknown>) {
     case "chaos":
       if (!["bank_outage", "card_decline", "silent"].includes(String(body.kind))) throw new Error("chaos kind must be bank_outage, card_decline or silent");
       injectChaos(store, body.kind as ChaosKind);
+      return;
+    case "verify_institution":
+      verifyInstitution(store);
       return;
     case "anchor":
       store.addAnchor(String(body.note ?? "Manual anchor"));

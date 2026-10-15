@@ -4,7 +4,7 @@ import { ArrowRight, CircleCheck, CornerUpLeft, CreditCard, Landmark, Timer } fr
 import { useCarry } from "@/lib/client";
 import { activeCase, caseTz } from "@/lib/selectors";
 import { cn, dateTime, money } from "@/lib/format";
-import { CORRIDORS } from "@/domain/corridors";
+import { corridorOf } from "@/domain/corridors";
 
 /** The payment rails: SWIFT tracker for transfers and the card network for card payments. */
 export function BankConsole() {
@@ -12,7 +12,7 @@ export function BankConsole() {
   if (!state) return null;
   const c = activeCase(state)!;
   const tz = caseTz(c);
-  const corridor = CORRIDORS[c.corridor];
+  const corridor = corridorOf(c.corridor);
   const pays = Object.values(state.world.payments)
     .filter((p) => p.caseId === c.id && p.status !== "awaiting_approval" && p.status !== "cancelled")
     .reverse();

@@ -57,7 +57,7 @@ const isLatin = (s: string) => /^[\p{Script=Latin}\d\s.'-]+$/u.test(s);
 const isHan = (s: string) => /^\p{Script=Han}+$/u.test(s);
 
 /** Name spellings that should be hidden: the full name, each part, and Chinese given names. */
-function nameForms(name: string): string[] {
+export function nameForms(name: string): string[] {
   const forms = new Set<string>([name]);
   for (const part of name.split(/\s+/)) {
     if (isHan(part)) {

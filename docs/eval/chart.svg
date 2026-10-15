@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 218" width="640" height="218" font-family="Inter, system-ui, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 306" width="640" height="306" font-family="Inter, system-ui, sans-serif">
 <style>.t{font-size:15px;font-weight:600;fill:#16302b}.l{font-size:13px;fill:#16302b}.v{font-size:13px;font-weight:600;fill:#16302b}.s{font-size:11px;fill:#5b6f6a}.track{fill:#e9e3d6}.bar{fill:#0b8a78}</style>
 <rect width="100%" height="100%" fill="#faf7f0"/>
 <text x="20" y="30" class="t">CarryPay live agent (DeepSeek): end-to-end success rate</text>
-<text x="138" y="75" text-anchor="end" class="l">Fake admission</text>
+<text x="138" y="75" text-anchor="end" class="l">Fake study agent (CN)</text>
 <rect x="150" y="60" width="420" height="22" rx="4" class="track"/>
 <rect x="150" y="60" width="420" height="22" rx="4" class="bar"/>
 <text x="580" y="76" class="v">100%</text>
@@ -12,9 +12,19 @@
 <rect x="150" y="104" width="420" height="22" rx="4" class="bar"/>
 <text x="580" y="120" class="v">100%</text>
 <text x="150" y="140" class="s">10 of 10 live runs completed every check</text>
-<text x="138" y="163" text-anchor="end" class="l">Bangkok medical</text>
+<text x="138" y="163" text-anchor="end" class="l">Fake admission (PK)</text>
 <rect x="150" y="148" width="420" height="22" rx="4" class="track"/>
 <rect x="150" y="148" width="420" height="22" rx="4" class="bar"/>
 <text x="580" y="164" class="v">100%</text>
-<text x="150" y="184" class="s">11 of 11 live runs completed every check</text>
+<text x="150" y="184" class="s">10 of 10 live runs completed every check</text>
+<text x="138" y="207" text-anchor="end" class="l">Bangkok medical</text>
+<rect x="150" y="192" width="420" height="22" rx="4" class="track"/>
+<rect x="150" y="192" width="350" height="22" rx="4" class="bar"/>
+<text x="580" y="208" class="v">83%</text>
+<text x="150" y="228" class="s">10 of 12 live runs completed every check</text>
+<text x="138" y="251" text-anchor="end" class="l">Uploaded bill</text>
+<rect x="150" y="236" width="420" height="22" rx="4" class="track"/>
+<rect x="150" y="236" width="420" height="22" rx="4" class="bar"/>
+<text x="580" y="252" class="v">100%</text>
+<text x="150" y="272" class="s">3 of 3 live runs completed every check</text>
 </svg>

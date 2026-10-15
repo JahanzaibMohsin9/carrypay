@@ -211,8 +211,8 @@ export class AgentRunner {
         // (it wants the Responses API for that), so the model's default reasoning is used here.
         body.max_completion_tokens = 16000;
       }
-      const response = (await client.chat.completions.create(
-        body as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+      const response = (await withNetworkRetry(() =>
+        client.chat.completions.create(body as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming),
       )) as OpenAI.Chat.Completions.ChatCompletion;
       const u = response.usage as (OpenAI.CompletionUsage & { prompt_cache_hit_tokens?: number }) | undefined;
       usage.calls += 1;
@@ -410,6 +410,27 @@ function loadLatestRecording(scenarioId: string): Recording | null {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * A connection that drops while the response is being read ("terminated", "fetch failed", a reset socket)
+ * escapes the SDK's own retries. Asking again is safe: no tool runs until a complete response has arrived.
+ */
+export function isTransientNetworkError(err: unknown): boolean {
+  if (err instanceof OpenAI.APIConnectionError) return true;
+  const e = err as { message?: string; code?: string; cause?: { code?: string } } | undefined;
+  return /^(terminated|fetch failed|other side closed)$/i.test(e?.message ?? "") || ["ECONNRESET", "UND_ERR_SOCKET", "ETIMEDOUT"].includes(e?.code ?? e?.cause?.code ?? "");
+}
+
+export async function withNetworkRetry<T>(call: () => Promise<T>, attempts = 3, waitMs = 2000): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await call();
+    } catch (err) {
+      if (i >= attempts || !isTransientNetworkError(err)) throw err;
+      await new Promise((r) => setTimeout(r, waitMs * i));
+    }
+  }
 }
 
 function describeError(err: unknown): string {

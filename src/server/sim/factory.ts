@@ -1,5 +1,4 @@
 import type { Doc, DocumentKind, Institution, Invoice, InvoiceKind, LineItem, Mail } from "@/domain/types";
-import { INSTITUTIONS } from "@/domain/institutions";
 import type { Store } from "../store";
 
 const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -33,7 +32,7 @@ export function issueInvoice(
     showBankDetails?: boolean;
   },
 ): Invoice {
-  const inst = INSTITUTIONS[opts.institutionId];
+  const inst = store.world.institutions[opts.institutionId];
   const id = store.nextId("inv");
   const lineItems: LineItem[] = opts.lineItems.map((li, i) => ({ ...li, id: `${id}_li${i + 1}` }));
   const total = Math.round(lineItems.reduce((s, l) => s + l.amount, 0) * 100) / 100;

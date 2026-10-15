@@ -1,7 +1,7 @@
 import pkPack from "./packs/pk-sbp.json";
 import cnPack from "./packs/cn-safe.json";
-import { CORRIDORS } from "../corridors";
-import { PRICING, midRate, ratePerUSD } from "../market";
+import { corridorOf } from "../corridors";
+import { pricingOf, midRate, ratePerUSD } from "../market";
 import type {
   CaseFile,
   CorridorId,
@@ -50,7 +50,7 @@ export const PACKS: Record<string, RulePack> = {
 };
 
 export function packFor(corridor: CorridorId): RulePack {
-  return PACKS[CORRIDORS[corridor].packId];
+  return PACKS[corridorOf(corridor).packId];
 }
 
 export function findRule(corridor: CorridorId, id: string): Rule | undefined {
@@ -81,8 +81,8 @@ export function priceRoute(opts: {
   simDate: string;
 }): CostBreakdown | undefined {
   const { corridor, route, deliverAmount, institution, simDate } = opts;
-  const c = CORRIDORS[corridor];
-  const pricing = PRICING[corridor][route];
+  const c = corridorOf(corridor);
+  const pricing = pricingOf(corridor)[route];
   if (!pricing) return undefined;
   const src = c.sourceCurrency;
   const dest = institution.bank.currency;
@@ -234,14 +234,20 @@ export function evaluateRoute(opts: {
   const block = (ruleId: string, message: string) => ev.blockers.push({ ruleId, message });
   const warn = (ruleId: string, message: string) => ev.warnings.push({ ruleId, message });
 
-  if (!CORRIDORS[corridor].routes.includes(route)) {
-    block("CORRIDOR.ROUTE", `${route} is not available on the ${CORRIDORS[corridor].label} corridor.`);
+  if (!corridorOf(corridor).routes.includes(route)) {
+    block("CORRIDOR.ROUTE", `${route} is not available on the ${corridorOf(corridor).label} corridor.`);
   }
 
   // Who pays must be someone named on the case.
   if (!payer) {
     block(pack.id === "cn-safe" ? "CN.FX.NO_SPLITTING" : "CARRYPAY.NO_SPLITTING",
       "The payer is not a person on this case. Payments cannot be routed through relatives or other people to use their allowances.");
+  }
+
+  // a bill the family uploaded: nothing is paid until the bank has verified the institution
+  const inst = world.institutions[caseFile.institutionId];
+  if (inst?.origin === "uploaded_bill" && !inst.verifiedAt) {
+    block("CARRYPAY.VERIFIED_INSTITUTION", `${inst.name} is not a verified institution yet. CarryPay pays nothing until the bank has verified it and its account.`);
   }
 
   // an admission letter only counts if it came from the university itself (a forwarded or uploaded "offer" doesn't)
@@ -354,7 +360,7 @@ export function compareRoutes(opts: {
   invoiceId?: string;
 }): RouteOption[] {
   const { world, caseFile, institution, amount, deadline } = opts;
-  const corridor = CORRIDORS[caseFile.corridor];
+  const corridor = corridorOf(caseFile.corridor);
   return corridor.routes
     .filter((route) => route !== "card_payment" || institution.acceptsCards)
     .map((route) => {

@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { motion } from "motion/react";
-import { ArrowRight, BadgeCheck, Building2, CircleCheck, GraduationCap, HeartPulse, PiggyBank, Plus, ShieldAlert, Sparkles, Undo2 } from "lucide-react";
+import { ArrowRight, BadgeCheck, Building2, CircleCheck, GraduationCap, HeartPulse, PiggyBank, Plus, ShieldAlert, ShieldCheck, Sparkles, Undo2 } from "lucide-react";
 import { useCarry } from "@/lib/client";
 import { ROUTE_KEY, useT } from "@/lib/i18n";
 import { activeCase, allowances, caseTz, feed, moneySummary, pendingApprovals, savingsVsCash } from "@/lib/selectors";
 import { cn, money, timeOf } from "@/lib/format";
-import { CORRIDORS } from "@/domain/corridors";
+import { corridorOf } from "@/domain/corridors";
 import { ratePerUSD } from "@/domain/market";
 import { Badge, Card, Meter, SectionTitle } from "../ui";
 import { FeedLine } from "./Activity";
@@ -39,10 +39,16 @@ export function Overview() {
           <div className="min-w-0 flex-1">
             <p className="line-clamp-2 text-[14px] font-semibold leading-snug">{inst.name}</p>
             <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-3">
-              {inst.city}, {inst.country}
-              <Badge tone="success" icon={<BadgeCheck size={12} />}>
-                {t("verifiedAccount")}
-              </Badge>
+              {inst.city === inst.country ? inst.city : `${inst.city}, ${inst.country}`}
+              {inst.origin === "uploaded_bill" && !inst.verifiedAt ? (
+                <Badge tone="info" icon={<ShieldCheck size={12} />}>
+                  {t("notVerified")}
+                </Badge>
+              ) : (
+                <Badge tone="success" icon={<BadgeCheck size={12} />}>
+                  {inst.origin === "uploaded_bill" ? t("verifiedByBank") : t("verifiedAccount")}
+                </Badge>
+              )}
             </p>
           </div>
         </div>
@@ -81,6 +87,11 @@ export function Overview() {
                 </div>
               )}
             </>
+          ) : inst.origin === "uploaded_bill" && !inst.verifiedAt ? (
+            <p className={cn("flex items-start gap-1.5 rounded-xl bg-info-soft px-3 py-2 text-[14px] font-semibold text-info", urdu && "urdu")}>
+              <ShieldCheck size={16} className="mt-[3px] shrink-0" />
+              {t("onHoldUnverified")}
+            </p>
           ) : state.world.security.some((s) => s.caseId === c.id && s.kind === "suspicious_message") ? (
             // nothing to pay and a fraud warning on file: say so instead of "waiting for the bill"
             <p className={cn("flex items-start gap-1.5 rounded-xl bg-amber-soft px-3 py-2 text-[14px] font-semibold text-amber-strong", urdu && "urdu")}>
@@ -149,7 +160,7 @@ export function Overview() {
             {allow.map((a) => (
               <Meter key={a.label} value={a.used} max={a.cap} label={a.label} sub={`$${Math.round(a.used).toLocaleString()} / $${a.cap.toLocaleString()}`} />
             ))}
-            <p className={cn("text-[11.5px] leading-relaxed text-ink-3", urdu && "urdu")}>{CORRIDORS[c.corridor].packId === "pk-sbp" ? t("limitsNotePk") : t("limitsNoteCn")}</p>
+            <p className={cn("text-[11.5px] leading-relaxed text-ink-3", urdu && "urdu")}>{corridorOf(c.corridor).packId === "pk-sbp" ? t("limitsNotePk") : t("limitsNoteCn")}</p>
           </Card>
         </section>
       </div>
@@ -194,7 +205,7 @@ export function RouteCard() {
   if (!state) return null;
   const c = activeCase(state)!;
   const w = state.world;
-  const corridor = CORRIDORS[c.corridor];
+  const corridor = corridorOf(c.corridor);
   const inFlight = Object.values(w.payments).filter((p) => p.caseId === c.id && ["submitted", "processing"].includes(p.status));
   const dest = w.institutions[c.institutionId].bank.currency;
   const rate = ratePerUSD(corridor.sourceCurrency, w.now) / ratePerUSD(dest, w.now);

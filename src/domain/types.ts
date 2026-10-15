@@ -1,10 +1,11 @@
 // Core domain types shared by the server (agent, mock world) and the UI.
 
-export type Currency = "USD" | "PKR" | "THB" | "GBP" | "CNY";
+export type Currency = "USD" | "PKR" | "THB" | "GBP" | "CNY" | "EUR" | "SGD" | "MYR" | "AED" | "SAR" | "TRY" | "HKD" | "AUD" | "CAD";
 export type Lang = "en" | "ur" | "zh";
 
 export type CaseType = "medical" | "tuition";
-export type CorridorId = "PK-TH" | "CN-GB" | "PK-GB";
+/** Home country, then destination country. The three scenario corridors are fixed; an uploaded bill gets one derived from its country. */
+export type CorridorId = "PK-TH" | "CN-GB" | "PK-GB" | `${"PK" | "CN"}-${string}`;
 
 export type Route = "bank_transfer" | "card_payment" | "atm_cash" | "carried_cash";
 
@@ -45,6 +46,38 @@ export interface Institution {
   referenceRule?: { label: string; pattern: string };
   acceptsCards: boolean;
   cardSurchargePct?: number;
+  /** "uploaded_bill": known only from a bill the family uploaded, so not verified until the bank says so */
+  origin?: "registry" | "uploaded_bill";
+  /** when the bank verified an uploaded institution and its account (in the sandbox: the Director's button) */
+  verifiedAt?: string;
+}
+
+/** A bill the family uploaded, as read from the file and confirmed by them. Kept on the world so a reset can replay it. */
+export interface UploadedBill {
+  home: "PK" | "CN";
+  type: CaseType;
+  /** destination country code, see DESTINATIONS */
+  country: string;
+  lang: Lang;
+  payerName: string;
+  /** patient or student; may be the payer */
+  subjectName: string;
+  alreadyAbroad: boolean;
+  /** CN: FX already bought this calendar year (USD) */
+  priorFxYearUSD?: number;
+  institution: { name: string; city: string; email?: string; bankName: string; accountName: string; accountNumber: string; swift: string };
+  currency: Currency;
+  billNumber?: string;
+  reference?: string;
+  lineItems: { description: string; amount: number; date?: string }[];
+  amountDue: number;
+  dueDate?: string;
+  /** the bill's text as read from the file */
+  text: string;
+  source: "pdf" | "photo" | "text" | "sample";
+  /** what read the file: "PDF text layer (no AI)", "OpenAI · gpt-5.4-mini (vision)" ... */
+  readBy: string;
+  note?: string;
 }
 
 export interface LineItem {
@@ -277,6 +310,8 @@ export interface World {
   /** director: advance the clock automatically whenever the agent is idle */
   autoplay: boolean;
   counters: Record<string, number>;
+  /** scenario "upload": the family's own bill */
+  upload?: UploadedBill;
 }
 
 /** One hash-chained entry in the tamper-evident activity log. */

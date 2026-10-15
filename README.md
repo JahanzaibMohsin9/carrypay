@@ -41,7 +41,7 @@ Open:
 | `http://localhost:3000/pack` | Printable case pack (Save as PDF): payments, every bill, receipt and form, and the log verification |
 | `http://localhost:3000/director` | Director controls + raw agent log, including **chaos mode** (bank outage, card declined, institution silent) |
 
-Run the tests (58: rules engine, all three scenarios end to end, 17 red-team attacks on the safety layer, sandbox institutions, chaos mode, privacy firewall, passkey verification):
+Run the tests (67: rules engine, all four scenarios end to end, uploaded bills, 18 red-team attacks on the safety layer, sandbox institutions, chaos mode, privacy firewall, passkey verification):
 
 ```bash
 npm test
@@ -91,6 +91,14 @@ The father has used USD 31,000 of his USD 50,000 yearly quota. The agent gets th
 **3. A university offer that came through an agent (Pakistan → UK, admission check first)**
 
 A family brings an offer letter from a consultant who wants the tuition and a "visa guarantee fee" paid to his company's account; they've already given him PKR 350,000 in cash. The agent flags the letter, asks the university itself (through its verified address) whether the offer is real, and asks the family to hold off. The university has no such applicant. The agent tells the family gently that it isn't their fault, that nothing has been paid, not to pay the agent anything more, and to keep the evidence and report it; when the consultant pressures them to pay his personal account, CarryPay says no. The rules engine also refuses tuition until the university itself has confirmed the admission.
+
+**4. A study agency in China promises a guaranteed place (China → UK, SAFE rules, Chinese UI)**
+
+A Shenzhen family has been sold a "保录取" (guaranteed admission) place at Kingsgate with a 40% scholarship. The 留学中介 wants a RMB 38,000 guarantee fee, the tuition paid to its own account or the consultant's personal WeChat, and offers to buy the pounds in relatives' names to stay under the USD 50,000 quota (蚂蚁搬家). The agent flags the letter, checks with the university (no such applicant), pays nothing, refuses the quota split, and tells the family in Chinese that it isn't their fault, not to send more money, to keep the evidence and to report it to the police. Together with scenario 3 this covers the fraud in both capital-control countries.
+
+**Upload your own bill (any country CarryPay has rates for)**
+
+The family enters their names, then uploads a PDF or a photo of a hospital or university bill (or uses the sample bill). A PDF is read by CarryPay's own code; a photo is read by a vision model (OpenAI, since DeepSeek's API doesn't take images), and the screen says so. The family's names are hidden from the model that pulls out the amounts and bank details, and the family checks every field before the case starts. The agent prices the bill under the home country's rules and explains it, but the institution is unknown, so the safety layer (`CARRYPAY.VERIFIED_INSTITUTION`) refuses any payment or email until the bank has verified it. In the sandbox, the Director's "Verify institution" button stands in for that check; then the agent verifies the account, fills in the forms and asks for approval.
 
 ## Architecture
 

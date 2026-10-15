@@ -1,5 +1,6 @@
-import type { World } from "@/domain/types";
+import type { CorridorId, Invoice, UploadedBill, World } from "@/domain/types";
 import { INSTITUTIONS } from "@/domain/institutions";
+import { DESTINATIONS } from "@/domain/corridors";
 
 export interface ScenarioInfo {
   id: string;
@@ -30,6 +31,13 @@ export const SCENARIOS: ScenarioInfo[] = [
     subtitle: "China → United Kingdom · daughter's MSc",
     corridor: "CN-GB",
     caseId: "case_uk",
+  },
+  {
+    id: "cn-admission",
+    title: "Study agent promises a place",
+    subtitle: "China → United Kingdom · 留学中介 asks for fees and a quota split",
+    corridor: "CN-GB",
+    caseId: "case_cn",
   },
 ];
 
@@ -66,6 +74,7 @@ const at = (start: string, days: number, hh: number, mm = 0) => {
 export function seedScenario(id: string): World {
   if (id === "uk-tuition") return seedUkTuition();
   if (id === "pk-admission") return seedPkAdmission();
+  if (id === "cn-admission") return seedCnAdmission();
   return seedThMedical();
 }
 
@@ -162,5 +171,120 @@ function seedPkAdmission(): World {
     { id: "s_pressure", at: at(start, 1, 13, 0), kind: "beat", payload: { beat: "pk.pressure" }, label: "The consultant pressures the family to pay his personal account" },
   ];
   w.counters = { mail: 0, doc: 0, inv: 0, pay: 0, apr: 0, msg: 0, sec: 0, sch: 0 };
+  return w;
+}
+
+function seedCnAdmission(): World {
+  // 20:00 in Shenzhen (UTC+8). Fictional family; the pattern (保录取, fees to the agency, 蚂蚁搬家) follows
+  // fake study-agency cases reported in China.
+  const start = "2026-11-02T12:00:00.000Z";
+  const w = emptyWorld("cn-admission", start);
+  w.cases.case_cn = {
+    id: "case_cn",
+    type: "tuition",
+    corridor: "CN-GB",
+    title: "思雨的留学录取",
+    lang: "zh",
+    institutionId: "kgu",
+    openedAt: start,
+    status: "active",
+    brief:
+      // TODO zh
+      "我女儿陈思雨通过深圳的「英途留学」中介申请了伦敦 Kingsgate University 的金融硕士，明年1月入学。中介的王老师说他们是学校的合作机构，可以“保录取”，还帮她拿到了40%奖学金，录取通知书我已经上传了。他说周五前要交 3.8 万元保录取服务费，第一年学费 18,500 英镑也要先打到他们公司账户，由他们统一转给学校，不然名额就给别人了。之前已经交了 2 万元定金。我今年的购汇额度用了 2.9 万美元左右。麻烦帮我们把学费付了。",
+    people: [
+      { id: "p_chenjg", name: "陈建国 Chen Jianguo", role: "parent", adult: true, abroad: false, priorFxYearUSD: 29000, passport: "E52817330" },
+      { id: "p_siyu", name: "陈思雨 Chen Siyu", role: "student", adult: true, abroad: false, passport: "E90364127" },
+    ],
+    notes: [],
+  };
+  w.cards = [{ personId: "p_chenjg", label: "UnionPay •• 3058", annualUsedUSD: 0, currency: "CNY" }];
+  w.schedule = [
+    { id: "s_open", at: at(start, 0, 12, 1), kind: "beat", payload: { beat: "cn.open" }, label: "Family opens the case with the agency's offer letter" },
+    { id: "s_pressure", at: at(start, 1, 11, 30), kind: "beat", payload: { beat: "cn.pressure" }, label: "The agency pushes for payment to a personal account and FX bought in relatives' names" },
+  ];
+  w.counters = { mail: 0, doc: 0, inv: 0, pay: 0, apr: 0, msg: 0, sec: 0, sch: 0 };
+  return w;
+}
+
+/** The family's own bill: an institution CarryPay doesn't know, priced under the home country's rules, paid only once the bank has verified it. */
+export function seedUpload(bill: UploadedBill, startAt = new Date().toISOString()): World {
+  const start = new Date(Math.floor(Date.parse(startAt) / 60_000) * 60_000).toISOString();
+  const w = emptyWorld("upload", start);
+  const dest = DESTINATIONS[bill.country];
+  const medical = bill.type === "medical";
+  const email = bill.institution.email?.trim().toLowerCase() ?? "";
+  w.institutions.upl = {
+    id: "upl",
+    kind: medical ? "hospital" : "university",
+    name: bill.institution.name,
+    legalName: bill.institution.accountName,
+    country: dest.country,
+    city: bill.institution.city || dest.city,
+    email,
+    emailDomain: email.split("@")[1] ?? "",
+    bank: { bankName: bill.institution.bankName, accountName: bill.institution.accountName, accountNumber: bill.institution.accountNumber, swift: bill.institution.swift, currency: bill.currency },
+    acceptsCards: true,
+    origin: "uploaded_bill",
+  };
+  const samePerson = bill.payerName.trim().toLowerCase() === bill.subjectName.trim().toLowerCase();
+  const people: World["cases"][string]["people"] = [
+    { id: "p_subject", name: bill.subjectName.trim(), role: medical ? "patient" : "student", adult: true, abroad: medical && bill.alreadyAbroad, priorFxYearUSD: samePerson ? bill.priorFxYearUSD : undefined },
+  ];
+  if (!samePerson) {
+    people.push({ id: "p_payer", name: bill.payerName.trim(), role: medical ? "attendant" : "parent", adult: true, abroad: medical && bill.alreadyAbroad, priorFxYearUSD: bill.priorFxYearUSD });
+  }
+  const zh = bill.lang === "zh";
+  w.cases.case_up = {
+    id: "case_up",
+    type: bill.type,
+    corridor: `${bill.home}-${bill.country}` as CorridorId,
+    // TODO zh
+    title: zh ? `${bill.institution.name} 的账单` : `Bill from ${bill.institution.name}`,
+    lang: bill.lang,
+    institutionId: "upl",
+    openedAt: start,
+    status: "active",
+    brief:
+      bill.note?.trim() ||
+      // TODO zh
+      (zh ? "我上传了一张账单，请帮我们按规定付款。" : "I've uploaded a bill. Please pay it for us under our country's rules."),
+    people,
+    notes: [],
+  };
+  // the bill becomes a document and an invoice, both marked as coming from the family, not the institution
+  const docId = "doc_1";
+  const number = bill.billNumber?.trim() || "UPLOADED-1";
+  w.docs[docId] = {
+    id: docId,
+    caseId: "case_up",
+    kind: "invoice",
+    title: `Uploaded bill ${number}`,
+    text: bill.text,
+    fields: { number, total: bill.lineItems.reduce((s, l) => s + l.amount, 0), amountDue: bill.amountDue, currency: bill.currency, readBy: bill.readBy },
+    origin: "family",
+    createdAt: start,
+  };
+  const total = Math.round(bill.lineItems.reduce((s, l) => s + l.amount, 0) * 100) / 100;
+  const inv: Invoice = {
+    id: "inv_1",
+    caseId: "case_up",
+    institutionId: "upl",
+    kind: medical ? "estimate" : "fee_statement",
+    number,
+    currency: bill.currency,
+    lineItems: bill.lineItems.map((l, i) => ({ ...l, id: `inv_1_li${i + 1}` })),
+    total,
+    amountDue: bill.amountDue,
+    // noon UTC falls on the same calendar day from New York to Sydney
+    dueAt: bill.dueDate ? `${bill.dueDate.slice(0, 10)}T12:00:00.000Z` : undefined,
+    issuedAt: start,
+    documentId: docId,
+    patientRef: bill.reference?.trim() || undefined,
+    status: "open",
+  };
+  w.invoices[inv.id] = inv;
+  w.upload = bill;
+  w.schedule = [{ id: "s_open", at: start, kind: "beat", payload: { beat: "upload.open" }, label: "You send CarryPay the bill" }];
+  w.counters = { mail: 0, doc: 1, inv: 1, pay: 0, apr: 0, msg: 0, sec: 0, sch: 0 };
   return w;
 }

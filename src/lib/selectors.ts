@@ -1,6 +1,6 @@
 import type { CaseFile, FamilyMessage, Invoice, LedgerEntry, Payment, World } from "@/domain/types";
 import type { PublicState } from "@/server/runtime";
-import { CORRIDORS } from "@/domain/corridors";
+import { corridorOf, DESTINATIONS } from "@/domain/corridors";
 import { computeUsage, findRule, priceRoute } from "@/domain/rules/engine";
 import { ratePerUSD } from "@/domain/market";
 import { CASE_TZ } from "./format";
@@ -10,7 +10,11 @@ export function activeCase(s: PublicState): CaseFile | undefined {
 }
 
 export function caseTz(c: CaseFile) {
-  return CASE_TZ[c.corridor];
+  const fixed = CASE_TZ[c.corridor];
+  if (fixed) return fixed;
+  // an uploaded bill: a patient's family is with them abroad, a student's family is at home
+  const [from, to] = c.corridor.split("-");
+  return c.type === "medical" ? DESTINATIONS[to]?.tz ?? "UTC" : from === "CN" ? "Asia/Shanghai" : "Asia/Karachi";
 }
 
 export function caseInvoices(w: World, caseId: string) {
@@ -53,7 +57,7 @@ export function moneySummary(w: World, caseId: string) {
 /** How much more the family would have paid withdrawing cash from ATMs abroad for the same payments. */
 export function savingsVsCash(w: World, caseId: string) {
   const c = w.cases[caseId];
-  if (!CORRIDORS[c.corridor].routes.includes("atm_cash")) {
+  if (!corridorOf(c.corridor).routes.includes("atm_cash")) {
     // compare against card instead where ATM cash isn't an option
     return savingsVs(w, caseId, "card_payment");
   }
@@ -67,7 +71,7 @@ function savingsVs(w: World, caseId: string, against: "atm_cash" | "card_payment
     const alt = priceRoute({ corridor: c.corridor, route: against, deliverAmount: p.amount, institution: w.institutions[p.institutionId], simDate: p.createdAt });
     if (alt) saved += alt.totalSource - p.cost.totalSource;
   }
-  return { saved: Math.max(0, saved), against, currency: CORRIDORS[c.corridor].sourceCurrency };
+  return { saved: Math.max(0, saved), against, currency: corridorOf(c.corridor).sourceCurrency };
 }
 
 export interface AllowanceLine {
@@ -82,7 +86,7 @@ export function allowances(w: World, caseId: string): AllowanceLine[] {
   const c = w.cases[caseId];
   const usage = computeUsage(w, caseId);
   const out: AllowanceLine[] = [];
-  if (CORRIDORS[c.corridor].packId === "pk-sbp") {
+  if (corridorOf(c.corridor).packId === "pk-sbp") {
     if (c.type === "medical") {
       out.push({ ruleId: "PK.MED.REMIT.CAP", label: "Medical remittance, this case", used: usage.caseBankTransferUSD, cap: findRule(c.corridor, "PK.MED.REMIT.CAP")!.values!.perCaseUSD, scope: "case" });
     }
