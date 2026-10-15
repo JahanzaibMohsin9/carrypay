@@ -91,13 +91,8 @@ function music(seconds, file) {
   ff(["-stream_loop", "-1", "-i", cycle, "-t", String(seconds), "-af", `lowpass=f=1400,aecho=0.8:0.6:420|780:0.22|0.12,volume=0.55,afade=t=in:d=3,afade=t=out:st=${seconds - 4}:d=4`, file]);
 }
 
-/** Subtitles: each part's sentences, timed by length within the part's voice. */
-function srt(parts, file) {
-  const ts = (s) => {
-    const ms = Math.round(s * 1000);
-    const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000), sec = Math.floor((ms % 60000) / 1000), r = ms % 1000;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")},${String(r).padStart(3, "0")}`;
-  };
+/** Subtitle cues: each part's sentences, timed by length within the part's voice. */
+function cuesOf(parts) {
   const cues = [];
   for (const p of parts) {
     const sentences = p.text.match(/[^.!?]+[.!?]+["”]?|[^.!?]+$/g).map((x) => x.trim()).filter(Boolean);
@@ -111,8 +106,15 @@ function srt(parts, file) {
       t += d;
     }
   }
-  fs.writeFileSync(file, cues.map((c, i) => `${i + 1}\n${ts(c.start)} --> ${ts(c.end)}\n${c.text}\n`).join("\n"));
+  return cues;
 }
+
+const ts = (s) => {
+  const ms = Math.round(s * 1000);
+  const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000), sec = Math.floor((ms % 60000) / 1000), r = ms % 1000;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")},${String(r).padStart(3, "0")}`;
+};
+const writeSrt = (cues, file, text = (c) => c.text) => fs.writeFileSync(file, cues.map((c, i) => `${i + 1}\n${ts(c.start)} --> ${ts(c.end)}\n${text(c)}\n`).join("\n"));
 
 fs.rmSync(WORK, { recursive: true, force: true });
 fs.mkdirSync(WORK, { recursive: true });
@@ -171,9 +173,19 @@ ff([...voiceInputs, "-filter_complex", `${delays};${parts.map((_, i) => `[v${i}]
 music(total, path.join(WORK, "music.wav"));
 ff(["-i", "voice.wav", "-i", "music.wav", "-filter_complex", "[1:a]volume=0.32[m];[m][0:a]sidechaincompress=threshold=0.015:ratio=6:attack=40:release=600[md];[0:a][md]amix=inputs=2:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[a]", "-map", "[a]", "-t", String(total), "mix.wav"], WORK);
 
-// subtitles and the final file
-srt(parts, path.join(WORK, "subtitles.en.srt"));
-fs.copyFileSync(path.join(WORK, "subtitles.en.srt"), path.join(OUT, "subtitles.en.srt"));
-const style = "FontName=Segoe UI,FontSize=17,PrimaryColour=&H00FFFFFF,OutlineColour=&H90000000,BackColour=&H90000000,BorderStyle=3,Outline=6,Shadow=0,MarginV=34";
-ff(["-i", "picture.mp4", "-i", "mix.wav", "-vf", `subtitles=subtitles.en.srt:force_style='${style}'`, "-c:v", "libx264", "-preset", "slow", "-crf", "19", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", path.join(OUT, "carrypay-demo.mp4")], WORK);
-console.log(`carrypay-demo.mp4: ${dur(path.join(OUT, "carrypay-demo.mp4")).toFixed(1)}s`);
+// subtitles: English; Chinese and 中英双语 from scripts/video/subtitles.zh.json (same timings)
+const cues = cuesOf(parts);
+const zh = JSON.parse(fs.readFileSync(path.join(ROOT, "scripts", "video", "subtitles.zh.json"), "utf8"));
+const missing = cues.filter((c) => !zh[c.text]).map((c) => c.text);
+if (missing.length) console.warn(`No Chinese for ${missing.length} cue(s); add them to scripts/video/subtitles.zh.json:\n  ${missing.join("\n  ")}`);
+writeSrt(cues, path.join(WORK, "subtitles.en.srt"));
+writeSrt(cues, path.join(WORK, "subtitles.zh.srt"), (c) => zh[c.text] ?? c.text);
+writeSrt(cues, path.join(WORK, "subtitles.bilingual.srt"), (c) => `${zh[c.text] ?? ""}\n${c.text}`.trim());
+for (const f of ["subtitles.en.srt", "subtitles.zh.srt", "subtitles.bilingual.srt"]) fs.copyFileSync(path.join(WORK, f), path.join(OUT, f));
+
+const encode = (srtFile, style, out) =>
+  ff(["-i", "picture.mp4", "-i", "mix.wav", "-vf", `subtitles=${srtFile}:force_style='${style}'`, "-c:v", "libx264", "-preset", "slow", "-crf", "19", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", path.join(OUT, out)], WORK);
+const box = "PrimaryColour=&H00FFFFFF,OutlineColour=&H90000000,BackColour=&H90000000,BorderStyle=3,Outline=6,Shadow=0";
+encode("subtitles.en.srt", `FontName=Segoe UI,FontSize=17,${box},MarginV=34`, "carrypay-demo.mp4");
+if (!process.argv.includes("--en-only")) encode("subtitles.bilingual.srt", `FontName=Microsoft YaHei,FontSize=15,${box},MarginV=26`, "carrypay-demo-zh-en.mp4");
+for (const f of ["carrypay-demo.mp4", "carrypay-demo-zh-en.mp4"]) if (fs.existsSync(path.join(OUT, f))) console.log(`${f}: ${dur(path.join(OUT, f)).toFixed(1)}s`);

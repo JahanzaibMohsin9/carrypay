@@ -178,3 +178,21 @@ Commit first. Paste the shared context, then:
 ```
 A few new Chinese strings are marked with "// TODO zh": in src/lib/i18n.tsx (voice notes: recording, sending, the privacy note that OpenAI writes the voice down, "Listen"), in src/server/agent/answer.ts (replies when the AI can't answer: a recorded demo, a connection problem) and in src/server/runtime.ts (the daily question limit). Parents read these on their phone. Make them natural and short, keep the meaning, remove each "// TODO zh" when done, don't commit. Run `npx tsc --noEmit` and `npm test`, then list each change: file, original, new, reason.
 ```
+
+---
+
+## Prompt 11: Chinese subtitles for the demo video
+
+Commit first. Paste the shared context, then:
+
+```
+The demo video (about 3:30, English narration) gets Chinese subtitles. The file scripts/video/subtitles.zh.json maps each English subtitle line (the key) to its Chinese line (the value). The Chinese is a first draft. Each line is shown for 2–5 seconds under the English line, so it must be short and easy to read at a glance. Viewers are competition judges in Shenzhen: use natural Mainland Chinese, the terms a bank or SAFE would use (外汇, 购汇, 便利化额度, 电汇), and keep every number and amount exactly as in the English.
+
+Rules:
+- Edit only the values. Never change a key: the video editor matches them to the English text.
+- Keep one Chinese line per entry. Some English sentences are split over two entries; the Chinese for each half should read naturally on its own and together.
+- Keep "CarryPay" in Latin letters.
+- Remove the "TODO zh" wording from the "_note" value when you have finished.
+
+Do not commit. Afterwards list every change as: English key, original, new, reason. Also tell us any line you think is too long to read in about 3 seconds.
+```
