@@ -156,6 +156,8 @@ const SCENES = {
     await take("s1", async (t) => {
       await t.page.goto(BASE + "/");
       await t.page.waitForSelector('svg[aria-label^="Map of CarryPay"]');
+      // only the map: the camera pushes into the Lahore → Bangkok route
+      await t.page.addStyleTag({ content: "header, h1, h1 ~ p, section > div > div.relative.max-w-xl, section a, section dl, section dl ~ p { visibility: hidden !important }" });
       await t.start();
       await t.hold(22000);
       t.mark("done");
@@ -221,6 +223,16 @@ const SCENES = {
 
   // 7 · proof: verify the chain, check anchors against the blockchain, tamper, check again
   async s7() {
+    // every anchor on-chain before the take, so the first "Check against the chain" is the latest anchor
+    for (let i = 0; i < 90; i++) {
+      const st = await api("/api/state");
+      if (st.anchors.length && st.anchors.every((a) => a.chain?.status !== "pending")) break;
+      await sleep(2000);
+    }
+    const st = await api("/api/state");
+    const latest = [...st.anchors].reverse().find((a) => a.chain?.status === "confirmed");
+    // the deposit's approval: an entry every anchor after it covers
+    const editSeq = st.ledger.find((e) => e.type === "approval.approved")?.seq ?? Math.max(2, (latest?.seq ?? 10) - 5);
     await take("s7", async (t) => {
       await t.page.goto(BASE + "/app/security");
       await t.page.getByRole("button", { name: /Verify in this browser/ }).waitFor();
@@ -234,7 +246,7 @@ const SCENES = {
       await t.click(check);
       await t.hold(3500);
       t.mark("anchorOk");
-      await api("/api/director", { action: "tamper", seq: 30, narration: "Paid THB 250,000 to SR Medical Services Co." });
+      await api("/api/director", { action: "tamper", seq: editSeq, narration: "You approved: Bank transfer: THB 250,000 to SR Medical Services Co." });
       t.mark("tampered");
       await t.scroll(0, 900);
       await t.hold(800);

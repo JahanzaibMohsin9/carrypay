@@ -37,7 +37,7 @@ const EDL = {
   "5": { take: "s5", from: 0, to: "done" },
   "6": { take: "s6", from: 0, to: "done" },
   "7": { take: "s7", from: 0, to: "done" },
-  "8": { take: "s8", from: 0, to: "end" },
+  "8": { take: "s8", from: "corridors-0.3", to: "end" },
 };
 
 function at(markers, v) {
@@ -143,12 +143,14 @@ for (const p of parts) {
   const from = at(markers, e.from);
   const to = Math.min(at(markers, e.to), markers.end);
   const seg = Math.max(0.5, to - from);
-  const speed = Math.max(1, seg / p.length);
+  // fit to the voice: speed up a long stretch; slow a short one down to 0.7× at most, then hold its last frame
+  const speed = Math.max(0.7, seg / p.length);
   const shown = seg / speed;
   const filters = [`setpts=(PTS-STARTPTS)/${speed.toFixed(4)}`, `fps=${FPS}`];
   if (shown < p.length) filters.push(`tpad=stop_mode=clone:stop_duration=${(p.length - shown + 0.1).toFixed(3)}`);
   filters.push(`trim=duration=${p.length.toFixed(3)}`);
-  if (e.pushIn) filters.push(`zoompan=z='min(1+0.0011*on,1.32)':x='iw*0.62-(iw/zoom/2)':y='ih*0.34-(ih/zoom/2)':d=1:s=1920x1080:fps=${FPS}`);
+  // a slow push into the map, centred between Lahore and Bangkok, kept inside the frame
+  if (e.pushIn) filters.push(`zoompan=z='min(1+0.0012*on,1.45)':x='min(iw-iw/zoom,max(0,iw*0.70-iw/zoom/2))':y='min(ih-ih/zoom,max(0,ih*0.33-ih/zoom/2))':d=1:s=1920x1080:fps=${FPS}`);
   if (p.firstInScene) filters.push("fade=t=in:st=0:d=0.35");
   if (p.lastInScene) filters.push(`fade=t=out:st=${(p.length - 0.35).toFixed(3)}:d=0.35`);
   filters.push("format=yuv420p");
@@ -167,7 +169,7 @@ const voiceInputs = parts.flatMap((p) => ["-i", path.join(OUT, "voice", `${p.id}
 const delays = parts.map((p, i) => `[${i}:a]aresample=44100,adelay=${Math.round(p.voiceStart * 1000)}:all=1[v${i}]`).join(";");
 ff([...voiceInputs, "-filter_complex", `${delays};${parts.map((_, i) => `[v${i}]`).join("")}amix=inputs=${parts.length}:normalize=0,apad=whole_dur=${total}[v]`, "-map", "[v]", "-ac", "2", path.join(WORK, "voice.wav")]);
 music(total, path.join(WORK, "music.wav"));
-ff(["-i", "voice.wav", "-i", "music.wav", "-filter_complex", "[1:a]volume=0.32[m];[m][0:a]sidechaincompress=threshold=0.015:ratio=6:attack=40:release=600[md];[0:a][md]amix=inputs=2:normalize=0,alimiter=limit=0.95[a]", "-map", "[a]", "-t", String(total), "mix.wav"], WORK);
+ff(["-i", "voice.wav", "-i", "music.wav", "-filter_complex", "[1:a]volume=0.32[m];[m][0:a]sidechaincompress=threshold=0.015:ratio=6:attack=40:release=600[md];[0:a][md]amix=inputs=2:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[a]", "-map", "[a]", "-t", String(total), "mix.wav"], WORK);
 
 // subtitles and the final file
 srt(parts, path.join(WORK, "subtitles.en.srt"));
