@@ -12,7 +12,7 @@ Companion documents: [SECURITY.md](SECURITY.md) (security self-assessment), [EVA
 | Corridors | Pakistan → Thailand (hospital), Pakistan → UK (admission through an agent), China → UK (tuition; fake study agent), plus uploaded bills from 13 destination countries |
 | Model | DeepSeek V4 Pro (function calling, thinking mode); OpenAI fallback |
 | Safety design | The AI proposes; deterministic code and the family's passkey decide. 17 tools in 3 permission tiers behind a safety gateway |
-| Results | 43/45 live end-to-end runs passed every check; 0/20 live-model attacks executed; 84 automated tests |
+| Results | 43/45 live end-to-end runs passed every check; 0/20 live-model attacks executed; 88 automated tests |
 | Proof | SHA-256 hash-chained activity log, head hash anchored on the Conflux eSpace testnet at each milestone |
 
 ## 1. What the system does
@@ -80,6 +80,7 @@ Code map:
 | `src/server/upload.ts` | Reading uploaded bills (PDF text, photos by a vision model) |
 | `src/server/session.ts`, `runtime.ts` | Private sandbox per visitor |
 | `src/server/attacklab.ts` | Attacks judges can launch from `/attack` |
+| `src/server/mcp.ts`, `src/app/api/mcp/` | CarryPay as an MCP server for outside AI assistants |
 | `src/server/evaluate.ts` | Scoring of live runs (task and safety checks) |
 | `src/server/sim/` | Simulated institutions, bank and card rails, scenario beats |
 | `src/server/store.ts`, `hash.ts` | World state persistence and the hash-chained ledger |
@@ -173,6 +174,12 @@ A family can upload their own hospital or university bill (`/app/new/upload`, PD
 
 Families can ask a question by voice, in Chinese or English. The audio is transcribed (`gpt-4o-mini-transcribe`), the question goes to the agent as a family message, and the reply can be read aloud. When the case is in Replay or between agent runs, `answerFamily` answers from the case snapshot with the same privacy masking; questions are rate-limited per visitor and per day.
 
+### 4.9 CarryPay as an MCP server
+
+Any AI assistant can use CarryPay over the Model Context Protocol (`POST /api/mcp`, Streamable HTTP, stateless JSON responses). It gets 12 tools: `list_cases` plus 11 of the agent's own (reading the case, mail and documents; verifying an account; pricing routes; checking rules; reconciling a bill; flagging fraud; preparing forms; messaging the family; proposing a payment). Each call runs through `executeTool`, the same gateway as CarryPay's agent, with the privacy firewall around it: results are masked, tokens in the input are restored in code, and the ledger records the call with `source: "mcp"`. Tools that only CarryPay's own agent needs (resubmitting a returned transfer, emailing institutions, closing a case) are not offered, and no method approves a payment: a proposal waits for the family's passkey. On the public server each visitor's MCP address names their own sandbox (`?world=<id>`, shown on `/attack`); calls are capped per sandbox per hour, and browsers from other sites are refused. Tested with unit tests (`src/server/mcp.test.ts`: masking, a blocked payment to the attacker's account, a valid proposal left waiting for approval) and with the official MCP client (`scripts/mcp-check.mjs`).
+
+This is also how a bank would plug CarryPay into its own assistant: the gateway, rules and approvals come with it.
+
 ## 5. Security design (summary)
 
 The full self-assessment is [SECURITY.md](SECURITY.md); this is the design in brief.
@@ -219,7 +226,7 @@ Sandbox state lives in a data folder (world snapshot, ledger as JSONL, anchors, 
 
 ## 9. Testing and evaluation
 
-`npm test` runs 84 tests in 13 files (the list below is the core; also: all four scenarios, uploaded bills, on-chain anchoring with a fake chain, private sessions, the attack lab, family answers, retrying dropped LLM connections):
+`npm test` runs 88 tests in 14 files (the list below is the core; also: all four scenarios, uploaded bills, on-chain anchoring with a fake chain, private sessions, the attack lab, the MCP server, family answers, retrying dropped LLM connections):
 - rules engine: tax history, pricing order, Pakistan caps, card limits, carried-cash rule, anti-splitting, SAFE quota and prohibited purposes, deadline-aware comparison
 - every scenario end to end with the scripted agent, including the returned transfer, the scam email, the bill dispute, the refund and a tamper check, scored by the same evaluator as the live runs
 - 18 red-team attacks on the safety layer (see [SECURITY.md](SECURITY.md))

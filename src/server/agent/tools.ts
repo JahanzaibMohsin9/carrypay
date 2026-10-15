@@ -13,6 +13,8 @@ export type Tier = "read" | "communicate" | "money";
 export interface ToolCtx {
   store: Store;
   caseId: string;
+  /** set when an outside AI assistant calls the tool over MCP (src/server/mcp.ts) */
+  source?: "mcp";
 }
 
 export interface ToolOutcome {
@@ -680,7 +682,7 @@ export function executeTool(name: string, rawInput: unknown, ctx: ToolCtx): stri
     type: `tool.${name}`,
     caseId: ctx.caseId,
     narration: outcome.narration ?? (outcome.decision === "error" ? undefined : (said as string)),
-    data: { tool: name, tier: spec.tier, decision: outcome.decision, ruleIds: outcome.ruleIds, input: args, result: summarise(outcome.result) },
+    data: { tool: name, tier: spec.tier, decision: outcome.decision, ruleIds: outcome.ruleIds, input: args, result: summarise(outcome.result), ...(ctx.source ? { source: ctx.source } : {}) },
   });
   return JSON.stringify(outcome.result);
 }

@@ -8,6 +8,7 @@ import { cn } from "@/lib/format";
 import type { LabAttack, ForceStep } from "@/server/attacklab";
 import { RuleChip } from "../RuleChip";
 import { SiteNav } from "../SiteNav";
+import { BringYourOwnAI } from "./BringYourOwnAI";
 
 export type Recorded = Record<string, { model: string; attempted: string | null; executed: string | null; flagged: boolean; warnedFamily: boolean; blocked: number; tools: string[] }>;
 
@@ -272,6 +273,7 @@ export function AttackLab({ attacks, recorded, naive, summary }: { attacks: LabA
             {error && <p className="rounded-xl bg-[#f2827a]/15 px-3 py-2 text-[13px] text-[#f2827a]">{error}</p>}
           </section>
         </div>
+        <BringYourOwnAI />
       </main>
     </div>
   );

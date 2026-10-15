@@ -14,6 +14,9 @@ Built for the 2026 Shenzhen International FinTech Competition, International Tra
 |---|---|
 | [docs/TECHNICAL.md](docs/TECHNICAL.md) | Architecture, core algorithms, LLM integration, ledger |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, permission tiers, controls, red-team results, known risks |
+| [docs/PRODUCTION.md](docs/PRODUCTION.md) | From sandbox to product: what is real today, what replaces each simulated part, who operates it, a pilot plan |
+| [docs/EVAL.md](docs/EVAL.md) | Live evaluation: 45 end-to-end runs on the real model, scored by code |
+| [docs/evidence/](docs/evidence/README.md) | Execution evidence: one log per scenario, with on-chain anchors checked against the chain |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Deploying: server, Docker + Caddy (HTTPS), checks after deploying, known limits of the public demo |
 
 > **Sandbox.** The hospital, university, banks and card network are simulated. Institutions are fictional and exchange rates are illustrative. Regulations are real and cited, each marked *official*, *reported*, *assumed* (verify with a bank) or *policy* (CarryPay's own rule).
@@ -43,7 +46,7 @@ Open:
 | `http://localhost:3000/pack` | Printable case pack (Save as PDF): payments, every bill, receipt and form, and the log verification |
 | `http://localhost:3000/director` | Director controls + raw agent log, including **chaos mode** (bank outage, card declined, institution silent) |
 
-Run the tests (84: rules engine, all four scenarios end to end, uploaded bills, on-chain anchoring, 18 red-team attacks on the safety layer, sandbox institutions, chaos mode, privacy firewall, passkey verification):
+Run the tests (88: rules engine, all four scenarios end to end, uploaded bills, on-chain anchoring, the MCP server, 18 red-team attacks on the safety layer, sandbox institutions, chaos mode, privacy firewall, passkey verification):
 
 ```bash
 npm test
@@ -147,7 +150,18 @@ The family enters their names, then uploads a PDF or a photo of a hospital or un
 | Privacy firewall | Names, hospital and student numbers, card and passport numbers and medical details are replaced with placeholders before anything reaches the LLM, and restored only inside CarryPay's code. |
 | Tamper-evident log | Each entry is SHA-256 hashed with the previous entry's hash. Verify in the Security Centre (recomputed in the browser), export from `/api/ledger`. At each milestone the head hash is anchored on the **Conflux eSpace testnet** ([contract](https://evmtestnet.confluxscan.org/address/0x7cebbc3ac1a2ec61607025a589efa01b597c42cf), source verified); "Check against the chain" proves the log wasn't edited afterwards. |
 
-Red-team results: `src/server/redteam.test.ts` (17 attacks on the safety layer, all blocked) and [docs/redteam/REPORT.md](docs/redteam/REPORT.md) (20 attacks on the live DeepSeek agent: 0 executed; a naive prompt tried 2, the gateway blocked both).
+Red-team results: `src/server/redteam.test.ts` (18 attacks on the safety layer, all blocked) and [docs/redteam/REPORT.md](docs/redteam/REPORT.md) (20 attacks on the live DeepSeek agent: 0 executed; a naive prompt tried 2, the gateway blocked both).
+
+## Use CarryPay from your own AI (MCP)
+
+CarryPay is also an MCP server, so any AI assistant can work on a sandbox case with CarryPay's tools: read the case, check the rules, price the routes, verify an account, prepare the forms, message the family and propose a payment. Every call goes through the same safety gateway and privacy firewall as CarryPay's own agent: the outside AI sees masked personal data, can't pay an unverified account or break a rule, and can only *propose* a payment, which the family approves with a passkey in the app.
+
+```bash
+claude mcp add --transport http carrypay http://localhost:3000/api/mcp   # Claude Code, local server
+node scripts/mcp-check.mjs                                              # check with the official MCP client
+```
+
+On the public demo, the attack lab (`/attack`) shows the address of your own sandbox (`/api/mcp?world=…`). Code: `src/server/mcp.ts` (12 tools, MCP Streamable HTTP, stateless) and `src/app/api/mcp/route.ts`.
 
 ## Deploying
 
