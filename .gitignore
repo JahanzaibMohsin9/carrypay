@@ -47,3 +47,6 @@ next-env.d.ts
 .data-redteam/
 .data-live/
 .data-dev.log
+
+# demo video build output (voice, frames, renders)
+/video/out/

@@ -14,8 +14,12 @@ import { PhoneFrame } from "../world/PhoneFrame";
 import { StageAnchors } from "../world/StageAnchors";
 import { CHAPTER_IDS, CHAPTER_TITLES, STORY_SCENARIO, chapterOf } from "./chapters";
 
-/** how long each chapter stays on screen before the world moves on (reading time) */
-const DWELL_MS = 7000;
+/** how long each chapter stays on screen before the world moves on (reading time); ?dwell=ms changes it, e.g. for recording the video */
+const DEFAULT_DWELL_MS = 7000;
+const dwellMs = () => {
+  const v = Number(new URLSearchParams(window.location.search).get("dwell"));
+  return Number.isFinite(v) && v >= 500 && v <= 60_000 ? v : DEFAULT_DWELL_MS;
+};
 
 type Phase = "ready" | "playing" | "paused" | "done";
 
@@ -52,7 +56,7 @@ export function StoryPlayer() {
         return;
       }
       if (ch.yourTurn) return;
-      if (Date.now() - since.current.at < DWELL_MS) return;
+      if (Date.now() - since.current.at < dwellMs()) return;
       if (s.nextEvent) {
         lock.current = Date.now() + 2500;
         await director("next");
