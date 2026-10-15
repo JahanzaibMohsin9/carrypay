@@ -34,6 +34,8 @@ docker compose -f docker-compose.shared.yml up -d --build    # app on 127.0.0.1:
 
 Then add a site to your proxy: `deploy/nginx-carrypay.conf` for nginx (it switches off buffering for the event stream and allows 8 MB uploads), and get a certificate with `certbot --nginx -d <hostname>`. With Caddy it is one line: `<hostname> { reverse_proxy 127.0.0.1:3010 }`. With Traefik, give the `app` service the usual router labels instead of the port mapping.
 
+If the proxy itself runs in Docker (for example another project's Caddy container), a container can't reach the host's 127.0.0.1. Join its network instead, with no port published: `PROXY_NETWORK=<its network> docker compose -f docker-compose.shared.yml -f deploy/compose.join-proxy.yml up -d --build`, and point the proxy at `carrypay:3000`.
+
 ## No domain? Free hostnames
 
 HTTPS needs a hostname, not a bare IP. Free options, best first:
