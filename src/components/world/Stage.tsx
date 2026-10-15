@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { HeartPulse, Smartphone, Terminal } from "lucide-react";
 import { useCarry } from "@/lib/client";
@@ -34,9 +35,9 @@ export function Stage() {
       <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 h-[720px] w-[720px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#0e6b5c] opacity-20 blur-[140px]" />
 
       <header className="relative z-10 flex items-center gap-3 px-5 pt-4">
-        <span className="rounded-xl bg-white/95 px-2.5 py-1.5">
+        <Link href="/" aria-label="CarryPay home" className="rounded-xl bg-white/95 px-2.5 py-1.5">
           <Logo className="text-[15px]" />
-        </span>
+        </Link>
         <p className="text-[13px] text-[#9fb2ad]">Never carry cash across borders again.</p>
         <button onClick={() => setShowDirector((v) => !v)} className="ml-auto rounded-lg border border-white/15 px-2.5 py-1 text-[11.5px] font-semibold text-[#9fb2ad] hover:text-white">
           {showDirector ? "Hide controls" : "Show controls"}

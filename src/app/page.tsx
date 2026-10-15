@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, BadgeCheck, Ban, Banknote, FileSignature, Fingerprint, Link2, Mail, OctagonX, Route, Scale } from "lucide-react";
 import { Logo } from "@/components/ui";
+import { SiteNav } from "@/components/SiteNav";
 import { Flag } from "@/components/Flag";
 import { ImpactPanel } from "@/components/ImpactPanel";
 
@@ -23,17 +24,7 @@ const SAFETY = [
 export default function Landing() {
   return (
     <div className="min-h-dvh bg-bg text-ink">
-      <header className="mx-auto flex max-w-6xl items-center gap-4 px-5 py-5">
-        <Logo className="text-[19px]" />
-        <nav className="ml-auto flex items-center gap-1 text-[13.5px] font-semibold">
-          <Link href="/app" className="hidden rounded-full px-3 py-2 text-ink-2 hover:bg-surface-3 sm:inline">
-            Family app
-          </Link>
-          <Link href="/stage" className="rounded-full bg-ink px-4 py-2 text-bg">
-            Live demo
-          </Link>
-        </nav>
-      </header>
+      <SiteNav />
 
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-16 pt-6 lg:grid-cols-[1.15fr_0.85fr]">
         <div>
@@ -80,7 +71,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-5 py-16">
+      <section id="how" className="mx-auto max-w-6xl scroll-mt-4 px-5 py-16">
         <h2 className="text-[28px] font-bold tracking-tight">An agent, not a chatbot</h2>
         <p className="mt-2 max-w-2xl text-[15px] text-ink-2">It works for days, across the hospital, the bank and your family, until every bill is paid and every refund is back.</p>
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
