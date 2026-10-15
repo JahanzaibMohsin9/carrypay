@@ -128,7 +128,7 @@ export function ApprovalSheet({ approvalId, onClose }: { approvalId: string | nu
               const pct = o.cost ? Math.max(3, (extra(o) / maxExtra) * 100) : 0;
               const reason = blocked ? o.evaluation.blockers[0]?.message : late ? "Arrives after the deadline" : undefined;
               return (
-                <li key={o.route} tabIndex={0} title={`${ROUTE_SHORT[o.route]}: ${o.cost ? money(o.cost.totalSource, o.cost.sourceCurrency) : "n/a"}${reason ? ` · ${reason}` : ""}`} className="group outline-none">
+                <li key={o.route} tabIndex={0} title={`${ROUTE_SHORT[o.route]}: ${o.cost ? money(o.cost.totalSource, o.cost.sourceCurrency) : "n/a"}${reason ? ` · ${reason}` : ""}`} className="group rounded-md">
                   <div className="mb-1 flex items-baseline justify-between gap-2 text-[12.5px]">
                     <span className={cn("font-semibold", isChosen ? "text-ink" : "text-ink-2")}>
                       {t(ROUTE_KEY[o.route])}

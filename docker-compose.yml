@@ -1,0 +1,32 @@
+# Production: the app behind Caddy, which gets and renews the HTTPS certificate on its own.
+#   1. point the domain's A record at the server
+#   2. cp .env.local.example .env.production and fill in the keys; put CARRYPAY_DOMAIN=your.domain in .env (Compose reads it from there)
+#   3. docker compose up -d --build
+services:
+  app:
+    build: .
+    env_file: .env.production
+    volumes:
+      - carrypay-data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      CARRYPAY_DOMAIN: ${CARRYPAY_DOMAIN:?set CARRYPAY_DOMAIN, e.g. carrypay.app}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  carrypay-data:
+  caddy-data:
+  caddy-config:

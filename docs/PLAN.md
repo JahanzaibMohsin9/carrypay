@@ -182,10 +182,10 @@ Pick by value; the first three are the strongest.
 - [ ] **Y** Urdu review of the UI and agent messages (you're the native speaker)
 
 ### Oct 18: Polish and deploy, then feature freeze
-- [ ] **C** Accessibility pass (contrast, focus states, screen-reader labels), dark mode check, empty and error states, loading skeletons
+- [ ] **C** Accessibility pass (contrast, focus states, screen-reader labels), dark mode check, empty and error states, loading skeletons *(started Oct 15: small grey text now passes WCAG AA in both themes (was 2.9:1 in light), one visible keyboard focus ring, focusable route list shows it; upload screen checked at 375px in light and dark; still to do: screen-reader pass of the stage and Director, empty/error states, loading skeletons)*
 - [ ] **C** Sound and motion polish for the video: approval success, payment arrival
-- [x] **C** *(manifest and icons done Oct 14; install test on phones still to do)* **A8** PWA: manifest, icons, full-screen; test install on Android and iPhone (optional APK wrapper only if everything else is done)
-- [ ] **C+Y** Deploy to a server outside mainland China (Singapore/HK/Tokyo) on our own domain (`carrypay.app` / `carrypayments.com` were free on Oct 14); HTTPS; long-running Node process
+- [x] **C** *(manifest and icons done Oct 14; Oct 15: manifest and all icons served with the declared sizes, meets Chrome's install criteria; install test on real phones needs the HTTPS deployment)* **A8** PWA: manifest, icons, full-screen; test install on Android and iPhone (optional APK wrapper only if everything else is done)
+- [ ] **C+Y** *(prep done Oct 15: standalone build, Dockerfile, Compose + Caddy for HTTPS and the event stream, [DEPLOY.md](DEPLOY.md); the production build was tested locally, including PDF upload, Replay and the stream; the Docker image itself is untested because Docker Desktop wasn't running. Needs from you: a server and the domain)* Deploy to a server outside mainland China (Singapore/HK/Tokyo) on our own domain (`carrypay.app` / `carrypayments.com` were free on Oct 14); HTTPS; long-running Node process
 - [ ] **Y** Test the URL with a "website speed test from China" tool
 - [ ] **All** End of day: **feature freeze.** Only fixes after this.
 

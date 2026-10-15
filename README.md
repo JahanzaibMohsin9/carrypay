@@ -15,6 +15,7 @@ Built for the 2026 Shenzhen International FinTech Competition, International Tra
 | [docs/TECHNICAL.md](docs/TECHNICAL.md) | Architecture, core algorithms, LLM integration, ledger |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, permission tiers, controls, red-team results, known risks |
 | [docs/MIMO_PROMPTS.md](docs/MIMO_PROMPTS.md) | Prompts for MiMo v2.6 Pro: Chinese UI review, scenario content, subtitles |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Deploying: server, Docker + Caddy (HTTPS), checks after deploying, known limits of the public demo |
 
 > **Sandbox.** The hospital, university, banks and card network are simulated. Institutions are fictional and exchange rates are illustrative. Regulations are real and cited, each marked *official*, *reported*, *assumed* (verify with a bank) or *policy* (CarryPay's own rule).
 
@@ -151,7 +152,7 @@ Red-team results: `src/server/redteam.test.ts` (17 attacks on the safety layer, 
 
 `*.vercel.app` domains can be unreliable from mainland China, and some LLM APIs (including Anthropic's) aren't reachable there. DeepSeek is. Plan:
 
-1. Run `npm run build && npm start` on a server **outside** mainland China (Singapore, Hong Kong or Tokyo) under your own domain. The server calls the LLM; the browser never does.
+1. Run it on a server **outside** mainland China (Singapore, Hong Kong or Tokyo) under your own domain, with HTTPS: `docker compose up -d --build` (Caddy gets the certificate). Full steps in [docs/DEPLOY.md](docs/DEPLOY.md). The server calls the LLM; the browser never does.
 2. Test the URL with a "website speed test from China" tool before submitting.
 3. Record a Live run of each scenario before the final so **Replay** mode is available as a clearly labelled fallback.
 4. Keep the demo video as an MP4 plus a link reachable from China (e.g. Bilibili), not only YouTube.

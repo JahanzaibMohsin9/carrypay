@@ -13,7 +13,7 @@
   --surface-3: #f2eee7;
   --ink: #12201e;
   --ink-2: #48605b;
-  --ink-3: #82928e;
+  --ink-3: #5b6a66; /* 4.6:1 or more on bg, surfaces and brand-softer (AA for small text) */
   --line: #e4ddd1;
   --line-strong: #d3cabb;
 
@@ -29,7 +29,7 @@
   --amber-soft: #fbefd9;
   --danger: #b42318;
   --danger-soft: #fdeceb;
-  --success: #17804f;
+  --success: #157949;
   --success-soft: #e3f4ea;
   --info: #2d5fa8;
   --info-soft: #e8eef8;
@@ -49,7 +49,7 @@
     --surface-3: #1a2928;
     --ink: #e9f1ee;
     --ink-2: #a6b8b3;
-    --ink-3: #6e817c;
+    --ink-3: #85968f;
     --line: #213230;
     --line-strong: #2d4340;
     --brand: #39b198;
@@ -81,7 +81,7 @@
   --surface-3: #1a2928;
   --ink: #e9f1ee;
   --ink-2: #a6b8b3;
-  --ink-3: #6e817c;
+  --ink-3: #85968f;
   --line: #213230;
   --line-strong: #2d4340;
   --brand: #39b198;
@@ -161,6 +161,12 @@ body {
 
 ::selection {
   background: var(--brand-soft);
+}
+
+/* one visible focus ring for keyboard users, in both themes; mouse and touch don't show it */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 /* hatched fill for "not allowed" bars and in-flight segments: never color alone */
