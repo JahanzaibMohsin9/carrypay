@@ -17,6 +17,7 @@ import {
   ShieldX,
   TriangleAlert,
   User,
+  Mic,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { post, useCarry } from "@/lib/client";
@@ -25,6 +26,7 @@ import { activeCase, caseTz, feed, type FeedItem } from "@/lib/selectors";
 import { cn, dayKey, dayLabel, dayNumber, shortHash, timeOf } from "@/lib/format";
 import { Logo } from "../ui";
 import { RuleChip } from "../RuleChip";
+import { ListenButton, VoiceButton } from "./Voice";
 
 export function ActivityFeed() {
   const { state } = useCarry();
@@ -105,9 +107,17 @@ function Composer({ caseId }: { caseId: string }) {
           placeholder={t("messagePlaceholder")}
           className={cn("h-11 flex-1 rounded-full border border-line bg-surface px-4 text-[14px] outline-none placeholder:text-ink-3 focus:border-brand", lang === "ur" && "urdu")}
         />
-        <button disabled={sending || !text.trim()} className="grid h-11 w-11 place-items-center rounded-full bg-brand text-brand-ink disabled:opacity-40" aria-label={t("send")}>
-          <SendHorizontal size={18} className={cn(lang === "ur" && "rotate-180")} />
-        </button>
+        {text.trim() ? (
+          <button disabled={sending} className="grid h-11 w-11 place-items-center rounded-full bg-brand text-brand-ink disabled:opacity-40" aria-label={t("send")}>
+            <SendHorizontal size={18} className={cn(lang === "ur" && "rotate-180")} />
+          </button>
+        ) : (
+          <VoiceButton
+            lang={lang}
+            onText={(spoken) => post("/api/family", { caseId, text: spoken, voice: true })}
+            labels={{ record: t("voiceRecord"), stop: t("voiceStop"), working: t("voiceWorking"), note: t("voiceNote") }}
+          />
+        )}
       </form>
     </div>
   );
@@ -118,6 +128,7 @@ const TIER_LABEL = { read: "Read", communicate: "Write", money: "Money" } as con
 
 export function FeedLine({ item, tz, compact = false }: { item: FeedItem; tz: string; compact?: boolean }) {
   const [open, setOpen] = useState(false);
+  const { t, lang } = useT();
   const e = item.entry;
   const time = <span className="num shrink-0 text-[11px] text-ink-3">{timeOf(e.simAt, tz)}</span>;
 
@@ -157,8 +168,16 @@ export function FeedLine({ item, tz, compact = false }: { item: FeedItem; tz: st
               <ShieldAlert size={13} /> Security warning
             </p>
           )}
+          {mine && m.voice && (
+            <p className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold text-bg/70">
+              <Mic size={11} /> {t("voiceLabel")}
+            </p>
+          )}
           <p className="whitespace-pre-wrap">{m.text}</p>
-          <p className={cn("mt-1 text-right text-[10.5px]", mine ? "text-bg/60" : "text-ink-3")}>{timeOf(m.at, tz)}</p>
+          <div className={cn("mt-1 flex items-center justify-end gap-1.5 text-[10.5px]", mine ? "text-bg/60" : "text-ink-3")}>
+            {!mine && <ListenButton text={m.text} lang={lang} labels={{ listen: t("listen"), stop: t("stopListening") }} className="-ml-1.5 mr-auto" />}
+            {timeOf(m.at, tz)}
+          </div>
         </div>
       </div>
     );

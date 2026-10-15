@@ -131,7 +131,7 @@ export function feed(s: PublicState, caseId: string): FeedItem[] {
       pendingThinking = String((e.data as { summary?: string }).summary ?? "");
       continue;
     }
-    if (e.type === "family.message") {
+    if (e.type === "family.message" || e.type === "agent.answer") {
       const m = msgs.get(String(e.data.messageId));
       if (m) items.push({ kind: "message", entry: e, message: m });
       continue;

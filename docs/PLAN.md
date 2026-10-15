@@ -151,7 +151,7 @@ Review of the live site (15 Oct): strong engineering, but a first-time judge see
 2. *(done 15 Oct: /demo)* **Guided story mode**: press Play on the landing page; a recorded case unfolds with captions (estimate, scam blocked, urgent stent, duplicate charge, refund); the judge taps to approve; a results card at the end. No AI cost. Also the video's backbone.
 3. *(done 15 Oct: /attack)* **Attack lab**: judges launch attacks (fake bank details, hidden instructions in an invoice, quota-splitting pressure, look-alike sender) at the agent and watch the safety layer stop them, rule cited.
 4. *(done 15 Oct)* **Landing redesign**: animated money-flow map (Lahore→Bangkok, Shenzhen→London), live counters (fraud blocked, anchors on-chain), guided demo as the hero.
-5. **Voice notes**: speak a question (Chinese or English), the agent answers, the app reads the reply aloud.
+5. *(done 15 Oct)* **Voice notes**: speak a question (Chinese or English), the agent answers, the app reads the reply aloud.
 
 Then Oct 19: video, deck, submission.
 

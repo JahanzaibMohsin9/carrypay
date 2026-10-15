@@ -166,6 +166,13 @@ const en = {
   viewingAs: "Who is using this phone",
   onlyPayerApproves: "Only {name} can approve this: it is paid from their account or card. You can follow everything and decline if something looks wrong.",
   switchToPayer: "This is {name}'s phone",
+  voiceRecord: "Record a voice note",
+  voiceStop: "Stop and send",
+  voiceWorking: "Writing down your voice note…",
+  voiceNote: "Voice notes are written down by OpenAI's speech-to-text; CarryPay keeps only the text, and the AI agent sees it with names hidden.",
+  voiceLabel: "Voice note",
+  listen: "Listen",
+  stopListening: "Stop",
 };
 
 type Dict = typeof en;
@@ -416,6 +423,13 @@ const zh: Dict = {
   viewingAs: "谁在使用这部手机",
   onlyPayerApproves: "只有{name}可以批准这笔付款：它从{name}的账户或银行卡支付。您可以查看全部进展，如有疑问也可以拒绝。",
   switchToPayer: "这是{name}的手机",
+  voiceRecord: "录一段语音",
+  voiceStop: "停止并发送",
+  voiceWorking: "正在把语音转成文字…",
+  voiceNote: "语音由 OpenAI 的语音识别转成文字；CarryPay 只保存文字，AI 代理看到的内容会隐去姓名。",
+  voiceLabel: "语音消息",
+  listen: "朗读",
+  stopListening: "停止",
 };
 
 export const DICTS: Record<Lang, Partial<Dict>> = { en, ur, zh };

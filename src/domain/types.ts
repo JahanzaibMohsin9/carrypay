@@ -216,6 +216,8 @@ export interface FamilyMessage {
   text: string;
   at: string;
   importance?: "info" | "action" | "good_news" | "warning";
+  /** the family spoke it (a voice note, transcribed) */
+  voice?: boolean;
 }
 
 export interface SecurityEvent {

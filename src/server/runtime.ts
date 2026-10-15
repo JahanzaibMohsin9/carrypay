@@ -11,6 +11,7 @@ import type { AgentMode, UploadedBill } from "@/domain/types";
 import { AnchorService, milestoneOf } from "./anchor/service";
 import { ANCHOR_CHAIN, anchorConfig, explorerAddress, viemPublisher, type ChainPublisher } from "./anchor/chain";
 import { DEFAULT_SESSION } from "./session";
+import { answerFamily } from "./agent/answer";
 
 interface Runtime {
   id: string;
@@ -218,12 +219,46 @@ export function decideApprovalIn(store: Store, approvalId: string, decision: "ap
   store.trigger({ caseId: a.caseId, reason: "approval_decided", detail: `${decision}: ${a.summary}` });
 }
 
-export function familyMessage(caseId: string, text: string, sid?: string) {
+const ANSWERS_PER_VISITOR = Number(process.env.CARRYPAY_ANSWERS_PER_VISITOR ?? 12);
+const ANSWERS_PER_DAY = Number(process.env.CARRYPAY_ANSWERS_PER_DAY ?? 300);
+const answers = ((globalThis as unknown as { __carrypayAnswers?: { day: string; total: number; by: Map<string, number> } }).__carrypayAnswers ??= { day: "", total: 0, by: new Map() });
+
+/** Questions left for this visitor today when the agent isn't live (each one is a call to the model). */
+function takeAnswer(sid: string): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  if (answers.day !== today) Object.assign(answers, { day: today, total: 0, by: new Map() });
+  if ((answers.by.get(sid) ?? 0) >= ANSWERS_PER_VISITOR || answers.total >= ANSWERS_PER_DAY) return false;
+  answers.by.set(sid, (answers.by.get(sid) ?? 0) + 1);
+  answers.total += 1;
+  return true;
+}
+
+/**
+ * The family wrote (or spoke) to CarryPay. A live agent handles it like any event. In Replay or Scripted
+ * mode the agent follows a recording or a plan, so the message must not be fed to it (it would play a
+ * step out of context): the model answers the question instead, without tools (./agent/answer).
+ */
+export function familyMessage(caseId: string, text: string, sid?: string, opts: { voice?: boolean } = {}) {
   const { store } = runtime(sid);
   const id = store.nextId("msg");
-  store.mutate((w) => w.messages.push({ id, caseId, from: "family", text, at: w.now }));
-  store.log({ actor: "family", type: "family.message", caseId, narration: text, data: { messageId: id } });
-  store.trigger({ caseId, reason: "family_message", detail: text });
+  store.mutate((w) => w.messages.push({ id, caseId, from: "family", text, at: w.now, ...(opts.voice ? { voice: true } : {}) }));
+  store.log({ actor: "family", type: "family.message", caseId, narration: text, data: { messageId: id, ...(opts.voice ? { voice: true } : {}) } });
+  const w = store.world;
+  if (w.agent.killSwitch) return;
+  if (w.agent.mode === "live") {
+    store.trigger({ caseId, reason: "family_message", detail: text });
+    return;
+  }
+  if (!takeAnswer(sid ?? DEFAULT_SESSION)) {
+    const reply = store.nextId("msg");
+    const zh = w.cases[caseId]?.lang === "zh";
+    // TODO zh
+    const text2 = zh ? "今天的提问次数已用完。在 Director 里切换到 Live 模式，AI 会处理整个案件。" : "That's all the questions for today in this demo. Switch the Director to Live mode to have the AI handle the whole case.";
+    store.mutate((ww) => ww.messages.push({ id: reply, caseId, from: "agent", text: text2, at: ww.now, importance: "info" }));
+    store.log({ actor: "agent", type: "agent.answer", caseId, narration: zh ? "提问次数已用完" : "Question limit reached", data: { messageId: reply, model: null, limit: true } });
+    return;
+  }
+  void answerFamily(store, caseId, text);
 }
 
 export function setKillSwitch(on: boolean, sid?: string) {

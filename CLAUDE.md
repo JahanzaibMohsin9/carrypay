@@ -12,7 +12,7 @@ The user is a student in Pakistan; the Bangkok scenario is based on their family
 
 ```bash
 npm run dev                      # http://localhost:3000 (/stage, /app, /hospital, /bank, /director)
-npm test                         # 83 tests: rules engine, four scenarios, uploaded bills, on-chain anchors, 18 red-team attacks, institutions, chaos, privacy, passkeys
+npm test                         # 84 tests: rules engine, four scenarios, uploaded bills, on-chain anchors, 18 red-team attacks, institutions, chaos, privacy, passkeys
 node scripts/eval.mjs run uk-tuition 10 && node scripts/eval.mjs report   # live evaluation -> docs/EVAL.md
 npm run redteam:llm              # 20 attacks on the live model -> docs/redteam/REPORT.md (REDTEAM_AGENT=naive for the ablation)
 npx tsc --noEmit && npx eslint src
