@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
+import { pathToFileURL } from "node:url";
 
 const ROOT = process.cwd();
 const OUT = path.join(ROOT, "video", "out");
@@ -14,7 +15,7 @@ const env = Object.fromEntries(
     .filter(Boolean)
     .map((m) => [m[1], m[2].replace(/^["']|["']$/g, "")]),
 );
-const client = new OpenAI({ apiKey: env.OPENAI_API_KEY ?? process.env.OPENAI_API_KEY });
+let client;
 
 export const DIRECTION =
   "Calm, warm documentary narrator. Unhurried pace, about 140 words a minute, with a short pause after each sentence. Clear and sincere, never salesy or excited. Numbers spoken plainly.";
@@ -42,14 +43,18 @@ export function scenesFromScript() {
 }
 
 async function speak(text, voice, file) {
+  client ??= new OpenAI({ apiKey: env.OPENAI_API_KEY ?? process.env.OPENAI_API_KEY });
   const r = await client.audio.speech.create({ model: "gpt-4o-mini-tts", voice, input: text, instructions: DIRECTION, response_format: "mp3" });
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
   return file;
 }
 
-const [cmd, arg] = process.argv.slice(2);
-if (cmd === "samples") {
+// run as a command only when executed directly (edit.mjs imports scenesFromScript)
+const [cmd, arg] = import.meta.url === pathToFileURL(process.argv[1] ?? "").href ? process.argv.slice(2) : [null];
+if (cmd === null) {
+  // imported
+} else if (cmd === "samples") {
   const s1 = scenesFromScript()[0].parts.map((p) => p.text).join(" ");
   for (const voice of (arg ? [arg] : ["sage", "coral", "ash", "onyx"])) console.log(path.relative(ROOT, await speak(s1, voice, path.join(OUT, "samples", `scene1-${voice}.mp3`))));
 } else if (cmd === "scenes") {
