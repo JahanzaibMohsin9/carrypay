@@ -143,9 +143,34 @@ Where we stand (honest self-rating): task completion 8/10 (until live runs compl
 - [x] **C** *(done Oct 15, option (a): `/app/new/upload`, rule `CARRYPAY.VERIFIED_INSTITUTION`, Director "Verify institution (sandbox)")* Upload your own bill: photo or PDF of an invoice → extraction (vision model via OpenAI credits if DeepSeek vision isn't available) → agent works from it. Strong live-demo moment: "show us any hospital bill".
 - [ ] **T** Draft the demo video script ([VIDEO_SCRIPT.md](VIDEO_SCRIPT.md), to create)
 
+### Oct 16–17: On-chain anchoring (challenge bonus, 0–5 points)
+
+**Goal:** anyone can check, without trusting us, that CarryPay's activity log wasn't edited after the fact. At each case milestone the log's head hash (SHA-256, already chained) is written to a public test network; the Security Centre links each anchor to the block explorer and re-checks it against the chain.
+
+**Chain: Conflux eSpace testnet** (EVM, chain ID 71, RPC `https://evmtestnet.confluxrpc.com`, explorer ConfluxScan). Why: a public chain built in China whose explorer opens from mainland China (judges and the Shenzhen final), EVM-compatible so standard tools work, free testnet CFX from a faucet. Fallback: Ethereum Sepolia, the best-known testnet, but one source says it may be retired around September 2026, so check it is still running before relying on it. To confirm on Oct 16: the current explorer domain (`evmtestnet.confluxscan.org` vs `.net`; sources differ) and the faucet's rules. Mention FISCO BCOS (WeBank's open-source consortium chain) in the docs as the deployment path for a bank; we don't run it.
+
+**What goes on-chain:** only `(seq, headHash, scenario, milestone)` from the ledger. No names, amounts, accounts or case text. A head hash commits to every earlier entry, so one anchor covers the whole log up to that point.
+
+**Design**
+- A small contract `CarryPayAnchor` (about 20 lines of Solidity): `anchor(bytes32 head, uint64 seq, string label)` emits `Anchored(head, seq, label, block.timestamp)`. Source verified on the explorer, so judges can read it. Compiled once; the bytecode is committed with the source.
+- `src/server/anchor/`: an anchoring service using `viem`. It queues milestones (case opened, payment approved, payment completed, fraud flagged, case closed, plus the existing manual "Anchor" button), sends at most one transaction per milestone, retries on failure, and never blocks the agent or a payment. `anchors.json` gains `chainId`, `txHash`, `blockNumber`, `status` (local / pending / confirmed / failed).
+- Not an agent tool: the model can't call it and never sees the key. The wallet signs only anchor transactions to our contract.
+- Without a key the app works as today; anchors show "local only".
+- Security Centre: each anchor gets a "View on ConfluxScan" link and a "Check against the chain" button (reads the event over RPC, compares it with the local ledger entry at `seq`, re-verifies the chain up to it). The tamper demo then shows both: the local chain breaks, and the on-chain anchor still holds the original hash, which proves the edit.
+- Ledger export (`/api/ledger`, execution evidence) includes the anchor transactions.
+- Tests run with a mocked RPC transport (no network in `npm test`): encoding, queue and retry, verification, and the tamper case.
+
+**Oct 16:** contract, compile and deploy script, anchoring service, milestone hooks, tests; deploy to the testnet once the wallet is funded.
+**Oct 17:** Security Centre UI, export, TECHNICAL.md and SECURITY.md (what anchoring proves and what it doesn't: it proves the log wasn't changed after an anchor; it can't prove the events were true), a live run of each scenario with real anchors, and a moment for the video.
+
+**Needed from you (Y), before Oct 16 starts:**
+1. Decide on the wallet: (a) recommended: Claude generates a fresh testnet-only key straight into `.env.local` (`ANCHOR_PRIVATE_KEY`, never printed or committed) and prints only its address; or (b) you create a new wallet (e.g. MetaMask) used only for this, and put its private key in `.env.local` yourself. Never use a wallet that holds real money.
+2. Fund the address with testnet CFX from the Conflux eSpace faucet (https://efaucet.confluxnetwork.org/). The faucet may have a captcha; Claude can't do that step. A few CFX is plenty (deploying and a few hundred anchors cost far less).
+3. Optional: tell Claude if you'd rather use Sepolia (then you need Sepolia ETH from a faucet such as Google Cloud's or Alchemy's; some need a Google account or a small mainnet balance).
+
 ### Oct 17: More reasons to win
 Pick by value; the first three are the strongest.
-- [ ] **C** **(confirmed: bonus applies to Topic C; do Oct 16–17)** **Anchor the log on-chain**: publish the activity log's head hash to a public test network at each case milestone, link the transaction from the Security Centre. Real on-chain hashes, cheap, and it strengthens tamper-evidence. (½ day)
+- [ ] **C** **(confirmed: bonus applies to Topic C; planned above, Oct 16–17)** **Anchor the log on-chain**: publish the activity log's head hash to a public test network at each case milestone, link the transaction from the Security Centre. Real on-chain hashes, cheap, and it strengthens tamper-evidence. (½ day)
 - [x] **C** *(done Oct 14: Money tab, "Across currencies")* **Multi-currency view** (named in Topic C): per case, what left in PKR/CNY, what arrived in THB/GBP, fees and tax per route, refunds back in home currency
 - [x] **C** *(done Oct 14: scenario `pk-admission`, rule `CARRYPAY.ADMISSION_VERIFIED_BEFORE_FEES`)* **A1** Admission-fraud protection and **scenario 3 (PK to UK/US tuition, fake agent)**, which also delivers the third corridor (rules already in `pk-sbp.json`)
 - [x] **C** *(both done Oct 14: chaos buttons in the Director, `/bank/officer`)* **A5** Chaos mode *or* **A6** bank-officer view (whichever is further along)
