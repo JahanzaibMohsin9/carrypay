@@ -10,6 +10,7 @@ import { AgentConsole } from "./AgentConsole";
 import { BankConsole } from "./BankConsole";
 import { DirectorPanel } from "./DirectorPanel";
 import { HospitalDesk } from "./HospitalDesk";
+import { StageAnchors } from "./StageAnchors";
 
 /** One screen for the demo video: the outside world, the family's phone, and the machine's view. */
 export function Stage() {
@@ -77,6 +78,7 @@ export function Stage() {
           <div className="min-h-0 flex-1">
             <AgentConsole />
           </div>
+          {state && <StageAnchors state={state} />}
         </section>
       </div>
     </div>
