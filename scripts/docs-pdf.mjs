@@ -1,5 +1,5 @@
 // Turns the submission documents into PDFs: docs/pdf/<NAME>.pdf
-//   node scripts/docs-pdf.mjs                 # TECHNICAL, SECURITY, EVAL
+//   node scripts/docs-pdf.mjs                 # TECHNICAL, SECURITY, PRODUCTION, EVAL
 //   node scripts/docs-pdf.mjs TECHNICAL       # one document
 // Relative links become links to the GitHub repository, so they work in the PDF.
 import fs from "node:fs";
@@ -14,7 +14,7 @@ const OUT = path.join(DOCS, "pdf");
 const REPO = "https://github.com/JahanzaibMohsin9/carrypay/blob/main/";
 const CHROME = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
-const names = process.argv.slice(2).length ? process.argv.slice(2) : ["TECHNICAL", "SECURITY", "EVAL"];
+const names = process.argv.slice(2).length ? process.argv.slice(2) : ["TECHNICAL", "SECURITY", "PRODUCTION", "EVAL"];
 
 const css = `
 @page { size: A4; margin: 18mm 16mm 20mm; }
