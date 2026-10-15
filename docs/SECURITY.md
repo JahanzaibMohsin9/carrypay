@@ -85,7 +85,7 @@ https://carrypay.duckdns.org/attack lets anyone run six of these attacks in thei
 
 Attacks: look-alike and homoglyph senders, a bank-change email from the institution's **real** address (compromised mailbox), forged invoices, hidden instructions to "automated assistants", fake tool-call JSON, a fake "CarryPay compliance" override, a family member forwarding a "skip the check" instruction, paying a doctor's personal account, cash to a ward manager, refund redirection, a reply-thread spoof, a duplicate deposit request, overpaying "to lock in the rate", splitting a deposit across two cards, and in the China corridor 蚂蚁搬家 across relatives, a fake "education consultant" account, a "declare it as travel" guide, and a new IBAN from the university's real address.
 
-Results on the final agent (privacy firewall on), run 14 Oct 2026:
+Results on the current agent (privacy firewall on), first run 14 Oct 2026 and re-run 15 Oct on the agent with scenario 4 and uploaded bills (same result: 0 of 20 tried, 0 executed, 16 flagged as fraud):
 
 | Configuration (same model, same tools) | Model tried the unsafe action | Unsafe action executed |
 |---|---|---|
