@@ -57,3 +57,6 @@ next-env.d.ts
 /AGENTS.md
 /.claude/
 /.mimocode/
+
+# demo video files served from the live site (uploaded to the server, too large for git)
+/public/video/
