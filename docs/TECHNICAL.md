@@ -45,7 +45,7 @@ Two capital-control countries, two corridors each. The agent's code is the same 
  Agent runner (event-driven)
    │  wakes on: case opened · email · payment status · approval · family message · follow-up
    │  modes: Live (LLM) · Replay (recorded LLM run) · Scripted (no AI, labelled)
-   │  privacy firewall: personal data masked before the model, restored in code
+   │  privacy firewall: known identifiers masked before the model, restored in code
    ▼
  Safety gateway: every tool call passes here
    │  1 emergency stop   2 input schema   3 permission tier
@@ -140,7 +140,7 @@ Returned transfers come back with a reason (e.g. the receiving bank needs the pa
 
 ### 4.1 Privacy firewall
 
-Before each wake-up, `buildVault` (`src/server/agent/privacy.ts`) collects the case's personal data: names (full names, name parts, Chinese given names), internal person IDs such as `p_tariq` (the model passes `[PERSON_ID_1]` as `payer_id`), hospital or student numbers, card labels, passport numbers, and medical terms. Every occurrence is replaced with a token (`[PERSON_1]`, `[PATIENT_REF_1]`, `[CARD_2]`, `[MEDICAL_4]`) in the snapshot and in every tool result. The model writes with the tokens ("reference HN [PATIENT_REF_1]"); the runner restores the real values in the tool input before the gateway runs it, so the hospital gets the real name and HN and the model never sees them. Recordings keep the tokens, and Replay restores them the same way. Each wake-up logs a `privacy.masked` entry with counts, and the Security Centre shows the exact text sent last time. Institution names, amounts, dates and verified bank accounts stay visible: the agent needs them and they are not personal data.
+Before each wake-up, `buildVault` (`src/server/agent/privacy.ts`) collects the case's personal data: names (full names, name parts, Chinese given names), internal person IDs such as `p_tariq` (the model passes `[PERSON_ID_1]` as `payer_id`), hospital or student numbers, card labels, passport numbers, and medical terms. Every occurrence is replaced with a token (`[PERSON_1]`, `[PATIENT_REF_1]`, `[CARD_2]`, `[MEDICAL_4]`) in the snapshot and in every tool result. The model writes with the tokens ("reference HN [PATIENT_REF_1]"); the runner restores the real values in the tool input before the gateway runs it, so the hospital gets the real name and HN while the model only sees the tokens. Recordings keep the tokens, and Replay restores them the same way. Each wake-up logs a `privacy.masked` entry with counts, and the Security Centre shows the exact text sent last time. Institution names, amounts, dates and verified bank accounts stay visible: the agent needs them. Masking covers identifiers CarryPay already knows about the case; anything else in free text, such as a relative's name the family types, is not caught (SECURITY.md §6).
 
 ### 4.2 Passkey approvals
 
@@ -158,7 +158,7 @@ The Director can break the outside world mid-case, and the agent isn't told: it 
 
 - **Rule chips explain themselves.** Every rule ID shown in the app (approval checks, activity, threats, the bank view) opens a sheet with a plain-language explanation in the family's language, the rule's status (official, reported, assumed, CarryPay policy), the date in force and the source. Numbers in the explanations are read from the rule pack (`src/domain/rules/explain.ts`); a test fails if any rule lacks an explanation.
 - **Across currencies** (Money tab): what left the family's account in PKR or CNY, what arrived in THB or GBP, the cost by route, exchange markup plus fees and tax, refunds back in home currency, and the all-in rate next to the mid-market rate. All from the engine-priced payments.
-- **Bank officer view** (`/bank/officer`): the remittance package a bank's FX desk would review: applicant (with passport number, which the AI never sees), verified beneficiary, the rules engine's checks with rule chips, required documents with their origin and signature state, the family's passkey approval and payment digest, the audit trail, and a draft SWIFT MT103 built from the payment.
+- **Bank officer view** (`/bank/officer`): the remittance package a bank's FX desk would review: applicant (with passport number, which is masked from the AI), verified beneficiary, the rules engine's checks with rule chips, required documents with their origin and signature state, the family's passkey approval and payment digest, the audit trail, and a draft SWIFT MT103 built from the payment.
 - **Case pack** (`/pack`): one printable page per case (Save as PDF) for insurance claims, tax records or a bank's questions; also the human-readable execution evidence.
 - **Installable web app**: `app/manifest.ts`, icons generated with `next/og` (`/pwa-icon/192`, `/512`, `/maskable`, `apple-icon`), standalone display starting at `/app`.
 
@@ -168,11 +168,11 @@ A Shenzhen family is told by a study agency (留学中介) that their daughter h
 
 ### 4.7 Uploaded bills
 
-A family can upload their own hospital or university bill (`/app/new/upload`, PDF or photo). PDF text is extracted locally (`unpdf`); photos are read by a vision model. Names are masked before any model sees the text. The extraction is validated against a schema (institution, country, currency, amount, due date, account), shown to the family to check, and becomes a case with an institution marked `uploaded_bill`. The agent prices the bill under the home country's rules and explains the cost, but `CARRYPAY.VERIFIED_INSTITUTION` blocks every payment until the bank has verified the institution and its account; an unverified institution's email address is not a verified recipient either.
+A family can upload their own hospital or university bill (`/app/new/upload`, PDF or photo). PDF text is extracted locally (`unpdf`); a photo is sent to OpenAI's vision model as provided. The family's names are masked in the extracted text before the agent's model sees it. The extraction is validated against a schema (institution, country, currency, amount, due date, account), shown to the family to check, and becomes a case with an institution marked `uploaded_bill`. The agent prices the bill under the home country's rules and explains the cost, but `CARRYPAY.VERIFIED_INSTITUTION` blocks every payment until the bank has verified the institution and its account; an unverified institution's email address is not a verified recipient either.
 
 ### 4.8 Voice notes and answers
 
-Families can ask a question by voice, in Chinese or English. The audio is transcribed (`gpt-4o-mini-transcribe`), the question goes to the agent as a family message, and the reply can be read aloud. When the case is in Replay or between agent runs, `answerFamily` answers from the case snapshot with the same privacy masking; questions are rate-limited per visitor and per day.
+Families can ask a question by voice, in Chinese or English. The audio is sent to OpenAI and transcribed (`gpt-4o-mini-transcribe`), the question goes to the agent as a family message, and the reply can be read aloud. When the case is in Replay or between agent runs, `answerFamily` answers from the case snapshot with the same privacy masking; questions are rate-limited per visitor and per day.
 
 ### 4.9 CarryPay as an MCP server
 
@@ -188,7 +188,7 @@ The full self-assessment is [SECURITY.md](SECURITY.md); this is the design in br
 - **Permission tiers**, enforced in the gateway: *Read* (automatic; external content labelled untrusted), *Communicate* (email only to an institution's verified address; forms are drafts until signed), *Money* (`propose_payment` only creates a request; nothing moves without the family's passkey). Paying unverified accounts, exceeding limits, splitting across relatives and prohibited purposes are forbidden: no tool can do them.
 - **Gateway order** for a payment: emergency stop → schema validation → case isolation → verified beneficiary → outstanding amount (no overpaying or paying twice) → rules engine → approval request. Every decision is logged with the rule ID.
 - **Approval** is a WebAuthn signature over a digest of the exact payment (§4.2), so a changed amount or account can't reuse it.
-- **Privacy:** names, IDs, card and passport numbers and medical details never reach the model (§4.1).
+- **Privacy:** known identifiers on the case (names, IDs, hospital and student numbers, card and passport numbers, terms from a medical word list) are masked before the agent's model sees them (§4.1). Uploaded photos and voice notes go to OpenAI as provided, and masking can miss identifiers CarryPay doesn't know, so the public sandbox uses fictional data.
 - **Evidence:** a hash-chained log anchored on a public chain (§6).
 - **Testing:** 18 deterministic attacks on the gateway in `npm test`; 20 attacks on the live model with an ablation: a naive prompt without the gateway executed 2/20, the same naive prompt with the gateway 0/20, the CarryPay agent 0/20 tried and 0/20 executed ([redteam/REPORT.md](redteam/REPORT.md)). Judges can launch attacks themselves at `/attack`.
 

@@ -147,14 +147,14 @@ The family enters their names, then uploads a PDF or a photo of a hospital or un
 | Numbers from tools | Costs, limits and balances come from the engine, not the model. |
 | Emergency stop | One switch blocks every tool call instantly. |
 | Passkey approval | The family approves with fingerprint or face (WebAuthn). The passkey signs a digest of the exact payment, checked on the server. |
-| Privacy firewall | Names, hospital and student numbers, card and passport numbers and medical details are replaced with placeholders before anything reaches the LLM, and restored only inside CarryPay's code. |
+| Privacy firewall | Known identifiers on the case (names, hospital and student numbers, card and passport numbers, medical terms) are replaced with placeholders before the agent's model sees them, and restored only inside CarryPay's code. Uploaded photos and voice notes are sent to OpenAI as provided; the public sandbox uses fictional data. |
 | Tamper-evident log | Each entry is SHA-256 hashed with the previous entry's hash. Verify in the Security Centre (recomputed in the browser), export from `/api/ledger`. At each milestone the head hash is anchored on the **Conflux eSpace testnet** ([contract](https://evmtestnet.confluxscan.org/address/0x7cebbc3ac1a2ec61607025a589efa01b597c42cf), source verified); "Check against the chain" proves the log wasn't edited afterwards. |
 
 Red-team results: `src/server/redteam.test.ts` (18 attacks on the safety layer, all blocked) and [docs/redteam/REPORT.md](docs/redteam/REPORT.md) (20 attacks on the live DeepSeek agent: 0 executed; a naive prompt tried 2, the gateway blocked both).
 
 ## Use CarryPay from your own AI (MCP)
 
-CarryPay is also an MCP server, so any AI assistant can work on a sandbox case with CarryPay's tools: read the case, check the rules, price the routes, verify an account, prepare the forms, message the family and propose a payment. Every call goes through the same safety gateway and privacy firewall as CarryPay's own agent: the outside AI sees masked personal data, can't pay an unverified account or break a rule, and can only *propose* a payment, which the family approves with a passkey in the app.
+CarryPay is also an MCP server, so any AI assistant can work on a sandbox case with CarryPay's tools: read the case, check the rules, price the routes, verify an account, prepare the forms, message the family and propose a payment. Every call goes through the same safety gateway and privacy firewall as CarryPay's own agent: the outside AI sees known identifiers masked, can't pay an unverified account or break a rule, and can only *propose* a payment, which the family approves with a passkey in the app.
 
 ```bash
 claude mcp add --transport http carrypay http://localhost:3000/api/mcp   # Claude Code, local server

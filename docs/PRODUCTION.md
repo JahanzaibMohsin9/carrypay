@@ -12,7 +12,7 @@ Regulatory points below were checked on 15 October 2026 against the sources list
 |---|---|---|
 | AI agent | DeepSeek V4 Pro over the real API, 17 tools, event-driven loop | **Real** |
 | Safety gateway, rules engine | Code that checks every tool call; rule packs with sources and status | **Real** |
-| Privacy firewall | Names, IDs, card and passport numbers and medical details masked before the model | **Real** |
+| Privacy firewall | Known names, IDs, card and passport numbers and medical terms on the case masked before the agent's model (photos and voice notes go to OpenAI as provided) | **Real** |
 | Family approval | WebAuthn passkeys (fingerprint or face) on real phones, signature over the exact payment | **Real** |
 | Activity log and proof | SHA-256 hash chain; head hash anchored in real transactions on the Conflux eSpace testnet | **Real** (testnet) |
 | Reading bills, voice | PDF text extraction, vision model for photos, speech-to-text | **Real** |
@@ -56,7 +56,7 @@ CarryPay never holds or moves money itself. It is software that a licensed bank 
 
 **China.** Personal foreign-exchange purchases go through banks under SAFE's rules (the annual quota, the purpose declaration, the ban on splitting across relatives), which CarryPay's China pack encodes and a bank already enforces. Three further sets of rules matter:
 - **Generative AI.** The *Interim Measures for the Management of Generative AI Services* (in force since 15 August 2023) cover generative AI services offered to the public in China; a public-facing service with certain attributes needs a security assessment and an algorithm filing. A bank offering CarryPay to customers would check whether its deployment falls under them, along with its own regulators' rules.
-- **Personal data.** The March 2024 rules on cross-border data flows exempt transfers that are necessary to perform a contract with the individual, with payments given as an example. CarryPay's design goes further: with a self-hosted model and data kept in the bank, there is no transfer to the model provider at all.
+- **Personal data.** The March 2024 rules on cross-border data flows exempt transfers that are necessary to perform a contract with the individual, with payments given as an example. Masking reduces exposure but does not by itself establish compliance with cross-border data-protection requirements. With a model hosted by the bank and data kept in the bank, there is no transfer to an outside model provider at all.
 - **The bank's own regulators.** Sector rules for banks and financial technology apply on top; the bank's compliance team owns this.
 
 ## 4. Security for production
