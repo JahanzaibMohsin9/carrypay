@@ -35,14 +35,18 @@ blockquote { margin: 8pt 0; padding: 4pt 10pt; border-left: 3pt solid #3fb8a5; b
 img { max-width: 100%; }
 `;
 
-// relative links and images -> GitHub (links) or file URLs (images)
+// Relative links point to GitHub; local images are embedded for reliable PDF export.
 function absolutize(md, file) {
   const dir = path.dirname(file);
-  return md.replace(/(!?)\]\(([^)\s]+)\)/g, (m, bang, href) => {
-    if (/^(https?:|mailto:|#)/.test(href)) return m;
+  return md.replace(/(!?)\[([^\]]*)\]\(([^)\s]+)\)/g, (m, bang, label, href) => {
+    if (/^(https?:|mailto:|data:|#)/.test(href)) return m;
     const abs = path.resolve(dir, href);
-    if (bang) return `](${pathToFileURL(abs).href})`;
-    return `](${REPO}${path.relative(ROOT, abs).split(path.sep).join("/")})`;
+    if (bang) {
+      const mime = { ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif" }[path.extname(abs).toLowerCase()];
+      if (!mime) throw new Error(`Unsupported image type: ${abs}`);
+      return `![${label}](data:${mime};base64,${fs.readFileSync(abs).toString("base64")})`;
+    }
+    return `[${label}](${REPO}${path.relative(ROOT, abs).split(path.sep).join("/")})`;
   });
 }
 
@@ -53,10 +57,13 @@ for (const name of names) {
   const file = path.join(DOCS, `${name}.md`);
   const md = absolutize(fs.readFileSync(file, "utf8"), file);
   const title = md.match(/^# (.+)$/m)?.[1] ?? name;
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title><style>${css}</style></head><body>${marked.parse(md)}</body></html>`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title><style>${css}${name === "EVAL" ? "table { break-inside: avoid; }" : ""}</style></head><body>${marked.parse(md)}</body></html>`;
   const tmp = path.join(OUT, `.${name}.html`);
   fs.writeFileSync(tmp, html);
   await page.goto(pathToFileURL(tmp).href, { waitUntil: "load" });
+  await page.evaluate(() => document.fonts.ready);
+  const brokenImages = await page.locator("img").evaluateAll((images) => images.filter((img) => !img.complete || !img.naturalWidth).map((img) => img.alt));
+  if (brokenImages.length) throw new Error(`Images failed to load in ${name}: ${brokenImages.join(", ")}`);
   await page.pdf({
     path: path.join(OUT, `${name}.pdf`),
     format: "A4",
