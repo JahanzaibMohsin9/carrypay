@@ -8,6 +8,8 @@ Built for the 2026 Shenzhen International FinTech Competition, International Tra
 
 **Live demo:** https://carrypay.duckdns.org (family app at [/app](https://carrypay.duckdns.org/app), demo stage at [/stage](https://carrypay.duckdns.org/stage)). Sandbox only: fictional institutions, no real money.
 
+**Demo video (3:52, English narration, Chinese and English subtitles):** [1080p](https://carrypay.duckdns.org/video/carrypay-demo.mp4) · [720p, smaller](https://carrypay.duckdns.org/video/carrypay-demo-720p.mp4), hosted on the demo server so it also opens in mainland China.
+
 ## Documentation
 
 | Doc | What's in it |
