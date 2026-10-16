@@ -1,5 +1,7 @@
 // Assembles the demo video from the raw takes (record.mjs) and the voice (tts.mjs).
 //   node scripts/video/edit.mjs            -> video/out/carrypay-demo.mp4 (+ subtitles.en.srt)
+//   node scripts/video/edit.mjs --voice video/out/voice-gemini --tag gemini
+//                                          -> another voice (any .wav/.mp3 per part, silence trimmed): carrypay-demo-gemini.mp4
 // Each narration part gets a stretch of a take between two markers, sped up to fit the voice (or held
 // on its last frame); title and end cards are rendered in Chrome; music is composed with ffmpeg and
 // turned down under the voice; English subtitles are burned in.
@@ -20,6 +22,13 @@ const LEAD = 0.8; // first picture before the first word
 const GAP_SHORT = 0.6; // between parts of one scene
 const GAP_LONG = 1.4; // between scenes
 const END = 5.5; // end card
+
+const arg = (name) => {
+  const i = process.argv.indexOf(name);
+  return i > 0 ? process.argv[i + 1] : undefined;
+};
+const VOICE_DIR = arg("--voice") ? path.resolve(arg("--voice")) : path.join(OUT, "voice");
+const TAG = arg("--tag") ? `-${arg("--tag")}` : "";
 
 const ff = (args, cwd = OUT) => execFileSync("ffmpeg", ["-v", "error", "-y", ...args], { cwd, stdio: ["ignore", "inherit", "inherit"] });
 const dur = (f) => Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f]).toString());
@@ -125,9 +134,21 @@ await cards();
 // the timeline: title card, then each part = (lead-in) + voice + gap, then the end card
 const scenes = scenesFromScript();
 const parts = scenes.flatMap((s, si) => s.parts.map((p, pi) => ({ ...p, scene: s.id, lastInScene: pi === s.parts.length - 1, firstInScene: pi === 0, lastOverall: si === scenes.length - 1 && pi === s.parts.length - 1 })));
+// each part's voice file; from another voice folder, leading and trailing silence is trimmed first
+fs.mkdirSync(path.join(WORK, "voice"), { recursive: true });
+for (const p of parts) {
+  const src = [".mp3", ".wav", ".m4a", ".ogg", ".flac"].map((x) => path.join(VOICE_DIR, `${p.id}${x}`)).find((f) => fs.existsSync(f));
+  if (!src) throw new Error(`No voice for part ${p.id} in ${VOICE_DIR} (expected ${p.id}.wav or ${p.id}.mp3)`);
+  if (!TAG) p.voiceFile = src;
+  else {
+    p.voiceFile = path.join(WORK, "voice", `${p.id}${TAG}.wav`);
+    const trim = "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.05";
+    ff(["-i", src, "-af", `${trim},areverse,${trim},areverse,aresample=44100`, "-ac", "1", p.voiceFile]);
+  }
+}
 let clock = TITLE;
 for (const [i, p] of parts.entries()) {
-  p.voice = dur(path.join(OUT, "voice", `${p.id}.mp3`));
+  p.voice = dur(p.voiceFile);
   p.lead = i === 0 ? LEAD : 0;
   p.gap = p.lastOverall ? 1.6 : p.lastInScene ? GAP_LONG : GAP_SHORT;
   p.length = p.lead + p.voice + p.gap;
@@ -173,7 +194,7 @@ fs.writeFileSync(path.join(WORK, "list.txt"), list.map((f) => `file '${f}'`).joi
 ff(["-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "picture.mp4"], WORK);
 
 // sound: the voice parts at their places, the music ducked under them
-const voiceInputs = parts.flatMap((p) => ["-i", path.join(OUT, "voice", `${p.id}.mp3`)]);
+const voiceInputs = parts.flatMap((p) => ["-i", p.voiceFile]);
 const delays = parts.map((p, i) => `[${i}:a]aresample=44100,adelay=${Math.round(p.voiceStart * 1000)}:all=1[v${i}]`).join(";");
 ff([...voiceInputs, "-filter_complex", `${delays};${parts.map((_, i) => `[v${i}]`).join("")}amix=inputs=${parts.length}:normalize=0,apad=whole_dur=${total}[v]`, "-map", "[v]", "-ac", "2", path.join(WORK, "voice.wav")]);
 music(total, path.join(WORK, "music.wav"));
@@ -187,11 +208,11 @@ if (missing.length) console.warn(`No Chinese for ${missing.length} cue(s); add t
 writeSrt(cues, path.join(WORK, "subtitles.en.srt"));
 writeSrt(cues, path.join(WORK, "subtitles.zh.srt"), (c) => zh[c.text] ?? c.text);
 writeSrt(cues, path.join(WORK, "subtitles.bilingual.srt"), (c) => `${zh[c.text] ?? ""}\n${c.text}`.trim());
-for (const f of ["subtitles.en.srt", "subtitles.zh.srt", "subtitles.bilingual.srt"]) fs.copyFileSync(path.join(WORK, f), path.join(OUT, f));
+for (const f of ["subtitles.en.srt", "subtitles.zh.srt", "subtitles.bilingual.srt"]) fs.copyFileSync(path.join(WORK, f), path.join(OUT, TAG ? f.replace(".srt", `${TAG}.srt`) : f));
 
 const encode = (srtFile, style, out) =>
   ff(["-i", "picture.mp4", "-i", "mix.wav", "-vf", `subtitles=${srtFile}:force_style='${style}'`, "-c:v", "libx264", "-preset", "slow", "-crf", "19", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", path.join(OUT, out)], WORK);
 const box = "PrimaryColour=&H00FFFFFF,OutlineColour=&H90000000,BackColour=&H90000000,BorderStyle=3,Outline=6,Shadow=0";
-encode("subtitles.en.srt", `FontName=Segoe UI,FontSize=17,${box},MarginV=34`, "carrypay-demo.mp4");
-if (!process.argv.includes("--en-only")) encode("subtitles.bilingual.srt", `FontName=Microsoft YaHei,FontSize=15,${box},MarginV=26`, "carrypay-demo-zh-en.mp4");
-for (const f of ["carrypay-demo.mp4", "carrypay-demo-zh-en.mp4"]) if (fs.existsSync(path.join(OUT, f))) console.log(`${f}: ${dur(path.join(OUT, f)).toFixed(1)}s`);
+encode("subtitles.en.srt", `FontName=Segoe UI,FontSize=17,${box},MarginV=34`, `carrypay-demo${TAG}.mp4`);
+if (!process.argv.includes("--en-only")) encode("subtitles.bilingual.srt", `FontName=Microsoft YaHei,FontSize=15,${box},MarginV=26`, `carrypay-demo-zh-en${TAG}.mp4`);
+for (const f of [`carrypay-demo${TAG}.mp4`, `carrypay-demo-zh-en${TAG}.mp4`]) if (fs.existsSync(path.join(OUT, f))) console.log(`${f}: ${dur(path.join(OUT, f)).toFixed(1)}s`);
