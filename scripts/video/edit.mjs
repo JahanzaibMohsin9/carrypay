@@ -1,10 +1,12 @@
 // Assembles the demo video from the raw takes (record.mjs) and the voice (tts.mjs).
-//   node scripts/video/edit.mjs            -> video/out/carrypay-demo.mp4 (+ subtitles.en.srt)
+//   node scripts/video/edit.mjs            -> video/out/carrypay-demo-clean.mp4 (no burned subtitles, en+zh tracks; for YouTube)
+//                                             video/out/carrypay-demo-zh-en.mp4 (bilingual subtitles in a band below the picture)
+//                                             + subtitles.en.srt, subtitles.zh.srt, subtitles.bilingual.srt
 //   node scripts/video/edit.mjs --voice video/out/voice-gemini --tag gemini
 //                                          -> another voice (any .wav/.mp3 per part, silence trimmed): carrypay-demo-gemini.mp4
 // Each narration part gets a stretch of a take between two markers, sped up to fit the voice (or held
 // on its last frame); title and end cards are rendered in Chrome; music is composed with ffmpeg and
-// turned down under the voice; English subtitles are burned in.
+// turned down under the voice.
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -210,9 +212,31 @@ writeSrt(cues, path.join(WORK, "subtitles.zh.srt"), (c) => zh[c.text] ?? c.text)
 writeSrt(cues, path.join(WORK, "subtitles.bilingual.srt"), (c) => `${zh[c.text] ?? ""}\n${c.text}`.trim());
 for (const f of ["subtitles.en.srt", "subtitles.zh.srt", "subtitles.bilingual.srt"]) fs.copyFileSync(path.join(WORK, f), path.join(OUT, TAG ? f.replace(".srt", `${TAG}.srt`) : f));
 
-const encode = (srtFile, style, out) =>
-  ff(["-i", "picture.mp4", "-i", "mix.wav", "-vf", `subtitles=${srtFile}:force_style='${style}'`, "-c:v", "libx264", "-preset", "slow", "-crf", "19", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", path.join(OUT, out)], WORK);
-const box = "PrimaryColour=&H00FFFFFF,OutlineColour=&H90000000,BackColour=&H90000000,BorderStyle=3,Outline=6,Shadow=0";
-encode("subtitles.en.srt", `FontName=Segoe UI,FontSize=17,${box},MarginV=34`, `carrypay-demo${TAG}.mp4`);
-if (!process.argv.includes("--en-only")) encode("subtitles.bilingual.srt", `FontName=Microsoft YaHei,FontSize=15,${box},MarginV=26`, `carrypay-demo-zh-en${TAG}.mp4`);
-for (const f of [`carrypay-demo${TAG}.mp4`, `carrypay-demo-zh-en${TAG}.mp4`]) if (fs.existsSync(path.join(OUT, f))) console.log(`${f}: ${dur(path.join(OUT, f)).toFixed(1)}s`);
+// 1. clean, for YouTube: no burned subtitles, so nothing covers the app; English and Chinese ride along as
+//    switchable tracks (and the .srt files are uploaded to YouTube as captions)
+const clean = `carrypay-demo-clean${TAG}.mp4`;
+ff(
+  [
+    ...["-i", "picture.mp4", "-i", "mix.wav", "-i", "subtitles.en.srt", "-i", "subtitles.zh.srt"],
+    ...["-map", "0:v", "-map", "1:a", "-map", "2:s", "-map", "3:s"],
+    ...["-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-c:s", "mov_text"],
+    ...["-metadata:s:s:0", "language=eng", "-metadata:s:s:0", "title=English", "-metadata:s:s:1", "language=chi", "-metadata:s:s:1", "title=中文"],
+    // no -shortest here: the subtitle tracks end before the end card
+    ...["-movflags", "+faststart", "-t", total.toFixed(3), path.join(OUT, clean)],
+  ],
+  WORK,
+);
+
+// 2. bilingual, for Bilibili and the file we send: the picture a little smaller, the subtitles in a band below it
+const BAND = { w: 1600, h: 900, color: "0x0b1412" };
+const band = `carrypay-demo-zh-en${TAG}.mp4`;
+const style = "FontName=Microsoft YaHei,FontSize=11,PrimaryColour=&H00F4F1EA,OutlineColour=&H00000000,BorderStyle=1,Outline=0.5,Shadow=0,Alignment=2,MarginV=6,MarginL=28,MarginR=28";
+ff(
+  [
+    ...["-i", "picture.mp4", "-i", "mix.wav"],
+    ...["-vf", `scale=${BAND.w}:${BAND.h}:flags=lanczos,pad=1920:1080:${(1920 - BAND.w) / 2}:0:color=${BAND.color},subtitles=subtitles.bilingual.srt:force_style='${style}'`],
+    ...["-c:v", "libx264", "-preset", "slow", "-crf", "19", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", path.join(OUT, band)],
+  ],
+  WORK,
+);
+for (const f of [clean, band]) console.log(`${f}: ${dur(path.join(OUT, f)).toFixed(1)}s`);
