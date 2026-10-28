@@ -76,7 +76,7 @@ if (cmd === "run") {
     const failed = r.checks.filter((c) => !c.pass).map((c) => c.id);
     const cost = costUSD(r.metrics);
     console.log(
-      `${r.scenarioId} #${i + 1}: ${r.success ? "SUCCESS" : "FAIL " + failed.join(",")} · ${r.metrics.wakeups} wake-ups · ${r.metrics.toolCalls} tools · ${r.metrics.emailsToInstitution} emails · ${r.metrics.llmCalls} LLM calls${cost != null ? ` · $${cost.toFixed(3)}` : ""} · ${r.wallSeconds}s${r.failure ? " · " + r.failure : ""}`,
+      `${r.scenarioId} #${i + 1}: ${r.success ? "SUCCESS" : "FAIL " + failed.join(",")} · ${r.metrics.wakeups} wake-ups · ${r.metrics.toolCalls} tools · ${r.metrics.emailsToInstitution} emails · ${r.metrics.llmCalls} LLM calls${r.metrics.toolErrors ? ` · ${r.metrics.toolErrors} tool calls rejected or failed` : ""}${cost != null ? ` · $${cost.toFixed(3)}` : ""} · ${r.wallSeconds}s${r.failure ? " · " + r.failure : ""}`,
     );
   }
 } else if (cmd === "report") {
