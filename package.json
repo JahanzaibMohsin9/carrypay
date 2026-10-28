@@ -10,6 +10,7 @@
     "test": "vitest run",
     "redteam:llm": "vitest run --config vitest.redteam.config.mts",
     "eval:live": "vitest run --config vitest.live.config.mts",
+    "eval:replay": "vitest run --config vitest.replay.config.mts",
     "docs:pdf": "node scripts/docs-pdf.mjs"
   },
   "dependencies": {

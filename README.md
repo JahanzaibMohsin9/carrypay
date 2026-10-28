@@ -1,5 +1,7 @@
 # CarryPay
 
+[![CI](https://github.com/JahanzaibMohsin9/carrypay/actions/workflows/ci.yml/badge.svg)](https://github.com/JahanzaibMohsin9/carrypay/actions/workflows/ci.yml)
+
 **Never carry cash across borders again.**
 
 CarryPay is an AI agent that pays a family's hospital and university bills abroad: legally, safely and for less. It emails the institution, reads invoices, checks the home country's foreign-exchange rules, compares every way to pay, prepares the regulatory forms, asks the family for a fingerprint approval, tracks the money, fixes returned transfers, checks the final bill line by line and claims refunds.
@@ -52,6 +54,12 @@ Run the tests (88: rules engine, all four scenarios end to end, uploaded bills, 
 
 ```bash
 npm test
+```
+
+Replay the curated live runs in `recordings/` through today's tools, safety gateway and rules engine, scored with the same checks as the live evaluation (no API key needed; CI runs this and the tests on every push and pull request):
+
+```bash
+npm run eval:replay
 ```
 
 With an API key in `.env.local` and the dev server running, two more checks use the real model:
