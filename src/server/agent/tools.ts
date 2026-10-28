@@ -299,7 +299,7 @@ export const TOOLS = [
     schema: z.object({
       to: z.string(),
       subject: z.string().min(3).max(160),
-      body: z.string().min(10).max(4000),
+      body: z.string().min(10).max(4000).describe("Up to 4000 characters."),
       attachment_document_ids: z.array(z.string()).optional(),
       narration,
     }),
@@ -345,7 +345,7 @@ export const TOOLS = [
     name: "message_family",
     tier: "communicate",
     description: "Send the family a short update in their language. Use for anything they should know or decide. Keep it warm, clear and brief.",
-    schema: z.object({ text: z.string().min(3).max(800), importance: z.enum(["info", "action", "good_news", "warning"]), narration }),
+    schema: z.object({ text: z.string().min(3).max(800).describe("Up to 800 characters, a few short paragraphs at most. Longer messages are rejected."), importance: z.enum(["info", "action", "good_news", "warning"]), narration }),
     run: (i, ctx) => {
       const id = familyMessage(ctx, i.text, i.importance);
       return { decision: "allowed", result: { delivered: true, message_id: id } };
@@ -457,7 +457,7 @@ export const TOOLS = [
     tier: "communicate",
     description:
       "Close the case once every bill is settled and any refund has arrived (or nothing more can be done). Cancels all your follow-ups. Send the family a short closing summary first. New events can still reopen your attention, but you won't be woken by reminders.",
-    schema: z.object({ summary: z.string().min(10).max(600).describe("One or two sentences for the case record: what was paid, what came back, anything left for the family"), narration }),
+    schema: z.object({ summary: z.string().min(10).max(600).describe("Up to 600 characters. One or two sentences for the case record: what was paid, what came back, anything left for the family"), narration }),
     run: (i, ctx) => {
       const w = ctx.store.world;
       const open = Object.values(w.invoices).filter((x) => x.caseId === ctx.caseId && x.status === "open");
@@ -493,7 +493,7 @@ export const TOOLS = [
         swift: z.string(),
         bank_name: z.string(),
       }),
-      rationale: z.string().min(10).max(600).describe("Why this route and amount: shown to the family on the approval screen. Write it in the family's language."),
+      rationale: z.string().min(10).max(600).describe("Up to 600 characters. Why this route and amount: shown to the family on the approval screen. Write it in the family's language."),
       narration,
     }),
     run: (i, ctx) => {
