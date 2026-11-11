@@ -840,6 +840,10 @@ export const TOOLS = [
       if (dup) return { decision: "error", result: { error: `A payment on this invoice is already waiting for the family's approval (${dup.id}).` } };
 
       const cost = priceRoute({ corridor: c.corridor, route: i.route as Route, deliverAmount: i.amount, institution: w.institutions[inv.institutionId], simDate: w.now })!;
+      // The payment carries the registry's record, never the model's copy of it: the check above ignores
+      // case, spacing and punctuation, so the model's text could still hold invisible or look-alike characters
+      // or any bank name. What the bank and the family's approval screen see is the verified account itself.
+      const verified = ben.inst.bank;
       const paymentId = store.nextId("pay");
       const approvalId = store.nextId("apr");
       const payment: Payment = {
@@ -852,7 +856,7 @@ export const TOOLS = [
         currency: inv.currency,
         payerId: i.payer_id,
         reference: i.reference,
-        beneficiary: { accountName: i.beneficiary.account_name, accountNumber: i.beneficiary.account_number, swift: i.beneficiary.swift, bankName: i.beneficiary.bank_name },
+        beneficiary: { accountName: verified.accountName, accountNumber: verified.accountNumber, swift: verified.swift, bankName: verified.bankName },
         cost,
         rationale: i.rationale,
         status: "awaiting_approval",
@@ -933,7 +937,7 @@ export const TOOLS = [
     name: "resubmit_payment",
     tier: "money",
     description:
-      "Re-send a payment that the bank returned: with a corrected payment reference, or unchanged if the bank only had a temporary problem. Allowed without a new family approval only when the beneficiary and amount are unchanged (the family already approved exactly that).",
+      "Re-send a payment that the bank returned: with a corrected payment reference, or unchanged if the bank only had a temporary problem. Allowed without a new family approval only when the beneficiary and amount are unchanged (the family already approved exactly that). The safety layer re-checks it against everything since (the bill still open and owed, limits, a plan mandate still in force) and refuses it if anything changed: then propose a new payment.",
     schema: z.object({ payment_id: z.string(), corrected_reference: z.string().min(2).max(140), narration }),
     run: (i, ctx) => {
       const p = ctx.store.world.payments[i.payment_id];
@@ -941,6 +945,8 @@ export const TOOLS = [
       if (p.status !== "returned") return { decision: "error", result: { error: `Payment is ${p.status}, only returned payments can be resubmitted.` } };
       const ben = checkBeneficiary(ctx.store.world, p.institutionId, { account_name: p.beneficiary.accountName, account_number: p.beneficiary.accountNumber, swift: p.beneficiary.swift });
       if (!ben.verified) return { decision: "blocked", ruleIds: ["CARRYPAY.VERIFIED_BENEFICIARY"], result: { error: "BLOCKED: beneficiary no longer verified" } };
+      const refused = recheckResubmission(ctx, p);
+      if (refused) return refused;
       ctx.store.mutate((w) => {
         const pp = w.payments[p.id];
         pp.reference = i.corrected_reference;
@@ -958,6 +964,51 @@ export const TOOLS = [
 ] as const;
 
 export type ToolName = (typeof TOOLS)[number]["name"];
+
+/**
+ * A returned transfer stopped counting against the bill and the limits the moment the money came back, so
+ * other payments may have been made since. Sending it again moves money again: re-check it against today's
+ * world (bill still open, amount still owed, limits, anti-splitting, no self-made part payment), and a payment
+ * approved under a plan mandate goes again only while that mandate is still in force. Anything else needs a
+ * new proposal and the payer's own approval.
+ */
+function recheckResubmission(ctx: ToolCtx, p: Payment): ToolOutcome | undefined {
+  const { store } = ctx;
+  const w = store.world;
+  const c = w.cases[ctx.caseId];
+  const inv = w.invoices[p.invoiceId];
+  const refuse = (ruleIds: string[], kind: SecurityEvent["kind"], title: string, detail: string): ToolOutcome => {
+    security(ctx, { severity: kind === "blocked_forbidden" ? "critical" : "warning", kind, title, detail, ...(ruleIds.length ? { ruleIds } : {}) });
+    return {
+      decision: "blocked",
+      ...(ruleIds.length ? { ruleIds } : {}),
+      narration: `Did not resend ${p.id}: ${title.toLowerCase()}`,
+      result: { error: `BLOCKED by safety layer: ${detail} Nothing was sent. If a payment is still needed, propose it again for the family's approval.` },
+    };
+  };
+  if (!inv || inv.status !== "open") return refuse([], "blocked_limit", "The bill is no longer open", `Invoice ${inv?.number ?? p.invoiceId} is ${inv?.status ?? "gone"}.`);
+  const o = outstanding(ctx, inv.id);
+  if (p.amount > o.remaining + 0.5) {
+    return refuse([], "blocked_limit", "Resending would pay more than is owed", `${inv.currency} ${p.amount.toLocaleString()} is more than the ${inv.currency} ${o.remaining.toLocaleString()} still outstanding on ${inv.number} (paid ${o.paid}, in flight ${o.inFlight}).`);
+  }
+  const ev = evaluateRoute({ world: w, caseFile: c, payer: c.people.find((x) => x.id === p.payerId), route: p.route, amount: p.amount, currency: p.currency, excludePaymentId: p.id, invoiceId: inv.id });
+  if (!ev.allowed) return refuse(ev.blockers.map((b) => b.ruleId), ev.blockers.some((b) => b.ruleId.includes("SPLITTING")) ? "blocked_forbidden" : "blocked_limit", "Resending would break a rule", ev.blockers.map((b) => b.message).join(" "));
+  if (c.type === "tuition" && p.amount < o.remaining - 0.5) {
+    const agreed = obligationsFor(w, c.id, "current").filter((ob) => ob.invoiceId === inv.id && ob.source === "arrangement");
+    if (!agreed.some((ob) => Math.abs(ob.amount - p.amount) <= 0.5)) {
+      return refuse(["CARRYPAY.NO_STRUCTURING"], "blocked_forbidden", "Resending would be a self-made part payment", `${inv.currency} ${p.amount.toLocaleString()} of the ${inv.currency} ${o.remaining.toLocaleString()} outstanding on ${inv.number} is not an instalment of a confirmed plan.`);
+    }
+  }
+  const approval = p.approvalId ? w.approvals[p.approvalId] : undefined;
+  if (approval?.method === "mandate") {
+    const used = store.ledger.find((e) => e.type === "approval.mandate" && e.data.approvalId === approval.id);
+    const m = used ? w.mandates?.[used.data.mandateId as string] : undefined;
+    if (!m || m.status !== "active") {
+      return refuse([], "approval_required", "The plan mandate is no longer in force", `${p.id} was approved under plan mandate ${m?.id ?? "(unknown)"}, which is now ${m?.status ?? "missing"}: the payer must approve it again.`);
+    }
+  }
+  return undefined;
+}
 
 export function toolTier(name: string): Tier | undefined {
   return TOOLS.find((t) => t.name === name)?.tier;

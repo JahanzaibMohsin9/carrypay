@@ -52,7 +52,7 @@ Open:
 | `http://localhost:3000/pack` | Printable case pack (Save as PDF): payments, every bill, receipt and form, and the log verification |
 | `http://localhost:3000/director` | Director controls + raw agent log, including **chaos mode** (bank outage, card declined, institution silent) |
 
-Run the tests (145: rules engine, all five scenarios end to end, uploaded bills, the plan workflow, on-chain anchoring on two chains, the MCP server, 18 red-team attacks on the safety layer and 11 on the plan workflow, sandbox institutions, chaos mode, privacy firewall, passkey verification):
+Run the tests (145: rules engine, all five scenarios end to end, uploaded bills, the plan workflow, on-chain anchoring on two chains, the MCP server, 20 red-team attacks on the safety layer and 12 on the plan workflow, property-based fuzzing of the safety gateway, sandbox institutions, chaos mode, privacy firewall, passkey verification):
 
 ```bash
 npm test

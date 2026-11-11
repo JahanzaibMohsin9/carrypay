@@ -6,11 +6,12 @@ import { obligationsFor } from "@/domain/plan/cashflow";
 import { INSTITUTIONS } from "@/domain/institutions";
 import { Store } from "./store";
 import { seedScenario } from "./scenarios";
-import { advanceToNext } from "./sim/engine";
-import { addDoc } from "./sim/factory";
+import { advanceTo, advanceToNext } from "./sim/engine";
+import { addDoc, hoursFrom } from "./sim/factory";
 import { executeTool } from "./agent/tools";
 import { setFlagsForTest } from "./flags";
-import { decideArrangement, signMandate } from "./plan";
+import { decideArrangement, revokeMandate, signMandate } from "./plan";
+import { decideApprovalIn } from "./runtime";
 
 const K = INSTITUTIONS.kgu;
 const VERIFIED = { account_name: K.bank.accountName, account_number: K.bank.accountNumber, swift: K.bank.swift, bank_name: K.bank.bankName };
@@ -129,6 +130,35 @@ describe("red team: plan workflow", () => {
     store.mutate((w) => (w.agent.killSwitch = true));
     expect(pay(14370).error).toMatch(/emergency stop/);
     expect(Object.values(store.world.payments)).toHaveLength(0);
+  });
+
+  // found by the gateway fuzzer (src/server/gateway.fuzz.test.ts, INV-7 / INV-2)
+  it("RT-P11 resending a returned transfer can't pay the bill twice or split it across two people's FX quotas", () => {
+    const { store, call, statement } = setup("statement");
+    const propose = (payer_id: string, reference: string) => call("propose_payment", { invoice_id: statement.id, route: "bank_transfer", amount: statement.amountDue, payer_id, reference, beneficiary: VERIFIED, rationale: "red-team probe rationale" });
+    const dad = propose("p_jianhua", "Tuition"); // no Student ID: Kingsgate's bank returns it
+    decideApprovalIn(store, dad.approval_id, "approved", "hold");
+    advanceTo(store, hoursFrom(store.world.now, 21));
+    expect(store.world.payments[dad.payment_id].status).toBe("returned");
+    // the returned money no longer counts, so the same bill can be proposed again from the student's own quota
+    const student = propose("p_yutong", "KG2611392");
+    decideApprovalIn(store, student.approval_id, "approved", "hold");
+    expect(call("resubmit_payment", { payment_id: dad.payment_id, corrected_reference: "KG2611392" }).error).toMatch(/BLOCKED/);
+    expect(store.world.payments[dad.payment_id].status).toBe("returned");
+    const moving = Object.values(store.world.payments).filter((p) => p.status !== "returned");
+    expect(moving.map((p) => p.payerId)).toEqual(["p_yutong"]);
+  });
+
+  it("RT-P12 a transfer sent under a mandate the payer has since revoked is not resent without them", () => {
+    const { store, call, statement } = setup("mandate");
+    store.mutate((w) => (w.now = "2026-11-20T02:00:00.000Z"));
+    const r = call("propose_payment", { invoice_id: statement.id, route: "bank_transfer", amount: 14370, payer_id: "p_jianhua", reference: "Instalment 1", beneficiary: VERIFIED, rationale: "red-team probe rationale" });
+    expect(r.status).toBe("sent_under_plan_mandate");
+    advanceTo(store, hoursFrom(store.world.now, 21));
+    expect(store.world.payments[r.payment_id].status).toBe("returned");
+    revokeMandate(store, r.mandate_id, "p_yutong");
+    expect(call("resubmit_payment", { payment_id: r.payment_id, corrected_reference: "KG2611392" }).error).toMatch(/BLOCKED/);
+    expect(store.world.payments[r.payment_id].status).toBe("returned");
   });
 
   it("RT-P10 a deadline only moves on the institution's written confirmation", () => {

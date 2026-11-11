@@ -261,7 +261,8 @@ Sandbox state lives in a data folder (world snapshot, ledger as JSONL, anchors, 
 `npm test` runs 145 tests in 21 files (the list below is the core; also: all five scenarios, uploaded bills, on-chain anchoring on two fake chains, private sessions, the attack lab, the MCP server, family answers, retrying dropped LLM connections, feature flags):
 - rules engine: tax history, pricing order, Pakistan caps, card limits, carried-cash rule, anti-splitting, SAFE quota and prohibited purposes, deadline-aware comparison
 - every scenario end to end with the scripted agent, including the returned transfer, the scam email, the bill dispute, the refund and a tamper check, scored by the same evaluator as the live runs
-- 18 red-team attacks on the safety layer and 11 on the plan workflow (see [SECURITY.md](SECURITY.md))
+- 20 red-team attacks on the safety layer and 12 on the plan workflow (see [SECURITY.md](SECURITY.md))
+- property-based fuzzing of the safety gateway with fast-check: 300 random sequences of up to 30 steps over all 22 tools and the family's decisions, with seven money invariants checked after every step (see [SECURITY.md](SECURITY.md) §4)
 - plan workflow: cash-flow projection and stress tests, the quota year of each instalment, plan comparison, bill review, mandate terms and each mandate check, instalment progress, payer-only decisions
 - sandbox institutions: multi-question replies, "final bill on discharge", transfer in flight, refund started once, follow-up skipping and cancelling
 - privacy firewall: nothing personal in the masked snapshot, real values restored in tool inputs, Chinese names
