@@ -23,6 +23,8 @@ export interface Anchor {
   note: string;
   /** the copy on a public chain, when anchoring is configured (see src/server/anchor) */
   chain?: OnChainAnchor;
+  /** the copy on the FISCO BCOS consortium chain, when that is configured too */
+  fisco?: OnChainAnchor;
 }
 
 export interface OnChainAnchor {
@@ -142,10 +144,10 @@ export class Store extends EventEmitter {
   }
 
   /** Record what happened to an anchor's on-chain copy. An anchor from before a reset is gone: ignore it. */
-  updateAnchor(id: string, chain: OnChainAnchor) {
+  updateAnchor(id: string, chain: OnChainAnchor, on: "chain" | "fisco" = "chain") {
     const a = this.anchors.find((x) => x.id === id);
     if (!a) return;
-    a.chain = chain;
+    a[on] = chain;
     fs.writeFileSync(this.ANCHOR_FILE, JSON.stringify(this.anchors, null, 2));
     this.changed();
   }

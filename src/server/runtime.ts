@@ -9,7 +9,7 @@ import { verifyChain } from "./hash";
 import { listPasskeys } from "./passkey";
 import type { AgentMode, UploadedBill } from "@/domain/types";
 import { AnchorService, milestoneOf } from "./anchor/service";
-import { ANCHOR_CHAIN, anchorConfig, explorerAddress, viemPublisher, type ChainPublisher } from "./anchor/chain";
+import { ANCHOR_CHAIN, anchorConfig, explorerAddress, FISCO_NAME, fiscoConfig, fiscoPublisher, viemPublisher, type ChainPublisher } from "./anchor/chain";
 import { DEFAULT_SESSION } from "./session";
 import { answerFamily } from "./agent/answer";
 import { serverFlags } from "./flags";
@@ -31,6 +31,7 @@ const g = globalThis as unknown as {
   __carrypay?: Runtime;
   __carrypaySessions?: Map<string, Runtime>;
   __carrypayPublisher?: ChainPublisher | null;
+  __carrypayFisco?: ChainPublisher | null;
   __carrypaySweep?: NodeJS.Timeout;
 };
 const sessions = (g.__carrypaySessions ??= new Map());
@@ -44,6 +45,15 @@ function publisher(): ChainPublisher | null {
     g.__carrypayPublisher = cfg ? viemPublisher(cfg) : null;
   }
   return g.__carrypayPublisher;
+}
+
+/** The second chain (FISCO BCOS), when configured: every anchor goes to both. */
+function secondPublisher(): ChainPublisher | null {
+  if (g.__carrypayFisco === undefined) {
+    const cfg = fiscoConfig();
+    g.__carrypayFisco = cfg ? fiscoPublisher(cfg) : null;
+  }
+  return g.__carrypayFisco;
 }
 
 function create(id: string): Runtime {
@@ -61,7 +71,7 @@ function create(id: string): Runtime {
   const rt: Runtime = { id, store, runner, runnerClass: AgentRunner, autoplayTimer: setInterval(() => autoplayTick(rt.store, rt.runner), 1500) };
   const pub = publisher();
   if (pub) {
-    const anchors = new AnchorService(store, pub);
+    const anchors = new AnchorService(store, pub, {}, secondPublisher() ?? undefined);
     store.on("logged", (e) => {
       const m = milestoneOf(e);
       if (m) anchors.milestone(m);
@@ -144,7 +154,13 @@ export function publicState(sid?: string) {
     ledger: store.ledger,
     anchors: store.anchors,
     anchoring: anchorConfig()
-      ? { chain: ANCHOR_CHAIN.name, chainId: ANCHOR_CHAIN.id, contract: anchorConfig()!.contract, contractUrl: explorerAddress(anchorConfig()!.contract) }
+      ? {
+          chain: ANCHOR_CHAIN.name,
+          chainId: ANCHOR_CHAIN.id,
+          contract: anchorConfig()!.contract,
+          contractUrl: explorerAddress(anchorConfig()!.contract),
+          ...(fiscoConfig() ? { second: { chain: FISCO_NAME, chainId: fiscoConfig()!.chainId, contract: fiscoConfig()!.contract } } : {}),
+        }
       : null,
     chain: verifyChain(store.ledger),
     agentBusy: runner.isBusy || store.world.agent.status === "working",
