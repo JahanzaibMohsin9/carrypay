@@ -6,6 +6,7 @@ import { MessageCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FamilyMessage } from "@/domain/types";
 import { useT } from "@/lib/i18n";
+import { useMessageView } from "@/lib/message-view";
 
 // Families in Pakistan live on WhatsApp, so CarryPay's messages would reach them there. This shows how
 // one would arrive: a phone notification at the top of the screen. Simulated; nothing is sent anywhere.
@@ -57,7 +58,7 @@ export function MessageBanner({ messages, hidden }: { messages: FamilyMessage[];
                 <span className="font-semibold text-[#e9edef]">WhatsApp</span> · {t("waSimulated")}
               </span>
               <span className="block text-[13.5px] font-semibold">CarryPay</span>
-              <span className="line-clamp-2 text-[13px] leading-snug text-[#d1d7db]">{shown.text}</span>
+              <BannerText m={shown} />
             </Link>
             <button type="button" onClick={() => setShown(null)} aria-label={t("waDismiss")} className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full text-[#8696a0] hover:bg-white/10">
               <X size={15} />
@@ -66,5 +67,15 @@ export function MessageBanner({ messages, hidden }: { messages: FamilyMessage[];
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+/** Each phone gets the message in its reader's language. */
+function BannerText({ m }: { m: FamilyMessage }) {
+  const view = useMessageView(m);
+  return (
+    <span lang={view.lang} className="line-clamp-2 text-[13px] leading-snug text-[#d1d7db]">
+      {view.text}
+    </span>
   );
 }

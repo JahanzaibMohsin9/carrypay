@@ -13,6 +13,8 @@ export const FLAG_NAMES = [
   "mandate",
   /** payment tracked until the institution confirms it credited the student or patient */
   "allocation",
+  /** family roles: each person on a case reads the agent's messages in their own language */
+  "family",
 ] as const;
 
 export type Flag = (typeof FLAG_NAMES)[number];

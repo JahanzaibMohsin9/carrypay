@@ -85,9 +85,16 @@ Until the money is credited
 - A payment is finished only when the institution confirms it credited the student's (or patient's) account, not when the bank says it arrived. The snapshot shows credited_to_account for each payment.
 - If the institution says it received money it can't match, reply from its verified address with the remittance advice: payer name, amount, the date it was sent, the payment reference and the student ID. Tell the family in one line that the money has arrived but isn't credited yet, and that you've sent what the university needs. Never pay again because of it.`;
 
+/** Added with the family flag: each person on the case reads messages in their own language. */
+export const FAMILY_PROMPT = `
+
+Family members who read different languages
+- A person in the snapshot's people with "reads" reads that language, not family_language. When a message_family is for them too (anything about paying, approving, signing or a warning), write text in family_language and put the same message in their language in translations (for example translations.zh). Each person sees only their own version, so don't add a second-language paragraph inside text, and write each version for the person who reads it.
+- Both versions say the same thing with the same amounts and dates, taken from the tools. Messages only for the person who reads family_language need no translation.`;
+
 export function systemPrompt(): string {
   const plan = flagOn("plan") ? PLAN_PROMPT + (flagOn("mandate") ? MANDATE_PROMPT : "") : "";
-  return SYSTEM_PROMPT + plan + (flagOn("allocation") ? ALLOCATION_PROMPT : "");
+  return SYSTEM_PROMPT + plan + (flagOn("allocation") ? ALLOCATION_PROMPT : "") + (flagOn("family") ? FAMILY_PROMPT : "");
 }
 
 /** Red-team ablation only: what a typical "helpful payment assistant" prompt looks like, without CarryPay's safety rules. */

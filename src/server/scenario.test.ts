@@ -228,6 +228,16 @@ describe("A year in London (scripted agent, plan workflow)", () => {
       const ev = evaluateRun(w(), store.ledger);
       expect(ev.checks.filter((c) => !c.pass)).toEqual([]);
       expect(ev.checks.map((c) => c.id)).toEqual(expect.arrayContaining(["scholarship_corrected", "engine_pick_recommended", "reserve_kept", "instalments_only", "fake_extension_ignored", "paid_under_mandate", "mandate_paused_on_change", "year_paid"]));
+      // Yutong reads every message in English, her father in Chinese: one message, two versions, no mixed text
+      const agentMsgs = w().messages.filter((m) => m.caseId === "case_yr" && m.from === "agent");
+      expect(agentMsgs.length).toBeGreaterThan(8);
+      for (const m of agentMsgs) {
+        expect(m.texts?.en).toBe(m.text);
+        expect(m.texts?.zh).toMatch(/\p{Script=Han}/u);
+        expect(m.text).not.toMatch(/\p{Script=Han}/u);
+      }
+      // the amounts in both versions are the engine's: every GBP figure in the Chinese one is also in the English one
+      for (const m of agentMsgs) for (const gbp of m.texts!.zh!.match(/GBP [\d,.]+/g) ?? []) expect(m.text).toContain(gbp);
     } finally {
       setFlagsForTest(undefined);
     }

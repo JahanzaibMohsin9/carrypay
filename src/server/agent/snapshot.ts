@@ -90,6 +90,7 @@ export function caseSnapshot(w: World, caseId: string) {
       id: p.id,
       name: p.name,
       role: p.role,
+      ...(flagOn("family") && p.lang && p.lang !== c.lang ? { reads: p.lang } : {}),
       already_abroad: p.abroad,
       card: cards.find((k) => k.personId === p.id)?.label,
       card_spend_this_year_usd: r0(usage.cardYearUSD[p.id] ?? 0),
