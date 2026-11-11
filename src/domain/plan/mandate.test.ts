@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { seedScenario } from "@/server/scenarios";
 import type { Invoice, Payment, World } from "../types";
+import { instalmentOf, instalmentProgress, obligationsFor } from "./cashflow";
 import { mandateAllows, mandateTerms, type MandateProposal } from "./mandate";
 import type { Arrangement, PlanMandate } from "./types";
 
@@ -110,6 +111,24 @@ describe("plan mandate", () => {
     const { w, m } = world();
     w.funding!.case_yr = { ...w.funding!.case_yr, balances: [{ label: "Savings", amount: 60000 }] };
     expect(mandateAllows(w, m, pay()).failed.map((f) => f.id)).toContain("reserve");
+  });
+
+  it("tracks each instalment as paid or outstanding, the same way the planner counts what is owed", () => {
+    const { w } = world();
+    const arr = w.arrangements!.arr_3;
+    w.payments.pay_a = { id: "pay_a", caseId: "case_yr", invoiceId: "inv_2", amount: 14370, currency: "GBP", route: "bank_transfer", payerId: "p_jianhua", status: "completed", createdAt: "2026-11-20T02:00:00.000Z", cost: { totalSource: 0 } } as Payment;
+    w.payments.pay_b = { ...w.payments.pay_a, id: "pay_b", amount: 10665, status: "awaiting_approval", createdAt: "2027-01-25T02:00:00.000Z" };
+    const progress = instalmentProgress(w, arr);
+    expect(progress.map((x) => [x.amount, x.paid, x.outstanding])).toEqual([
+      [14370, 14370, 0],
+      [10665, 0, 10665],
+      [10665, 0, 10665],
+    ]);
+    expect(progress[0].paymentIds).toEqual(["pay_a"]);
+    expect(instalmentOf(w, arr, "pay_a")).toBe(1);
+    expect(instalmentOf(w, arr, "pay_b")).toBe(2);
+    const owed = obligationsFor(w, "case_yr").filter((o) => o.arrangementId === arr.id);
+    expect(owed.map((o) => o.amount)).toEqual(progress.filter((x) => x.outstanding > 0).map((x) => x.outstanding));
   });
 
   it("never pays more than the total the payer approved", () => {

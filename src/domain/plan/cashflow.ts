@@ -102,6 +102,57 @@ export function obligationsFor(world: World, caseId: string, schedule: Schedule 
   return out.sort((a, b) => a.dueAt.localeCompare(b.dueAt));
 }
 
+export interface InstalmentProgress {
+  /** 1-based */
+  instalment: number;
+  dueAt: string;
+  /** instalment plus the administration fee on the first one (invoice currency) */
+  amount: number;
+  fee?: number;
+  paid: number;
+  outstanding: number;
+  /** payments whose money went to this instalment, oldest first */
+  paymentIds: string[];
+}
+
+/**
+ * Where each instalment of a plan stands: money sent pays the earliest instalments first, the same rule
+ * obligationsFor uses, so `outstanding` always matches what the planner still counts as owed.
+ */
+export function instalmentProgress(world: World, arrangement: Arrangement): InstalmentProgress[] {
+  const sent = Object.values(world.payments)
+    .filter((p) => p.invoiceId === arrangement.invoiceId && SENT.has(p.status))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+    .map((p) => ({ id: p.id, left: p.amount }));
+  return arrangement.instalments.map((ins, k) => {
+    const fee = k === 0 ? arrangement.fee ?? 0 : 0;
+    const amount = r2(ins.amount + fee);
+    let paid = 0;
+    const paymentIds: string[] = [];
+    for (const p of sent) {
+      if (paid >= amount - 0.005) break;
+      if (p.left <= 0.005) continue;
+      const take = Math.min(p.left, amount - paid);
+      p.left -= take;
+      paid += take;
+      paymentIds.push(p.id);
+    }
+    return { instalment: k + 1, dueAt: ins.dueAt, amount, fee: fee || undefined, paid: r2(paid), outstanding: r2(Math.max(0, amount - paid)), paymentIds };
+  });
+}
+
+/**
+ * Which instalment a payment is for: the one its money went to once sent, or before that the next
+ * unpaid instalment of exactly its amount. Undefined if it matches none (the gateway would block it).
+ */
+export function instalmentOf(world: World, arrangement: Arrangement, paymentId: string): number | undefined {
+  const p = world.payments[paymentId];
+  if (!p || p.invoiceId !== arrangement.invoiceId) return undefined;
+  const progress = instalmentProgress(world, arrangement);
+  if (SENT.has(p.status)) return progress.find((x) => x.paymentIds.includes(p.id))?.instalment;
+  return progress.find((x) => x.outstanding > 0.005 && Math.abs(x.outstanding - p.amount) <= 0.5)?.instalment;
+}
+
 export interface PlannedPayment {
   obligation: Obligation;
   route: Route;
