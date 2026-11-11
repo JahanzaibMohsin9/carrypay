@@ -6,7 +6,7 @@ import { seedScenario } from "./scenarios";
 import { advanceToNext } from "./sim/engine";
 import { executeTool } from "./agent/tools";
 import { setFlagsForTest } from "./flags";
-import { decideArrangement, setFunding } from "./plan";
+import { decideArrangement, setFunding, signMandate } from "./plan";
 import { verifyChain } from "./hash";
 
 // The "year in London" story driven through the real tools, safety gateway and sandbox university,
@@ -109,6 +109,16 @@ describe("A year in London (plan workflow)", () => {
     const ok = pay(14370);
     expect(ok.error).toBeUndefined();
     expect(Object.values(w().payments)[0]).toMatchObject({ amount: 14370, status: "awaiting_approval" });
+
+    // 9. plan mandate: the terms come from the confirmed plan, and only the payer can sign
+    const mandate = tool("propose_plan_mandate", { arrangement_id: three.id });
+    expect(mandate.status).toBe("awaiting_payer_signature");
+    expect(mandate.covers.map((x: { amount: string }) => x.amount)).toEqual(["GBP 14370", "GBP 10665", "GBP 10665"]);
+    expect(tool("propose_plan_mandate", { arrangement_id: three.id }).error).toMatch(/already/);
+    expect(() => signMandate(store, mandate.mandate_id, "p_yutong", "hold")).toThrow(/Only 周建华 Zhou Jianhua/);
+    signMandate(store, mandate.mandate_id, "p_jianhua", "hold");
+    expect(w().mandates![mandate.mandate_id]).toMatchObject({ status: "active" });
+    expect(w().mandates![mandate.mandate_id].digest).toMatch(/^[0-9a-f]{64}$/);
 
     expect(verifyChain(store.ledger).ok).toBe(true);
   });

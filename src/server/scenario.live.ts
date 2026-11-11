@@ -18,7 +18,15 @@ import { decideApprovalIn } from "./runtime";
 import { compareSchedules } from "@/domain/plan/cashflow";
 import { parseFlags } from "@/domain/flags";
 import { setFlagsForTest } from "./flags";
-import { decideArrangement, payerOf } from "./plan";
+import { decideArrangement, payerOf, signMandate } from "./plan";
+
+/** The payer signs a mandate the agent proposed. */
+function signPending(store: Store): boolean {
+  const m = Object.values(store.world.mandates ?? {}).find((x) => x.status === "awaiting_approval");
+  if (!m) return false;
+  signMandate(store, m.id, m.payerId, "hold");
+  return true;
+}
 
 /** The payer follows CarryPay's advice: accept the plan the engine picks among the open offers. */
 function acceptPick(store: Store): boolean {
@@ -57,7 +65,9 @@ async function playOnce(i: number) {
   for (let step = 0; step < MAX_STEPS; step++) {
     const pending = Object.values(store.world.approvals).filter((a) => !a.decision);
     if (pending.length) for (const a of pending) decideApprovalIn(store, a.id, "approved", "hold");
-    else if (acceptPick(store)) {
+    else if (signPending(store)) {
+      // the payer signs the mandate the agent proposed (its terms come from the confirmed plan)
+    } else if (acceptPick(store)) {
       // the acceptance goes to the university; its confirmation wakes the agent
     } else if (store.world.schedule.length) advanceToNext(store);
     else if (store.world.institutions.upl && !store.world.institutions.upl.verifiedAt) verifyInstitution(store);

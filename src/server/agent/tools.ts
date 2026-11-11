@@ -5,13 +5,14 @@ import { ROUTE_SHORT } from "@/domain/corridors";
 import { compareRoutes, evaluateRoute, priceRoute } from "@/domain/rules/engine";
 import type { Store } from "../store";
 import { addDoc, hoursFrom, sendMail } from "../sim/factory";
-import { onOutboundMail, schedule, SKIP_IF, submitPayment } from "../sim/engine";
+import { onOutboundMail, schedule, setPaymentStatus, SKIP_IF, submitPayment } from "../sim/engine";
 import { caseSnapshot } from "./snapshot";
 import type { Flag } from "@/domain/flags";
 import { flagOn } from "../flags";
 import { compareSchedules, DEFAULT_STRESSES, obligationsFor, projectCashflow, type Projection, type ScheduleOption } from "@/domain/plan/cashflow";
 import { adjustmentTotals, reviewEntitlements } from "@/domain/plan/entitlements";
 import type { Adjustment } from "@/domain/plan/types";
+import { mandateAllows, mandateTerms } from "@/domain/plan/mandate";
 
 export type Tier = "read" | "communicate" | "money";
 
@@ -689,6 +690,40 @@ export const TOOLS = [
   }),
 
   tool({
+    name: "propose_plan_mandate",
+    tier: "money",
+    flag: "mandate",
+    description:
+      "Ask the payer to sign ONE approval for the remaining instalments of the plan the institution confirmed, so each can be paid in its window without asking again. CarryPay sets the terms from the confirmed plan itself: each instalment's exact amount and window, the institution's verified account, the payer's safety net. Any difference later (amount, account, date, a payment that would break the safety net) pauses it and asks the payer. The payer signs it in the app (Plan) and can revoke it at any time. It moves no money itself.",
+    schema: z.object({ arrangement_id: z.string(), narration }),
+    run: (i, ctx) => {
+      const w = ctx.store.world;
+      const arr = w.arrangements?.[i.arrangement_id];
+      if (!arr || arr.caseId !== ctx.caseId) return { decision: "error", result: { error: `No payment plan ${i.arrangement_id} on this case` } };
+      const existing = Object.values(w.mandates ?? {}).find((m) => m.arrangementId === arr.id && (m.status === "awaiting_approval" || m.status === "active"));
+      if (existing) return { decision: "error", result: { error: `Mandate ${existing.id} for this plan is already ${existing.status === "active" ? "signed" : "waiting for the payer's signature"}.` } };
+      const terms = mandateTerms(w, arr);
+      if (!terms) return { decision: "error", result: { error: "Only a plan the institution has confirmed in writing, with instalments still to pay and the payer's figures entered, can have a mandate." } };
+      const id = ctx.store.nextId("man");
+      ctx.store.mutate((x) => {
+        x.mandates ??= {};
+        x.mandates[id] = { ...terms, id, status: "awaiting_approval", history: [{ at: x.now, status: "awaiting_approval" }] };
+      });
+      return {
+        decision: "needs_approval",
+        result: {
+          status: "awaiting_payer_signature",
+          mandate_id: id,
+          covers: terms.windows.map((x) => ({ instalment: x.instalment, amount: `${terms.currency} ${x.amount}`, from: x.from, until: x.to })),
+          total_cap: `${terms.currency} ${terms.totalCap}`,
+          keeps_safety_net_of: terms.reserveFloor,
+          note: "Nothing is covered until the payer signs it in the app. You will be woken when they do.",
+        },
+      };
+    },
+  }),
+
+  tool({
     name: "propose_payment",
     tier: "money",
     description:
@@ -836,10 +871,54 @@ export const TOOLS = [
           summary: `${ROUTE_SHORT[payment.route]}: ${inv.currency} ${i.amount.toLocaleString()} to ${w.institutions[inv.institutionId].name}`,
         };
       });
+      // 5. Plan mandate: an instalment the payer approved in advance goes ahead without asking again, but only
+      //    if every term of the signed mandate still holds. Anything else pauses the mandate and asks the payer.
+      const mandate = flagOn("mandate")
+        ? Object.values(store.world.mandates ?? {}).find((m) => m.caseId === c.id && m.status === "active" && store.world.arrangements?.[m.arrangementId]?.invoiceId === inv.id)
+        : undefined;
+      let paused: { reason: string; failed: { id: string; message: string }[] } | undefined;
+      if (mandate) {
+        const mc = mandateAllows(store.world, mandate, { invoiceId: inv.id, amount: i.amount, route: i.route as Route, payerId: i.payer_id, beneficiary: payment.beneficiary });
+        if (mc.ok) {
+          store.mutate((ww) => {
+            const a = ww.approvals[approvalId];
+            a.decision = "approved";
+            a.decidedAt = ww.now;
+            a.method = "mandate";
+          });
+          store.log({ actor: "gateway", type: "approval.mandate", caseId: c.id, narration: `Instalment ${mc.instalment} paid under the plan mandate the payer signed: every term checked`, data: { approvalId, paymentId, mandateId: mandate.id, instalment: mc.instalment, checks: mc.passed } });
+          setPaymentStatus(store, paymentId, "approved", `Approved in advance under plan mandate ${mandate.id}`);
+          submitPayment(store, store.world.payments[paymentId]);
+          return {
+            decision: "allowed",
+            ruleIds: [...ev.limits.map((l) => l.ruleId), ...ev.requiredDocs.map((d) => d.ruleId)],
+            result: {
+              status: "sent_under_plan_mandate",
+              payment_id: paymentId,
+              mandate_id: mandate.id,
+              instalment: mc.instalment,
+              checks_passed: mc.passed,
+              cost_to_family: `${cost.sourceCurrency} ${Math.round(cost.totalSource).toLocaleString()}`,
+              note: "The payer approved this instalment in advance when signing the mandate, and every term still holds, so it has been sent. Tell the family briefly.",
+            },
+          };
+        }
+        const reason = mc.failed.map((f) => f.message).join(" ");
+        store.mutate((ww) => {
+          const m = ww.mandates![mandate.id];
+          m.status = "paused";
+          m.pausedReason = reason;
+          m.history.push({ at: ww.now, status: "paused", note: reason });
+        });
+        security(ctx, { severity: "warning", kind: "approval_required", title: "Plan mandate paused: this payment is outside what the payer approved", detail: `${inv.currency} ${i.amount.toLocaleString()} on ${inv.number}. ${reason}` });
+        store.log({ actor: "gateway", type: "mandate.paused", caseId: c.id, narration: "The plan mandate was paused: this payment needs the payer's own approval", data: { mandateId: mandate.id, paymentId, failed: mc.failed.map((f) => f.id) } });
+        paused = { reason, failed: mc.failed };
+      }
       return {
         decision: "needs_approval",
         ruleIds: [...ev.limits.map((l) => l.ruleId), ...ev.requiredDocs.map((d) => d.ruleId)],
         result: {
+          ...(paused ? { plan_mandate_paused: paused, explain_to_family: "Tell the payer in one short message what changed and that this payment needs their own approval." } : {}),
           status: "awaiting_family_approval",
           payment_id: paymentId,
           approval_id: approvalId,

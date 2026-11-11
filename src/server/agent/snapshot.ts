@@ -29,6 +29,9 @@ function planSection(w: World, caseId: string) {
       offer_expires_at: a.status === "offered" ? a.expiresAt : undefined,
       confirmed_by_institution: !!a.confirmationDocId,
     })),
+    plan_mandates: Object.values(w.mandates ?? {})
+      .filter((m) => m.caseId === caseId)
+      .map((m) => ({ id: m.id, plan_id: m.arrangementId, status: m.status, covers: m.windows.map((x) => ({ instalment: x.instalment, amount: `${m.currency} ${x.amount}`, until: x.to })), paused_because: m.pausedReason })),
     note: "Run plan_affordability for any number about whether the family can carry the payments.",
   };
 }

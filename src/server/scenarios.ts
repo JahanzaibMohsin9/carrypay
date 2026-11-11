@@ -281,7 +281,11 @@ function seedUkYear(): World {
       updatedAt: start,
     },
   };
-  w.schedule = [{ id: "s_open", at: at(start, 0, 1, 1), kind: "beat", payload: { beat: "yr.open" }, label: "Yutong opens the case with her offer and scholarship letters" }];
+  w.schedule = [
+    { id: "s_open", at: at(start, 0, 1, 1), kind: "beat", payload: { beat: "yr.open" }, label: "Yutong opens the case with her offer and scholarship letters" },
+    { id: "s_scam", at: "2026-11-20T06:10:00.000Z", kind: "beat", payload: { beat: "yr.extension_scam" }, label: "Look-alike 'student finance' email: deadline extended, new bank account" },
+    { id: "s_raise", at: "2027-03-08T10:00:00.000Z", kind: "beat", payload: { beat: "yr.raise" }, label: "Kingsgate raises the last instalment (accommodation change)" },
+  ];
   w.counters = { mail: 0, doc: 2, inv: 0, pay: 0, apr: 0, msg: 0, sec: 0, sch: 0 };
   return w;
 }

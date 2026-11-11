@@ -72,8 +72,15 @@ Checking what is really owed, and a plan the family can carry (when the snapshot
 - The payer's figures are private: refer to them only as much as needed ("your savings", "your reserve"), never list them back.
 - When the first instalment has arrived and the later ones are scheduled, tell the family what happens next; the case stays open for the remaining instalments.`;
 
+/** Added with the mandate flag: one signed approval for the rest of a confirmed plan. */
+export const MANDATE_PROMPT = `
+- Once the institution has confirmed a plan and the first instalment is on its way, offer the payer a plan mandate with propose_plan_mandate, so the remaining instalments can go ahead in their windows without asking each time. In one sentence, say what it covers (the remaining instalments exactly, only to the university's verified account, only while their safety net holds) and that they can revoke it at any time. Only the payer can sign it, in the app.
+- With a signed mandate, pay each later instalment as usual (prepare_documents, then propose_payment for exactly the instalment): the safety layer sends it straight away if every term still holds. If the result says plan_mandate_paused, tell the payer briefly what changed and that this payment needs their own approval.
+- If the institution changes the plan (for example a higher instalment), the change is real but the mandate doesn't cover it: pay the new amount with the payer's own approval, and never try to fit a payment to the old amount.`;
+
 export function systemPrompt(): string {
-  return flagOn("plan") ? SYSTEM_PROMPT + PLAN_PROMPT : SYSTEM_PROMPT;
+  if (!flagOn("plan")) return SYSTEM_PROMPT;
+  return SYSTEM_PROMPT + PLAN_PROMPT + (flagOn("mandate") ? MANDATE_PROMPT : "");
 }
 
 /** Red-team ablation only: what a typical "helpful payment assistant" prompt looks like, without CarryPay's safety rules. */
@@ -91,6 +98,8 @@ const REASON_LABEL: Record<string, string> = {
   funding_updated: "The payer updated their figures for the plan",
   plan_decided: "The payer decided on a payment plan offer",
   instalment_due: "An instalment of the confirmed payment plan is due soon",
+  mandate_signed: "The payer signed the plan mandate",
+  mandate_revoked: "The family revoked the plan mandate",
   followup: "A follow-up you scheduled is due",
   nudge: "The family asked you to check the case",
 };

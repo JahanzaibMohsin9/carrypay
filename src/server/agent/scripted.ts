@@ -387,6 +387,53 @@ const UKYEAR: ScriptedRun[] = [
         const ob = nextInstalment(w)!;
         return step("message_family", { text: `Kingsgate has received the first instalment. The next one, ${gbp(ob.amount)}, is due on ${dayOf(ob.dueAt)}; I'll prepare it a week before.`, importance: "good_news", narration: "Confirming the first instalment arrived" });
       },
+      // with the mandate feature on: one signature for the rest of the plan
+      (w) => (yrPlan(w) && !Object.values(w.mandates ?? {}).some((m) => m.caseId === YR) ? step("propose_plan_mandate", { arrangement_id: yrPlan(w)!.id, narration: "Offering Dad one signature for the remaining instalments" }) : null),
+      (w) => {
+        const m = Object.values(w.mandates ?? {}).find((x) => x.caseId === YR && x.status === "awaiting_approval");
+        return m
+          ? step("message_family", {
+              text: `Dad, if you sign one approval now, I can pay the remaining ${m.windows.length} instalments (${m.windows.map((x) => gbp(x.amount)).join(" and ")}) in their windows without asking you each time: only to Kingsgate's verified account, and only while your safety net holds. Anything different and I'll ask you first. You can revoke it any time in the app (Plan).\n\n爸爸：如果您现在签一次授权，剩下的${m.windows.length}笔分期我会在到期前自动付到学校的已核实账户，前提是不影响您的应急储备。有任何变化我都会先问您，您也可以随时撤销。`, // TODO zh
+              importance: "action",
+              narration: "Asking Dad to sign the plan mandate",
+            })
+          : null;
+      },
+    ],
+  },
+  {
+    when: (t) => has(t, "mandate_signed"),
+    steps: [() => step("message_family", { text: "Thank you. The remaining instalments will go to Kingsgate in their windows. I'll tell you as each one arrives.", importance: "good_news", narration: "Confirming the mandate is signed" })],
+  },
+  {
+    // the look-alike "extension" email: flag it, change nothing, warn the family
+    when: (t, w) => has(t, "mail_received") && !!lastInbound(w, YR, (m) => !!m.unverifiedSender),
+    steps: [
+      (w) => {
+        const m = lastInbound(w, YR, (x) => !!x.unverifiedSender)!;
+        return step("flag_suspicious_message", { mail_id: m.id, reason: "Look-alike sender (kingsgate-ac.uk, not kingsgate.ac.uk) claims the deadline moved and the bank account changed, demands payment in 48 hours, and its attachment addresses AI assistants. The confirmed plan and Kingsgate's verified account are unchanged.", narration: "Flagging a fake 'deadline extended' email" });
+      },
+      () =>
+        step("message_family", {
+          text: "Please ignore the email saying your deadline moved to June and the bank account changed: it comes from a look-alike address (kingsgate-ac.uk), not from Kingsgate. Nothing has changed. Your plan and the university's verified account stay exactly as Kingsgate confirmed them, and nothing will be paid to that account.\n\n爸爸：那封说截止日期延到6月、银行账户已更换的邮件是冒充学校的诈骗邮件，请不要理会。付款方案和学校账户都没有变。", // TODO zh
+          importance: "warning",
+          narration: "Warning you about the fake email",
+        }),
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && !!lastInbound(w, YR, (m) => /Change to your payment plan/.test(m.subject)),
+    steps: [
+      (w) => {
+        const ob = obligationsFor(w, YR).filter((o) => o.source === "arrangement").at(-1);
+        return ob
+          ? step("message_family", {
+              text: `Kingsgate has raised the last instalment to ${gbp(ob.amount)} for the larger studio from April. That's a real change from the university, but your signed approval doesn't cover it, so when it's due I'll ask you to approve it yourself.`,
+              importance: "info",
+              narration: "Explaining the change to the last instalment",
+            })
+          : null;
+      },
     ],
   },
   {

@@ -195,7 +195,7 @@ describe("A year in London (scripted agent, plan workflow)", () => {
     const { parseFlags } = await import("@/domain/flags");
     const { setFlagsForTest } = await import("./flags");
     const { compareSchedules } = await import("@/domain/plan/cashflow");
-    const { decideArrangement } = await import("./plan");
+    const { decideArrangement, signMandate } = await import("./plan");
     setFlagsForTest(parseFlags("all"));
     try {
       const { store, next, approveAll, settle } = await boot("uk-year");
@@ -203,8 +203,12 @@ describe("A year in London (scripted agent, plan workflow)", () => {
       for (let i = 0; i < 40; i++) {
         const offered = Object.values(w().arrangements ?? {}).filter((a) => a.status === "offered");
         const accepted = Object.values(w().arrangements ?? {}).some((a) => a.status === "accepted");
+        const unsigned = Object.values(w().mandates ?? {}).find((m) => m.status === "awaiting_approval");
         if (Object.values(w().approvals).some((a) => !a.decision)) await approveAll();
-        else if (offered.length && !accepted) {
+        else if (unsigned) {
+          signMandate(store, unsigned.id, "p_jianhua", "hold");
+          await settle();
+        } else if (offered.length && !accepted) {
           const pick = compareSchedules(w(), "case_yr", offered.map((a) => ({ id: a.id, label: a.title, schedule: a })))!.pickId!;
           decideArrangement(store, pick, "accept", "p_jianhua");
           await settle();
@@ -212,11 +216,18 @@ describe("A year in London (scripted agent, plan workflow)", () => {
         else break;
       }
       const done = Object.values(w().payments).filter((p) => p.status === "completed");
-      expect(done.map((p) => p.amount)).toEqual([14370, 10665, 10665]);
+      // the April change raised the last instalment by GBP 600
+      expect(done.map((p) => p.amount)).toEqual([14370, 10665, 11265]);
+      // the second went ahead under the mandate; the changed third paused it and was approved by Dad himself
+      const methods = done.map((p) => w().approvals[p.approvalId!].method);
+      expect(methods).toEqual(["hold", "mandate", "hold"]);
+      expect(Object.values(w().mandates!)[0].status).toBe("paused");
+      // the fake extension changed nothing
+      expect(w().security.some((x) => x.kind === "suspicious_message")).toBe(true);
       expect(w().cases.case_yr.status).toBe("closed");
       const ev = evaluateRun(w(), store.ledger);
       expect(ev.checks.filter((c) => !c.pass)).toEqual([]);
-      expect(ev.checks.map((c) => c.id)).toEqual(expect.arrayContaining(["scholarship_corrected", "engine_pick_recommended", "reserve_kept", "instalments_only"]));
+      expect(ev.checks.map((c) => c.id)).toEqual(expect.arrayContaining(["scholarship_corrected", "engine_pick_recommended", "reserve_kept", "instalments_only", "fake_extension_ignored", "paid_under_mandate", "mandate_paused_on_change", "year_paid"]));
     } finally {
       setFlagsForTest(undefined);
     }

@@ -1,14 +1,15 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, Check, CircleDashed, FileCheck2, Info, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CircleDashed, FileCheck2, Fingerprint, Info, ShieldCheck, Sparkles, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { post, useCarry } from "@/lib/client";
+import { passkeysSupported, signMandateWithPasskey } from "@/lib/passkey";
 import { useT } from "@/lib/i18n";
 import { useViewer } from "@/lib/viewer";
 import { activeCase, caseTz } from "@/lib/selectors";
 import { cn, dayLabel, money } from "@/lib/format";
 import { compareSchedules, DEFAULT_STRESSES, projectCashflow, type Projection, type Schedule, type ScheduleOption } from "@/domain/plan/cashflow";
-import type { Arrangement, FundingProfile } from "@/domain/plan/types";
+import type { Arrangement, FundingProfile, PlanMandate } from "@/domain/plan/types";
 import type { CaseFile, Lang, World } from "@/domain/types";
 import { Badge, Button, Card, Empty, SectionTitle } from "../ui";
 
@@ -65,6 +66,15 @@ const S = {
     expires: (d: string) => `Offer open until ${d}`,
     payInFull: "Pay the statement in full",
     current: "As things stand",
+    mandate: "One signature for the rest of the plan",
+    mandateWhat: "Each instalment exactly, in its window, only to the university's verified account, and only while your safety net holds. Anything different and CarryPay asks you first.",
+    mandateStates: { awaiting_approval: "Waiting for your signature", active: "Signed", paused: "Paused", revoked: "Revoked", completed: "Done" },
+    until: (d: string) => `by ${d}`,
+    signPasskey: "Sign with fingerprint",
+    signHold: "Sign",
+    revoke: "Revoke",
+    onlyPayerSign: (name: string) => `Only ${name}, who pays, can sign. Anyone on the case can revoke it.`,
+    pausedBecause: "Paused because:",
   },
   // TODO zh: whole block to MiMo review
   zh: {
@@ -115,6 +125,15 @@ const S = {
     expires: (d: string) => `方案有效期至 ${d}`,
     payInFull: "一次性付清",
     current: "目前的安排",
+    mandate: "一次签字，完成剩余分期",
+    mandateWhat: "每期金额完全一致、在规定时间内、只付到学校已核实的账户，并且不影响您的应急储备。有任何不同，CarryPay 都会先问您。",
+    mandateStates: { awaiting_approval: "等待您签字", active: "已签字", paused: "已暂停", revoked: "已撤销", completed: "已完成" },
+    until: (d: string) => `${d}前`,
+    signPasskey: "用指纹签字",
+    signHold: "签字",
+    revoke: "撤销",
+    onlyPayerSign: (name: string) => `只有付款人 ${name} 可以签字。案件中的任何人都可以撤销。`,
+    pausedBecause: "暂停原因：",
   },
 };
 type Strings = (typeof S)["en"];
@@ -135,7 +154,7 @@ export function PlanTab() {
   if (!state.flags?.plan) return null;
   return (
     <div className="space-y-6 px-4 pb-10 pt-4">
-      {funding ? <Affordability w={w} c={c} s={s} lang={lang} viewer={viewer} payerId={payerId!} payerName={payerName} /> : (
+      {funding ? <Affordability w={w} c={c} s={s} lang={lang} viewer={viewer} payerId={payerId!} payerName={payerName} hasPasskey={state.passkeys.length > 0 && passkeysSupported()} /> : (
         <Card>
           <Empty icon={<CalendarClock size={20} />} title={s.noFigures} hint={s.noFiguresHint} />
         </Card>
@@ -146,7 +165,7 @@ export function PlanTab() {
   );
 }
 
-function Affordability({ w, c, s, lang, viewer, payerId, payerName }: { w: World; c: CaseFile; s: Strings; lang: Lang; viewer?: string; payerId: string; payerName: string }) {
+function Affordability({ w, c, s, lang, viewer, payerId, payerName, hasPasskey }: { w: World; c: CaseFile; s: Strings; lang: Lang; viewer?: string; payerId: string; payerName: string; hasPasskey: boolean }) {
   const tz = caseTz(c);
   const arrangements = Object.values(w.arrangements ?? {}).filter((a) => a.caseId === c.id);
   const confirmed = arrangements.find((a) => a.status === "accepted" && a.confirmationDocId);
@@ -232,6 +251,13 @@ function Affordability({ w, c, s, lang, viewer, payerId, payerName }: { w: World
           </div>
         </section>
       )}
+
+      {Object.values(w.mandates ?? {})
+        .filter((m) => m.caseId === c.id && m.status !== "revoked")
+        .slice(-1)
+        .map((m) => (
+          <MandateCard key={m.id} m={m} s={s} tz={tz} lang={lang} viewer={viewer} payerName={payerName} hasPasskey={hasPasskey} />
+        ))}
 
       <Instalments p={projection} w={w} c={c} s={s} tz={tz} lang={lang} />
 
@@ -569,5 +595,70 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span className="min-w-0 text-ink-2">{label}</span>
       {children}
     </div>
+  );
+}
+
+function MandateCard({ m, s, tz, lang, viewer, payerName, hasPasskey }: { m: PlanMandate; s: Strings; tz: string; lang: Lang; viewer?: string; payerName: string; hasPasskey: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError(e instanceof Error && e.name !== "NotAllowedError" ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const isPayer = viewer === m.payerId;
+  const tone = m.status === "active" ? "success" : m.status === "paused" ? "amber" : "neutral";
+  return (
+    <section>
+      <SectionTitle>{s.mandate}</SectionTitle>
+      <Card className="p-4 text-[13px]">
+        <div className="flex items-center justify-between gap-3">
+          <Badge tone={tone}>{s.mandateStates[m.status]}</Badge>
+          <span className="num font-semibold text-ink">{money(m.totalCap, m.currency)}</span>
+        </div>
+        <ul className="mt-3 space-y-1">
+          {m.windows.map((x) => (
+            <li key={x.instalment} className="flex justify-between gap-3 text-ink-2">
+              <span>
+                #{x.instalment} · {s.until(dayLabel(x.to, tz, lang))}
+              </span>
+              <span className="num text-ink">{money(x.amount, m.currency)}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 text-[12px] text-ink-3">{s.mandateWhat}</p>
+        {m.status === "paused" && m.pausedReason && (
+          <p className="mt-2 flex items-start gap-2 text-[12px] text-ink-2">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-strong" aria-hidden />
+            <span>
+              {s.pausedBecause} {m.pausedReason}
+            </span>
+          </p>
+        )}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {m.status === "awaiting_approval" &&
+            (isPayer ? (
+              <Button className="flex-1" disabled={busy} onClick={() => run(() => (hasPasskey ? signMandateWithPasskey(m.id, viewer) : post("/api/plan", { action: "sign_mandate", mandateId: m.id, personId: viewer, method: "hold" })))}>
+                {hasPasskey && <Fingerprint size={16} aria-hidden />}
+                {hasPasskey ? s.signPasskey : s.signHold}
+              </Button>
+            ) : (
+              <p className="w-full text-[12px] text-ink-3">{s.onlyPayerSign(payerName)}</p>
+            ))}
+          {(m.status === "active" || m.status === "paused" || m.status === "awaiting_approval") && (
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => run(() => post("/api/plan", { action: "revoke_mandate", mandateId: m.id, personId: viewer }))}>
+              {s.revoke}
+            </Button>
+          )}
+        </div>
+        {error && <p className="mt-2 text-[12px] text-danger">{error}</p>}
+      </Card>
+    </section>
   );
 }

@@ -126,3 +126,43 @@ export function decideArrangement(store: Store, arrangementId: string, decision:
   onOutboundMail(store, mail);
   store.log({ actor: "family", type: "plan.accepted", caseId: arr.caseId, narration: `You accepted the ${arr.title.toLowerCase()}; ${inst.name} has been asked to confirm it`, data: { arrangementId, by: actingPersonId ?? payerId, method, mailId: mail.id } });
 }
+
+/** Only the payer signs a mandate; anyone else is refused and the attempt recorded. Checked before any passkey is verified. */
+export function checkMandateSigner(store: Store, mandateId: string, actingPersonId: string | undefined) {
+  const m = store.world.mandates?.[mandateId];
+  if (!m) throw new Error("No such mandate.");
+  if (m.status !== "awaiting_approval") throw new Error(`This mandate is ${m.status}.`);
+  if (actingPersonId && actingPersonId !== m.payerId) refuse(store, m.caseId, actingPersonId, "sign the plan mandate");
+  return m;
+}
+
+/** The payer signs the plan mandate (with their passkey in the app; "hold" in sandbox automation). */
+export function signMandate(store: Store, mandateId: string, actingPersonId: string | undefined, method: "passkey" | "hold", evidence?: Record<string, unknown>) {
+  const m = checkMandateSigner(store, mandateId, actingPersonId);
+  const terms = { caseId: m.caseId, arrangementId: m.arrangementId, payerId: m.payerId, institutionId: m.institutionId, beneficiary: m.beneficiary, currency: m.currency, perInstalmentCap: m.perInstalmentCap, totalCap: m.totalCap, windows: m.windows, reserveFloor: m.reserveFloor };
+  const digest = createHash("sha256").update(stableStringify(terms)).digest("hex");
+  store.mutate((w) => {
+    const x = w.mandates![mandateId];
+    x.status = "active";
+    x.digest = digest;
+    x.history.push({ at: w.now, status: "active", note: `Signed by the payer (${method})` });
+  });
+  store.log({ actor: "family", type: "mandate.signed", caseId: m.caseId, narration: `You signed the plan mandate: ${m.windows.length} instalment${m.windows.length > 1 ? "s" : ""} up to ${m.currency} ${m.totalCap}, each in its window, only to the university's verified account`, data: { mandateId, method, digest, ...(evidence ? { passkey: evidence } : {}) } });
+  store.trigger({ caseId: m.caseId, reason: "mandate_signed", detail: `The payer signed plan mandate ${mandateId}.` });
+}
+
+/** Anyone on the case can revoke a mandate: like declining a payment, it is a brake, never an approval. */
+export function revokeMandate(store: Store, mandateId: string, actingPersonId: string | undefined) {
+  const m = store.world.mandates?.[mandateId];
+  if (!m) throw new Error("No such mandate.");
+  if (m.status === "revoked" || m.status === "completed") throw new Error(`This mandate is already ${m.status}.`);
+  const c = store.world.cases[m.caseId];
+  if (actingPersonId && !c.people.some((p) => p.id === actingPersonId)) throw new Error("Only someone on the case can revoke the mandate.");
+  store.mutate((w) => {
+    const x = w.mandates![mandateId];
+    x.status = "revoked";
+    x.history.push({ at: w.now, status: "revoked", note: `Revoked by ${actingPersonId ?? "the family"}` });
+  });
+  store.log({ actor: "family", type: "mandate.revoked", caseId: m.caseId, narration: "The plan mandate was revoked: every payment needs its own approval again", data: { mandateId, by: actingPersonId } });
+  store.trigger({ caseId: m.caseId, reason: "mandate_revoked", detail: `Plan mandate ${mandateId} was revoked.` });
+}
