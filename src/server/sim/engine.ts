@@ -119,6 +119,7 @@ export function runBeat(store: Store, beat: string) {
   switch (beat) {
     case "th.open":
     case "uk.open":
+    case "yr.open":
     case "upload.open": {
       const c = Object.values(w.cases)[0];
       store.log({ actor: "family", type: "case.opened", caseId: c.id, narration: `Case opened: ${c.title}`, data: { brief: c.brief } });

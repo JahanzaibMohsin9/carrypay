@@ -30,7 +30,14 @@ export interface Institution {
   kind: "hospital" | "university";
   name: string; // trading name shown to people
   /** universities: applicants with a genuine offer (the sandbox stand-in for the admissions system) */
-  students?: { id: string; name: string; programme: string; start: string }[];
+  students?: {
+    id: string;
+    name: string;
+    programme: string;
+    start: string;
+    /** awards the university has granted this student (the sandbox stand-in for its scholarships system) */
+    awards?: { name: string; amount: number; appliesTo: "tuition" }[];
+  }[];
   legalName: string; // name on the bank account
   country: string;
   city: string;
@@ -186,6 +193,8 @@ export interface Mail {
   /** for institution replies: the email this answers, and the topics it answered */
   inReplyTo?: string;
   topics?: string[];
+  /** set by CarryPay's own structured requests, so the institution's reply can be tied to them */
+  request?: { kind: "correction"; adjustmentId: string } | { kind: "arrangement"; arrangementKind: "published_plan" | "extension" | "deposit_reduction"; invoiceId: string } | { kind: "accept_arrangement"; arrangementId: string };
 }
 
 export type DocumentKind =

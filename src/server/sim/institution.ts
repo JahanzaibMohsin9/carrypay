@@ -1,6 +1,8 @@
-import type { Institution, Invoice } from "@/domain/types";
+import type { Institution, Invoice, Mail } from "@/domain/types";
+import type { Arrangement } from "@/domain/plan/types";
 import { INSTITUTIONS } from "@/domain/institutions";
 import type { Store } from "../store";
+import { flagOn } from "../flags";
 import { addDoc, hoursFrom, issueInvoice, sendMail } from "./factory";
 import { schedule } from "./engine";
 
@@ -9,7 +11,7 @@ import { schedule } from "./engine";
 // per email, answering every question asked in it, and saying when something
 // that doesn't exist yet (such as the final bill) will come.
 
-export type Intent = "estimate" | "bank_details" | "fraud_alert" | "payment_status" | "cash" | "dispute" | "refund" | "statement" | "admission";
+export type Intent = "estimate" | "bank_details" | "fraud_alert" | "payment_status" | "cash" | "dispute" | "refund" | "statement" | "admission" | "correction" | "arrangement" | "accept";
 
 /** Order in which answers appear in the reply (a dispute is settled before a refund is worked out). */
 const PATTERNS: [Intent, RegExp][] = [
@@ -22,6 +24,10 @@ const PATTERNS: [Intent, RegExp][] = [
   ["refund", /refund|excess deposit|money back|return the (balance|difference)|overpa/],
   ["statement", /statement|final (bill|invoice)|itemi[sz]ed|outstanding|balance|account summary/],
   ["admission", /(confirm|verify) (the |her |his |this |that )?(admission|offer|enrol|applicant|student)|genuine offer/],
+  // after the statement is issued, so a correction or a plan always works on the current statement
+  ["correction", /(?=[\s\S]*\b(scholarship|bursary|award)\b)(?=[\s\S]*\b(missing|not (yet )?(been )?(applied|shown|deducted|included|reflected)|correct|revis|omit|left out|apply|applied|deduct))/],
+  ["arrangement", /instal?ments? plan|payment plan|pay(ing)? (it |the fees? )?in (two|three|2|3|parts|stages|instal?ments)|spread (the )?(payments?|cost|fees)|extension|extend the (deadline|due date)|defer|lower (initial )?deposit|reduced deposit|hardship/],
+  ["accept", /accept (the |your |this )?(instal?ment|payment) plan|we accept/],
 ];
 
 export function detectIntents(text: string): Intent[] {
@@ -65,6 +71,11 @@ export function institutionReply(store: Store, mailId: string) {
   const invoices = () => Object.values(store.world.invoices).filter((i) => i.caseId === caseId);
 
   const intents = new Set(detectIntents(`${original.subject}\n${original.body}`));
+  if (original.request?.kind === "correction") intents.add("correction");
+  if (original.request?.kind === "arrangement") intents.add("arrangement");
+  if (original.request?.kind === "accept_arrangement") intents.add("accept");
+  // a scholarship correction is not a dispute about a final bill
+  if (intents.has("correction")) intents.delete("dispute");
   if (inst.kind === "university" && !enrolled) {
     // the admissions office looks the student up first: no applicant means no fees, whatever was asked
     intents.add("admission");
@@ -80,13 +91,19 @@ export function institutionReply(store: Store, mailId: string) {
     intents.delete("payment_status");
   }
 
-  const ctx: ReplyCtx = { store, inst, prof, caseId, invoices, enrolled };
+  const ctx: ReplyCtx = { store, inst, prof, caseId, invoices, enrolled, original };
   const answers: Answer[] = [];
+  const answered = new Set<Intent>();
   for (const [intent] of PATTERNS) {
     if (!intents.has(intent)) continue;
     const a = HANDLERS[intent](ctx);
-    if (a) answers.push(a);
+    if (a) {
+      answers.push(a);
+      answered.add(intent);
+    }
   }
+  // the plan workflow's topics only count when they were answered (other cases mention "instalment 1 of 2" in passing)
+  for (const k of ["correction", "arrangement", "accept"] as const) if (!answered.has(k)) intents.delete(k);
 
   const body =
     answers.length === 0
@@ -129,6 +146,9 @@ const TOPIC_LABEL: Record<Intent, string> = {
   refund: "refund",
   statement: "statement",
   admission: "admission",
+  correction: "fee correction",
+  arrangement: "payment plan",
+  accept: "plan acceptance",
 };
 
 interface ReplyCtx {
@@ -137,7 +157,8 @@ interface ReplyCtx {
   prof: Profile;
   caseId: string;
   invoices: () => Invoice[];
-  enrolled?: { id: string; name: string; programme: string; start: string };
+  enrolled?: NonNullable<Institution["students"]>[number];
+  original: Mail;
 }
 
 function currentBill(invs: Invoice[]) {
@@ -195,12 +216,14 @@ const HANDLERS: Record<Intent, (c: ReplyCtx) => Answer | null> = {
         attachments: [inv.documentId],
       };
     }
+    const fees = c.enrolled ? STUDENT_FEES[c.enrolled.id] : undefined;
+    if (!fees || !c.enrolled) return null;
     const admission = addDoc(c.store, {
       caseId: c.caseId,
       kind: "admission_letter",
-      title: "Offer of admission: MSc Data Science",
-      text: "KINGSGATE UNIVERSITY: UNCONDITIONAL OFFER OF ADMISSION\nStudent: Lin Yuxuan   Student ID: KG2601847\nProgramme: MSc Data Science (full-time, 12 months)\nStart date: 18 January 2027\nThis letter confirms your place on the programme.",
-      fields: { studentId: "KG2601847", programme: "MSc Data Science" },
+      title: `Offer of admission: ${c.enrolled.programme}`,
+      text: `KINGSGATE UNIVERSITY: UNCONDITIONAL OFFER OF ADMISSION\nStudent: ${c.enrolled.name}   Student ID: ${c.enrolled.id}\nProgramme: ${c.enrolled.programme} (full-time, 12 months)\nStart date: ${c.enrolled.start}\nThis letter confirms your place on the programme.`,
+      fields: { studentId: c.enrolled.id, programme: c.enrolled.programme },
       origin: "institution",
     });
     const inv = issueInvoice(c.store, {
@@ -208,17 +231,18 @@ const HANDLERS: Record<Intent, (c: ReplyCtx) => Answer | null> = {
       institutionId: "kgu",
       kind: "fee_statement",
       title: "Fee statement",
-      patientName: "Lin Yuxuan",
-      patientRef: "KG2601847",
-      lineItems: [
-        { description: "Tuition fee 2026/27, instalment 1 of 2", amount: 14875 },
-        { description: "University accommodation, Jan-Jun 2027", amount: 9800 },
-      ],
-      dueInHours: 18 * 24,
-      extraText: "Please quote your Student ID as the payment reference.",
+      patientName: c.enrolled.name,
+      patientRef: c.enrolled.id,
+      lineItems: fees.lineItems,
+      ...(fees.dueAt ? { dueAt: fees.dueAt } : { dueInHours: fees.dueInHours }),
+      extraText: fees.extraText,
     });
+    const scholarshipNote =
+      c.enrolled.awards?.length && intentsOf(c).has("correction")
+        ? " Scholarship awards are added to the fee account once the Scholarships Office has confirmed them to us. If an award is missing from your statement, please send us a copy of the award letter and we will correct the statement."
+        : "";
     return {
-      text: `Please find attached the fee statement (${money("GBP", inv.total)}) and a copy of the offer letter. Payment is due by ${day(inv.dueAt!, c.prof.tz)}. Please quote the Student ID KG2601847 as the payment reference. Card payments via our portal carry a 2.5% surcharge.`,
+      text: `Please find attached the fee statement (${money("GBP", inv.total)}) and a copy of the offer letter. Payment is due by ${day(inv.dueAt!, c.prof.tz)}. Please quote the Student ID ${c.enrolled.id} as the payment reference. Card payments via our portal carry a 2.5% surcharge.${fees.plans ? " Instalment plans are available on request." : ""}${scholarshipNote}`,
       attachments: [admission.id, inv.documentId],
     };
   },
@@ -363,4 +387,272 @@ const HANDLERS: Record<Intent, (c: ReplyCtx) => Answer | null> = {
       text: `We have no applicant or student named ${c.prof.subjectName || "in your message"} in our admissions records, and no offer has been issued in that name. Our offers are only sent from @kingsgate.ac.uk addresses, we never charge "guaranteed admission", "visa guarantee", scholarship processing or other such fees, and no agent, consultant or agency collects tuition on our behalf: fees are paid only to the university's own account, quoting a Kingsgate Student ID, after a genuine offer has been accepted. The letter you describe is not from us. We recommend reporting it to the police, and we have alerted our fraud team.`,
     };
   },
+
+  correction: (c) => (flagOn("entitlements") ? correctStatement(c) : null),
+  arrangement: (c) => (flagOn("arrangements") ? offerPlans(c) : null),
+  accept: (c) => (flagOn("arrangements") ? confirmPlan(c) : null),
 };
+
+// ---------------------------------------------------------------------------
+// Fee statements and payment plans (the sandbox stand-in for the university's student finance system)
+
+interface StudentFees {
+  lineItems: { description: string; amount: number }[];
+  dueInHours?: number;
+  dueAt?: string;
+  extraText: string;
+  /** published instalment plans: shares of the statement total and due dates; the first instalment carries the fee */
+  plans?: { title: string; shares: number[]; dueAt: string[]; fee: number }[];
+}
+
+const STUDENT_FEES: Record<string, StudentFees> = {
+  KG2601847: {
+    lineItems: [
+      { description: "Tuition fee 2026/27, instalment 1 of 2", amount: 14875 },
+      { description: "University accommodation, Jan-Jun 2027", amount: 9800 },
+    ],
+    dueInHours: 18 * 24,
+    extraText: "Please quote your Student ID as the payment reference.",
+  },
+  // the award is in the university's records but not yet on the first statement (the Scholarships Office posts awards later)
+  KG2611392: {
+    lineItems: [
+      { description: "Tuition fee 2026/27, MSc Finance (full year)", amount: 29750 },
+      { description: "University accommodation, Jan-Jun 2027", amount: 9800 },
+    ],
+    dueAt: "2026-12-01T12:00:00.000Z",
+    extraText: "Please quote your Student ID as the payment reference. Instalment plans are available on request from the Student Finance Office.",
+    plans: [
+      { title: "Two-instalment plan", shares: [0.5, 0.5], dueAt: ["2026-12-01T12:00:00.000Z", "2027-03-01T12:00:00.000Z"], fee: 0 },
+      { title: "Three-instalment plan", shares: [0.4, 0.3, 0.3], dueAt: ["2026-12-01T12:00:00.000Z", "2027-02-01T12:00:00.000Z", "2027-04-01T12:00:00.000Z"], fee: 150 },
+    ],
+  },
+};
+
+const OFFER_DAYS = 7;
+const nextArrId = (store: Store) => store.nextId("arr");
+
+function intentsOf(c: ReplyCtx) {
+  const found = new Set(detectIntents(`${c.original.subject}\n${c.original.body}`));
+  if (c.original.request?.kind === "correction") found.add("correction");
+  return found;
+}
+
+/** The open fee statement of this case that nothing has replaced. */
+function currentStatement(c: ReplyCtx) {
+  return c.invoices().find((i) => i.kind === "fee_statement" && i.status !== "superseded" && i.status !== "paid");
+}
+
+function correctStatement(c: ReplyCtx): Answer | null {
+  const fees = c.enrolled ? STUDENT_FEES[c.enrolled.id] : undefined;
+  if (!fees || !c.enrolled) return null;
+  const fs = currentStatement(c);
+  // first contact: the statement goes out with a note on how awards are added (estimate handler)
+  if (!fs || fs.issuedAt === c.store.world.now) return null;
+  const award = c.enrolled.awards?.[0];
+  if (award && fs.lineItems.some((li) => li.amount < 0 && li.description.includes(award.name))) {
+    return { text: `The ${award.name} is already applied to statement ${fs.number}.` };
+  }
+  const letters = c.original.attachments.map((id) => c.store.world.docs[id]).filter((d) => d?.kind === "scholarship_award");
+  if (!letters.length) {
+    return { text: "To correct a statement for a scholarship, please send us a copy of the award letter. Awards are added only against the Scholarships Office's letter." };
+  }
+  const pending = Object.values(c.store.world.adjustments ?? {}).filter((a) => a.caseId === c.caseId && a.invoiceId === fs.id && (a.status === "potential" || a.status === "requested"));
+  const matches = award && letters.some((d) => String(d.fields.studentId) === c.enrolled!.id && Number(d.fields.amount) === award.amount);
+  if (!award || !matches) {
+    c.store.mutate((w) => {
+      for (const a of pending) {
+        const adj = w.adjustments![a.id];
+        adj.status = "rejected";
+        adj.history.push({ at: w.now, status: "rejected", note: "No matching award in the university's records" });
+      }
+    });
+    return {
+      text: `We have checked with the Scholarships Office: there is no award matching that letter in ${c.enrolled.name}'s records (Student ID ${c.enrolled.id}), so statement ${fs.number} stands. The Scholarships Office can be contacted at scholarships@kingsgate.ac.uk.`,
+    };
+  }
+  const tuition = fs.lineItems.find((li) => /tuition/i.test(li.description));
+  const reduction = Math.min(award.amount, tuition?.amount ?? award.amount);
+  const corrected = issueInvoice(c.store, {
+    caseId: c.caseId,
+    institutionId: c.inst.id,
+    kind: "fee_statement",
+    title: "Revised fee statement",
+    patientName: c.enrolled.name,
+    patientRef: c.enrolled.id,
+    lineItems: [...fs.lineItems.map(({ description, amount }) => ({ description, amount })), { description: `${award.name} 2026/27`, amount: -reduction }],
+    ...(fs.dueAt ? { dueAt: fs.dueAt } : {}),
+    extraText: `This statement replaces ${fs.number}: the ${award.name} (GBP ${reduction.toFixed(2)}) has been applied to the tuition fee. Please quote your Student ID as the payment reference.`,
+  });
+  const hadOffers = Object.values(c.store.world.arrangements ?? {}).some((a) => a.invoiceId === fs.id && a.status === "offered");
+  c.store.mutate((w) => {
+    w.invoices[fs.id].status = "superseded";
+    w.invoices[fs.id].supersededBy = corrected.id;
+    for (const a of pending) {
+      const adj = w.adjustments![a.id];
+      adj.status = "confirmed";
+      adj.resolutionDocId = corrected.documentId;
+      adj.history.push({ at: w.now, status: "confirmed", note: `Revised statement ${corrected.number}` });
+    }
+    // plans offered on the old statement no longer fit it
+    for (const arr of Object.values(w.arrangements ?? {})) {
+      if (arr.invoiceId === fs.id && arr.status === "offered") {
+        arr.status = "expired";
+        arr.history.push({ at: w.now, status: "expired", note: `Statement ${fs.number} was replaced by ${corrected.number}` });
+      }
+    }
+  });
+  const plans = hadOffers ? issueOffer(c, c.store.world.invoices[corrected.id]) : null;
+  return {
+    text: `Thank you for sending the award letter. You are right: the ${award.name} had not yet been applied. The revised fee statement ${corrected.number} is attached (${money("GBP", corrected.total)}, previously ${money("GBP", fs.total)}) and replaces ${fs.number}. The due date is unchanged.${plans ? ` ${plans.text}` : ""}`,
+    attachments: [corrected.documentId, ...(plans?.attachments ?? [])],
+  };
+}
+
+function issueOffer(c: ReplyCtx, fs: Invoice): Answer | null {
+  const fees = c.enrolled ? STUDENT_FEES[c.enrolled.id] : undefined;
+  if (!fees?.plans || !c.enrolled) return null;
+  const now = c.store.world.now;
+  const expiresAt = hoursFrom(now, OFFER_DAYS * 24);
+  const plans = fees.plans.map((p) => {
+    const amounts = p.shares.map((sh) => Math.round(fs.total * sh * 100) / 100);
+    // rounding goes to the last instalment, so the plan adds up to the statement exactly
+    amounts[amounts.length - 1] = Math.round((fs.total - amounts.slice(0, -1).reduce((x, y) => x + y, 0)) * 100) / 100;
+    return { ...p, amounts };
+  });
+  const text = [
+    `PAYMENT PLAN OFFER · Student Finance Office, Kingsgate University · ${c.inst.email}`,
+    `Student: ${c.enrolled.name}   Student ID: ${c.enrolled.id}   Statement: ${fs.number} (${money("GBP", fs.total)})`,
+    `This offer is open until ${expiresAt.slice(0, 10)}. A plan applies once you accept it in writing and we confirm it.`,
+    "",
+    ...plans.flatMap((p) => [
+      `${p.title}${p.fee ? ` (administration fee ${money("GBP", p.fee)}, payable with the first instalment)` : " (no fee)"}:`,
+      ...p.amounts.map((a, k) => `  ${k + 1}. ${money("GBP", a)} by ${p.dueAt[k].slice(0, 10)}`),
+    ]),
+    "",
+    "Paying in full by the statement's due date remains available.",
+  ].join("\n");
+  const doc = addDoc(c.store, {
+    caseId: c.caseId,
+    kind: "payment_plan_offer",
+    title: `Payment plan offer for ${fs.number}`,
+    text,
+    fields: { statement: fs.number, invoiceId: fs.id, expiresAt, plans: plans.map((p) => p.title).join("; ") },
+    origin: "institution",
+  });
+  const ids = plans.map(() => nextArrId(c.store));
+  c.store.mutate((w) => {
+    w.arrangements ??= {};
+    plans.forEach((p, k) => {
+      const arr: Arrangement = {
+        id: ids[k],
+        caseId: c.caseId,
+        institutionId: c.inst.id,
+        invoiceId: fs.id,
+        kind: "published_plan",
+        title: p.title,
+        status: "offered",
+        instalments: p.amounts.map((amount, n) => ({ amount, dueAt: p.dueAt[n] })),
+        fee: p.fee || undefined,
+        currency: fs.currency,
+        requestMailId: c.original.id,
+        offerDocId: doc.id,
+        expiresAt,
+        history: [{ at: w.now, status: "offered" }],
+      };
+      w.arrangements![arr.id] = arr;
+    });
+  });
+  return {
+    text: `Our published instalment plans for statement ${fs.number} are attached: ${plans
+      .map((p) => `the ${p.title.toLowerCase()} (${p.amounts.map((a) => money("GBP", a)).join(" + ")}${p.fee ? `, plus a ${money("GBP", p.fee)} administration fee` : ", no fee"})`)
+      .join(" and ")}. The offer is open until ${day(expiresAt, c.prof.tz)}; please reply in writing to accept one.`,
+    attachments: [doc.id],
+  };
+}
+
+function offerPlans(c: ReplyCtx): Answer | null {
+  const fees = c.enrolled ? STUDENT_FEES[c.enrolled.id] : undefined;
+  if (!fees?.plans) return null;
+  const fs = currentStatement(c);
+  if (!fs) return null;
+  const now = c.store.world.now;
+  const text = `${c.original.subject}\n${c.original.body}`.toLowerCase();
+  const req = c.original.request;
+  const wantsExtension = req?.kind === "arrangement" ? req.arrangementKind === "extension" : /extension|extend the (deadline|due date)|defer/.test(text) && !/instal?ment|payment plan/.test(text);
+  if (wantsExtension) {
+    // a later deadline is a credit decision for a person at the university, never automatic
+    const id = nextArrId(c.store);
+    c.store.mutate((w) => {
+      w.arrangements ??= {};
+      w.arrangements[id] = {
+        id,
+        caseId: c.caseId,
+        institutionId: c.inst.id,
+        invoiceId: fs.id,
+        kind: "extension",
+        title: "Deadline extension",
+        status: "requested",
+        instalments: [{ amount: fs.amountDue, dueAt: hoursFrom(fs.dueAt ?? w.now, 30 * 24) }],
+        currency: fs.currency,
+        requestMailId: c.original.id,
+        history: [{ at: w.now, status: "requested" }],
+      };
+    });
+    return {
+      text: `Deadline extensions are decided by our Credit Control team, and we have passed your request on. They usually decide within 2 working days and will write to you. Until then, the due date on statement ${fs.number} (${day(fs.dueAt ?? now, c.prof.tz)}) still applies.`,
+    };
+  }
+  const open = Object.values(c.store.world.arrangements ?? {}).filter((a) => a.invoiceId === fs.id && a.status === "offered" && (!a.expiresAt || a.expiresAt > now));
+  if (open.length) {
+    return {
+      text: `The instalment plans in our offer for statement ${fs.number} remain open until ${day(open[0].expiresAt!, c.prof.tz)}: ${open.map((a) => a.title.toLowerCase()).join(" and ")}. Please reply in writing to accept one.`,
+    };
+  }
+  return issueOffer(c, fs);
+}
+
+function confirmPlan(c: ReplyCtx): Answer | null {
+  const req = c.original.request;
+  if (req?.kind !== "accept_arrangement") return null;
+  const w = c.store.world;
+  const arr = w.arrangements?.[req.arrangementId];
+  if (!arr || arr.caseId !== c.caseId) return null;
+  if (arr.status !== "accepted") return { text: "We could not find an open payment plan to confirm. Please contact the Student Finance Office." };
+  if (arr.expiresAt && arr.acceptedAt && arr.acceptedAt > arr.expiresAt) {
+    return { text: `The offer for the ${arr.title.toLowerCase()} expired on ${day(arr.expiresAt, c.prof.tz)}. Please ask us for a new offer.` };
+  }
+  const fs = w.invoices[arr.invoiceId];
+  const fee = arr.fee ?? 0;
+  const doc = addDoc(c.store, {
+    caseId: c.caseId,
+    kind: "payment_plan_offer",
+    title: `Payment plan confirmation: ${arr.title}`,
+    text: [
+      `PAYMENT PLAN CONFIRMATION · Student Finance Office, Kingsgate University · ${c.inst.email}`,
+      `Student: ${c.enrolled?.name}   Student ID: ${c.enrolled?.id}   Statement: ${fs.number} (${money("GBP", fs.total)})`,
+      `We confirm the ${arr.title.toLowerCase()} accepted on ${(arr.acceptedAt ?? w.now).slice(0, 10)}. These due dates replace the statement's single due date:`,
+      ...arr.instalments.map((ins, k) => `  ${k + 1}. ${money("GBP", ins.amount + (k === 0 ? fee : 0))} by ${ins.dueAt.slice(0, 10)}${k === 0 && fee ? ` (includes the ${money("GBP", fee)} administration fee)` : ""}`),
+      "Please quote the Student ID as the payment reference for every instalment.",
+    ].join("\n"),
+    fields: { arrangementId: arr.id, statement: fs.number, instalments: arr.instalments.length },
+    origin: "institution",
+  });
+  c.store.mutate((w2) => {
+    const a = w2.arrangements![arr.id];
+    a.confirmationDocId = doc.id;
+    a.history.push({ at: w2.now, status: "accepted", note: "Confirmed by the university" });
+    for (const other of Object.values(w2.arrangements!)) {
+      if (other.id !== arr.id && other.invoiceId === arr.invoiceId && other.status === "offered") {
+        other.status = "declined";
+        other.history.push({ at: w2.now, status: "declined", note: `Not chosen: the family accepted the ${arr.title.toLowerCase()}` });
+      }
+    }
+  });
+  const first = arr.instalments[0];
+  return {
+    text: `We confirm the ${arr.title.toLowerCase()} for statement ${fs.number}. The confirmation with the new due dates is attached; the first instalment of ${money("GBP", first.amount + fee)} is due by ${day(first.dueAt, c.prof.tz)}.`,
+    attachments: [doc.id],
+  };
+}
+

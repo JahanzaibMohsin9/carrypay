@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { DocumentKind, Payment, Route, SecurityEvent, World } from "@/domain/types";
+import type { DocumentKind, Mail, Payment, Route, SecurityEvent, World } from "@/domain/types";
 import { INSTITUTIONS } from "@/domain/institutions";
 import { ROUTE_SHORT } from "@/domain/corridors";
 import { compareRoutes, evaluateRoute, priceRoute } from "@/domain/rules/engine";
@@ -7,6 +7,11 @@ import type { Store } from "../store";
 import { addDoc, hoursFrom, sendMail } from "../sim/factory";
 import { onOutboundMail, schedule, SKIP_IF, submitPayment } from "../sim/engine";
 import { caseSnapshot } from "./snapshot";
+import type { Flag } from "@/domain/flags";
+import { flagOn } from "../flags";
+import { compareSchedules, DEFAULT_STRESSES, obligationsFor, projectCashflow, type Projection, type ScheduleOption } from "@/domain/plan/cashflow";
+import { adjustmentTotals, reviewEntitlements } from "@/domain/plan/entitlements";
+import type { Adjustment } from "@/domain/plan/types";
 
 export type Tier = "read" | "communicate" | "money";
 
@@ -32,6 +37,8 @@ interface ToolSpec<S extends z.ZodObject> {
   description: string;
   schema: S;
   run: (input: z.infer<S>, ctx: ToolCtx) => ToolOutcome;
+  /** offered to the model and runnable only when this feature flag is on */
+  flag?: Flag;
 }
 
 const narration = z.string().min(3).max(240).describe("One short, plain-language sentence for the family explaining what you are doing and why. Write it in the family's language.");
@@ -77,6 +84,51 @@ function outstanding(ctx: ToolCtx, invoiceId: string) {
   const paid = pays.filter((p) => p.status === "completed").reduce((s, p) => s + p.amount, 0);
   const inFlight = pays.filter((p) => ["awaiting_approval", "approved", "submitted", "processing"].includes(p.status)).reduce((s, p) => s + p.amount, 0);
   return { inv, paid, inFlight, remaining: Math.round((inv.amountDue - paid - inFlight) * 100) / 100 };
+}
+
+/**
+ * Structured requests (bill corrections, payment plans) go only to the institution's verified contact:
+ * these tools take no address at all, so a forged "write to us here instead" can't redirect them.
+ */
+function mailInstitution(ctx: ToolCtx, m: { subject: string; body: string; attachments: string[]; request: NonNullable<Mail["request"]> }) {
+  const w = ctx.store.world;
+  const c = w.cases[ctx.caseId];
+  const inst = w.institutions[c.institutionId];
+  if (inst.origin === "uploaded_bill" && (!inst.verifiedAt || !inst.email)) return undefined;
+  const mail = sendMail(ctx.store, { caseId: c.id, direction: "outbound", from: "cases@carrypay.app", fromName: "CarryPay for the family", to: inst.email, subject: m.subject, body: m.body, attachments: m.attachments, read: true, request: m.request });
+  onOutboundMail(ctx.store, mail);
+  return mail;
+}
+
+const awaitingReply = (w: World, pred: (m: Mail) => boolean) =>
+  Object.values(w.mail).find((m) => m.direction === "outbound" && pred(m) && !Object.values(w.mail).some((r) => r.inReplyTo === m.id));
+
+const r0 = (n: number) => Math.round(n);
+
+/** What the model sees of a projection: rounded, labelled, with the engine's own assumptions. */
+function projectionSummary(p: Projection) {
+  return {
+    currency: p.currency,
+    reserve_floor: r0(p.reserveFloor),
+    total_cost: r0(p.totalHomeCost),
+    lowest_balance: { at: p.lowest.at, balance: r0(p.lowest.balance), above_reserve_by: r0(p.lowest.headroom) },
+    first_time_below_reserve: p.firstBreach ? { at: p.firstBreach.at, balance: r0(p.firstBreach.balance), short_by: r0(p.firstBreach.shortBy), when_paying: p.firstBreach.cause } : null,
+    payments: p.payments.map((x) => ({
+      label: x.obligation.label,
+      due_at: x.obligation.dueAt,
+      pay_by: x.payAt,
+      on_time: x.onTime,
+      amount: `${x.obligation.currency} ${x.deliverAmount.toLocaleString("en-US")}`,
+      cost: r0(x.homeCost),
+      ...(x.obligation.fee ? { includes_admin_fee: `${x.obligation.currency} ${x.obligation.fee}` } : {}),
+      quota_year: x.quotaYear,
+      limits: x.evaluation.limits.map((l) => ({ rule: l.ruleId, used_usd: r0(l.usedUSD), after_usd: r0(l.afterUSD), cap_usd: l.capUSD })),
+      documents_needed: x.evaluation.requiredDocs.map((d) => d.label),
+      warnings: x.evaluation.warnings.map((d) => d.message),
+      blocked: x.evaluation.allowed ? undefined : x.evaluation.blockers.map((b) => b.message),
+    })),
+    assumptions: p.assumptions.map((a) => a.text),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -477,6 +529,166 @@ export const TOOLS = [
   }),
 
   tool({
+    name: "review_entitlements",
+    tier: "read",
+    flag: "entitlements",
+    description:
+      "Check the current fee statement against the family's evidence (scholarship award letters and similar). Returns each award as missing, already applied or not applicable, with the document it rests on. Missing ones are recorded as POTENTIAL adjustments: they are not savings until the institution issues a corrected statement.",
+    schema: z.object({ narration }),
+    run: (_i, ctx) => {
+      const w = ctx.store.world;
+      const findings = reviewEntitlements(w, ctx.caseId);
+      const ids: Record<string, string> = {};
+      for (const f of findings.filter((x) => x.status === "missing")) {
+        const existing = Object.values(w.adjustments ?? {}).find((a) => a.caseId === ctx.caseId && a.invoiceId === f.invoiceId && a.basisDocId === f.basisDocId);
+        if (existing) {
+          ids[f.basisDocId + f.invoiceId] = existing.id;
+          continue;
+        }
+        const id = ctx.store.nextId("adj");
+        const adj: Adjustment = { id, caseId: ctx.caseId, invoiceId: f.invoiceId, amount: f.amount, currency: f.currency, basisDocId: f.basisDocId, reason: f.reason, status: "potential", history: [{ at: w.now, status: "potential" }] };
+        ctx.store.mutate((x) => {
+          x.adjustments ??= {};
+          x.adjustments[id] = adj;
+        });
+        ids[f.basisDocId + f.invoiceId] = id;
+      }
+      const totals = adjustmentTotals(ctx.store.world, ctx.caseId);
+      return {
+        decision: "allowed",
+        result: {
+          findings: findings.map((f) => ({
+            adjustment_id: ids[f.basisDocId + f.invoiceId],
+            status: f.status,
+            award: f.award,
+            amount: `${f.currency} ${f.amount.toLocaleString("en-US")}`,
+            statement: f.invoiceNumber,
+            evidence_document: f.basisDocId,
+            evidence_from: f.evidenceOrigin === "institution" ? "the institution" : "a copy the family provided; only the institution can confirm it",
+            reason: f.reason,
+          })),
+          totals_by_state: totals,
+          note: findings.length ? "Report potential, confirmed and credited amounts separately; never add them up as savings." : "No award letters or similar evidence on the case to check.",
+        },
+      };
+    },
+  }),
+
+  tool({
+    name: "request_bill_correction",
+    tier: "communicate",
+    flag: "entitlements",
+    description:
+      "Ask the institution to correct a statement for a potential adjustment found by review_entitlements. Goes to the institution's verified contact with the evidence and the statement attached automatically. The adjustment becomes 'requested'; only the institution's corrected statement confirms it.",
+    schema: z.object({
+      adjustment_id: z.string(),
+      subject: z.string().min(3).max(160),
+      body: z.string().min(10).max(3000).describe("Up to 3000 characters. Clear, professional English; quote the statement number and the student's reference."),
+      narration,
+    }),
+    run: (i, ctx) => {
+      const w = ctx.store.world;
+      const adj = w.adjustments?.[i.adjustment_id];
+      if (!adj || adj.caseId !== ctx.caseId) return { decision: "error", result: { error: `No adjustment ${i.adjustment_id} on this case. Run review_entitlements first.` } };
+      if (adj.status !== "potential") return { decision: "error", result: { error: `Adjustment ${adj.id} is already ${adj.status}.` } };
+      const inv = w.invoices[adj.invoiceId];
+      const waiting = awaitingReply(w, (m) => m.caseId === ctx.caseId && m.request?.kind === "correction" && m.request.adjustmentId === adj.id);
+      if (waiting) return { decision: "error", result: { error: `Already asked in ${waiting.id}; wait for the institution's reply.` } };
+      const mail = mailInstitution(ctx, { subject: i.subject, body: i.body, attachments: [adj.basisDocId, inv.documentId], request: { kind: "correction", adjustmentId: adj.id } });
+      if (!mail) return { decision: "blocked", ruleIds: ["CARRYPAY.VERIFIED_INSTITUTION"], result: { error: "Blocked: the institution has no verified contact address yet." } };
+      ctx.store.mutate((x) => {
+        const a = x.adjustments![adj.id];
+        a.status = "requested";
+        a.requestMailId = mail.id;
+        a.history.push({ at: x.now, status: "requested", note: mail.id });
+      });
+      return { decision: "allowed", result: { sent: true, mail_id: mail.id, attached: [adj.basisDocId, inv.documentId], adjustment_status: "requested" } };
+    },
+  }),
+
+  tool({
+    name: "plan_affordability",
+    tier: "read",
+    flag: "plan",
+    description:
+      "Can the payer carry everything owed without falling below the reserve they chose? Projects their balance (from the figures they entered) through every payment, priced by the rules engine at today's rate, with which year's FX quota each payment uses and the documents it needs. Compares paying in full with each payment plan the institution has offered, under stress tests (salary 3 weeks late, foreign currency 5% dearer), and returns the engine's pick. Use these numbers as they are.",
+    schema: z.object({ narration }),
+    run: (_i, ctx) => {
+      const w = ctx.store.world;
+      const profile = w.funding?.[ctx.caseId];
+      if (!profile) return { decision: "allowed", result: { funding_entered: false, note: "The payer hasn't entered their figures (money available, income, essentials, reserve) in the app yet. Ask them to, in one short message." } };
+      const accepted = Object.values(w.arrangements ?? {}).find((a) => a.caseId === ctx.caseId && a.status === "accepted" && a.confirmationDocId);
+      const offered = Object.values(w.arrangements ?? {}).filter((a) => a.caseId === ctx.caseId && a.status === "offered" && (!a.expiresAt || a.expiresAt > w.now));
+      const current = projectCashflow(w, ctx.caseId)!;
+      const options: ScheduleOption[] = accepted
+        ? []
+        : [{ id: "pay_in_full", label: "Pay the statement in full", schedule: "upfront" }, ...offered.map((a) => ({ id: a.id, label: `${a.title}${a.fee ? ` (fee ${a.currency} ${a.fee})` : ""}`, schedule: a }))];
+      const cmp = options.length > 1 ? compareSchedules(w, ctx.caseId, options, DEFAULT_STRESSES) : undefined;
+      return {
+        decision: "allowed",
+        result: {
+          funding_entered: true,
+          payer_id: profile.ownerPersonId,
+          figures: { available_now: r0(profile.balances.reduce((s, b) => s + b.amount, 0)), essentials_per_month: profile.essentialsMonthly, reserve_floor: profile.reserveFloor, entered_on: profile.updatedAt.slice(0, 10) },
+          plan_in_force: accepted ? { arrangement_id: accepted.id, title: accepted.title, confirmed_by_institution: true } : "the statement as issued (no payment plan accepted)",
+          projection: projectionSummary(current),
+          ...(cmp
+            ? {
+                comparison: {
+                  rows: cmp.rows.map((r) => ({
+                    option_id: r.id,
+                    option: r.label,
+                    total_cost: r0(r.totalHomeCost),
+                    admin_fees_cost: r0(r.feesHomeCost),
+                    first_payment: r.firstPaymentAt ? { pay_by: r.firstPaymentAt, cost: r0(r.firstPaymentHomeCost ?? 0) } : undefined,
+                    lowest_above_reserve: r0(r.lowestHeadroom),
+                    below_reserve: r.firstBreach ? { at: r.firstBreach.at, short_by: r0(r.firstBreach.shortBy) } : null,
+                    feasible: r.feasible,
+                    stress_tests: r.stress.map((s) => ({ test: s.label, keeps_reserve: s.holds, lowest_above_reserve: r0(s.lowestHeadroom) })),
+                    keeps_reserve_in_every_test: r.holdsAll,
+                  })),
+                  engine_pick: cmp.pickId,
+                  pick_reason: cmp.pickReason === "cheapest_that_holds" ? "the cheapest option that keeps the reserve in every stress test" : cmp.pickReason === "most_headroom" ? "no option keeps the reserve in every test; this one stays furthest above it" : undefined,
+                },
+              }
+            : offered.length === 0 && !accepted
+              ? { note: "No payment plan has been offered. If paying in full goes below the reserve, ask the institution for its published instalment plans with request_arrangement." }
+              : {}),
+          currency: profile.currency,
+        },
+      };
+    },
+  }),
+
+  tool({
+    name: "request_arrangement",
+    tier: "communicate",
+    flag: "arrangements",
+    description:
+      "Ask the institution, through its verified contact, for its published instalment plans, a deadline extension or a lower deposit for a statement. This only ASKS: nothing changes until the institution sends a written offer, the payer accepts it in the app, and the institution confirms it. Never tell the family a deadline has moved before that.",
+    schema: z.object({
+      invoice_id: z.string(),
+      kind: z.enum(["published_plan", "extension", "deposit_reduction"]),
+      subject: z.string().min(3).max(160),
+      body: z.string().min(10).max(3000).describe("Up to 3000 characters. Clear, professional English; quote the statement number and the student's reference."),
+      narration,
+    }),
+    run: (i, ctx) => {
+      const w = ctx.store.world;
+      const inv = w.invoices[i.invoice_id];
+      if (!inv || inv.caseId !== ctx.caseId) return { decision: "error", result: { error: `No invoice ${i.invoice_id} on this case` } };
+      if (inv.status !== "open") return { decision: "error", result: { error: `Invoice ${inv.number} is ${inv.status}; ask about the statement that replaced it.` } };
+      const open = Object.values(w.arrangements ?? {}).filter((a) => a.invoiceId === inv.id && (a.status === "offered" || a.status === "requested") && (!a.expiresAt || a.expiresAt > w.now));
+      if (open.length) return { decision: "error", result: { error: `Already ${open[0].status}: ${open.map((a) => `${a.title} (${a.id})`).join(", ")}. Compare them with plan_affordability.` } };
+      const waiting = awaitingReply(w, (m) => m.caseId === ctx.caseId && m.request?.kind === "arrangement" && m.request.invoiceId === inv.id);
+      if (waiting) return { decision: "error", result: { error: `Already asked in ${waiting.id}; wait for the institution's reply.` } };
+      const mail = mailInstitution(ctx, { subject: i.subject, body: i.body, attachments: [], request: { kind: "arrangement", arrangementKind: i.kind, invoiceId: inv.id } });
+      if (!mail) return { decision: "blocked", ruleIds: ["CARRYPAY.VERIFIED_INSTITUTION"], result: { error: "Blocked: the institution has no verified contact address yet." } };
+      return { decision: "allowed", result: { sent: true, mail_id: mail.id, note: "Deadlines and amounts are unchanged until the institution confirms an accepted plan in writing." } };
+    },
+  }),
+
+  tool({
     name: "propose_payment",
     tier: "money",
     description:
@@ -548,6 +760,32 @@ export const TOOLS = [
           result: { error: "BLOCKED by safety layer", blockers: ev.blockers },
         };
       }
+
+      // 3b. No self-made instalments: a part payment of a tuition bill must be an instalment of a plan the
+      //     institution has confirmed. Cutting a bill into pieces (for example to stay under a yearly quota) is structuring.
+      if (c.type === "tuition" && i.amount < o.remaining - 0.5) {
+        const agreed = obligationsFor(w, c.id, "current").filter((ob) => ob.invoiceId === inv.id && ob.source === "arrangement");
+        if (!agreed.some((ob) => Math.abs(ob.amount - i.amount) <= 0.5)) {
+          security(ctx, {
+            severity: "critical",
+            kind: "blocked_forbidden",
+            title: "A self-made part payment was blocked",
+            detail: `Proposed ${inv.currency} ${i.amount.toLocaleString()} of the ${inv.currency} ${o.remaining.toLocaleString()} outstanding on ${inv.number}. ${agreed.length ? `The confirmed plan's instalments are ${agreed.map((ob) => `${ob.currency} ${ob.amount.toLocaleString()}`).join(", ")}.` : "The university has not confirmed an instalment plan for this bill."}`,
+            ruleIds: ["CARRYPAY.NO_STRUCTURING"],
+          });
+          return {
+            decision: "blocked",
+            ruleIds: ["CARRYPAY.NO_STRUCTURING"],
+            narration: `Blocked a part payment of ${inv.number} that isn't an instalment the university agreed to`,
+            result: {
+              error: "BLOCKED by safety layer: a tuition bill is paid in full, or in instalments of a plan the university has confirmed. No payment was created.",
+              outstanding: o.remaining,
+              confirmed_instalments: agreed.map((ob) => ({ label: ob.label, amount: ob.amount, due_at: ob.dueAt })),
+            },
+          };
+        }
+      }
+
       const missing = ev.requiredDocs.filter((d) => !d.present && d.kind !== "invoice" && d.kind !== "admission_letter");
       const missingExternal = ev.requiredDocs.filter((d) => !d.present && (d.kind === "invoice" || d.kind === "admission_letter"));
       if (missing.length || missingExternal.length) {
@@ -647,8 +885,10 @@ export function toolTier(name: string): Tier | undefined {
 }
 
 /** JSON schema for the Messages API, generated from the same zod schema we validate with. */
+const enabled = (t: { flag?: Flag }) => !t.flag || flagOn(t.flag);
+
 export function anthropicToolDefs() {
-  return TOOLS.map((t) => {
+  return TOOLS.filter(enabled).map((t) => {
     const schema = z.toJSONSchema(t.schema) as Record<string, unknown>;
     delete schema.$schema;
     return { name: t.name, description: `[${t.tier.toUpperCase()}] ${t.description}`, input_schema: schema as { type: "object"; [k: string]: unknown } };
@@ -664,7 +904,7 @@ export function executeTool(name: string, rawInput: unknown, ctx: ToolCtx): stri
     store.log({ actor: "gateway", type: "tool.blocked", caseId: ctx.caseId, narration: `Emergency stop is on: ${name} was not run`, data: { tool: name, decision: "blocked" } });
     return JSON.stringify({ error: "The family switched on the emergency stop. Do nothing further." });
   }
-  if (!spec) return JSON.stringify({ error: `Unknown tool ${name}` });
+  if (!spec || !enabled(spec)) return JSON.stringify({ error: `Unknown tool ${name}` });
   const parsed = (spec.schema as z.ZodObject).safeParse(unescapeNewlines(rawInput));
   if (!parsed.success) {
     store.log({ actor: "gateway", type: "tool.invalid", caseId: ctx.caseId, data: { tool: name, issues: parsed.error.issues.slice(0, 5) } });

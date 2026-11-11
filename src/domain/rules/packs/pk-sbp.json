@@ -3,7 +3,7 @@
   "jurisdiction": "PK",
   "name": "Pakistan: State Bank of Pakistan & FBR",
   "homeCurrency": "PKR",
-  "version": "2026.10.14",
+  "version": "2026.11.11",
   "notes": "Each rule records where it comes from. 'official' = primary regulator text, 'reported' = reputable press coverage of the regulation, 'assumed' = sandbox assumption that must be checked with a bank before real use.",
   "rules": [
     {
@@ -191,6 +191,26 @@
       "effectiveFrom": "2026-10-14",
       "source": {
         "title": "CarryPay safety policy (anti-structuring)",
+        "url": ""
+      }
+    },
+    {
+      "id": "CARRYPAY.NO_STRUCTURING",
+      "title": "A part payment of a tuition bill must be an instalment the institution has agreed to",
+      "kind": "forbidden",
+      "appliesTo": [
+        "bank_transfer",
+        "card_payment",
+        "atm_cash",
+        "carried_cash"
+      ],
+      "purposes": [
+        "tuition"
+      ],
+      "status": "policy",
+      "effectiveFrom": "2026-11-11",
+      "source": {
+        "title": "CarryPay safety policy (anti-structuring): instalments come only from the institution's confirmed payment plan",
         "url": ""
       }
     },

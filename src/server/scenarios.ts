@@ -1,6 +1,7 @@
 import type { CorridorId, Invoice, UploadedBill, World } from "@/domain/types";
 import { INSTITUTIONS } from "@/domain/institutions";
 import { DESTINATIONS } from "@/domain/corridors";
+import type { Flag } from "@/domain/flags";
 
 export interface ScenarioInfo {
   id: string;
@@ -8,6 +9,8 @@ export interface ScenarioInfo {
   subtitle: string;
   corridor: string;
   caseId: string;
+  /** listed only when this feature flag is on */
+  flag?: Flag;
 }
 
 export const SCENARIOS: ScenarioInfo[] = [
@@ -38,6 +41,14 @@ export const SCENARIOS: ScenarioInfo[] = [
     subtitle: "China → United Kingdom · 留学中介 asks for fees and a quota split",
     corridor: "CN-GB",
     caseId: "case_cn",
+  },
+  {
+    id: "uk-year",
+    title: "A year of study in London",
+    subtitle: "China → United Kingdom · scholarship check and a payment plan the family can carry",
+    corridor: "CN-GB",
+    caseId: "case_yr",
+    flag: "plan",
   },
 ];
 
@@ -75,6 +86,7 @@ export function seedScenario(id: string): World {
   if (id === "uk-tuition") return seedUkTuition();
   if (id === "pk-admission") return seedPkAdmission();
   if (id === "cn-admission") return seedCnAdmission();
+  if (id === "uk-year") return seedUkYear();
   return seedThMedical();
 }
 
@@ -202,6 +214,75 @@ function seedCnAdmission(): World {
     { id: "s_pressure", at: at(start, 1, 11, 30), kind: "beat", payload: { beat: "cn.pressure" }, label: "The agency pushes for payment to a personal account and FX bought in relatives' names" },
   ];
   w.counters = { mail: 0, doc: 0, inv: 0, pay: 0, apr: 0, msg: 0, sec: 0, sch: 0 };
+  return w;
+}
+
+function seedUkYear(): World {
+  // 09:00 in Shenzhen (UTC+8). Fictional family. The student opens the case in English; her father pays,
+  // reads Chinese and signs. The scholarship is genuine (in Kingsgate's records) but missing from the first fee statement.
+  const start = "2026-11-02T01:00:00.000Z";
+  const w = emptyWorld("uk-year", start);
+  w.cases.case_yr = {
+    id: "case_yr",
+    type: "tuition",
+    corridor: "CN-GB",
+    title: "Yutong's year in London",
+    lang: "en",
+    institutionId: "kgu",
+    openedAt: start,
+    status: "active",
+    brief:
+      "Hi! I'm Zhou Yutong. I've accepted Kingsgate University's offer for the MSc Finance in London, starting 18 January 2027 (Student ID KG2611392), and Kingsgate awarded me the Global Excellence Scholarship of GBP 4,000 off my tuition. I've uploaded the scholarship letter and my offer letter. My dad, Zhou Jianhua, pays my fees from Shenzhen out of his savings and salary, and he has entered his figures in CarryPay. He reads Chinese best. Please sort out my fees with the university, and work out how Dad can pay them without using up the money the family needs to live on.",
+    people: [
+      // the student opened the case, so the app opens as her; only her father (the payer) can approve or accept terms
+      { id: "p_yutong", name: "周雨桐 Zhou Yutong", role: "student", adult: true, abroad: false, passport: "E64019287" },
+      { id: "p_jianhua", name: "周建华 Zhou Jianhua", role: "parent", adult: true, abroad: false, priorFxYearUSD: 6000, passport: "E38852106" },
+    ],
+    notes: [],
+  };
+  w.cards = [{ personId: "p_jianhua", label: "UnionPay •• 2754", annualUsedUSD: 0, currency: "CNY" }];
+  // what the student uploaded: copies, so they are the family's documents until Kingsgate confirms them
+  w.docs.doc_1 = {
+    id: "doc_1",
+    caseId: "case_yr",
+    kind: "scholarship_award",
+    title: "Scholarship award letter (uploaded by Yutong)",
+    text:
+      "KINGSGATE UNIVERSITY · Scholarships Office · scholarships@kingsgate.ac.uk\n\nDear Zhou Yutong (Student ID KG2611392),\n\nCongratulations. We are pleased to award you the Kingsgate Global Excellence Scholarship for the 2026/27 academic year: a reduction of GBP 4,000.00 in your tuition fee for the MSc Finance. The award is applied to your fee account by the Student Finance Office and is not paid in cash.\n\nScholarships Office, Kingsgate University, London",
+    fields: { studentId: "KG2611392", award: "Kingsgate Global Excellence Scholarship", amount: 4000, currency: "GBP", appliesTo: "tuition", academicYear: "2026/27" },
+    origin: "family",
+    createdAt: start,
+  };
+  w.docs.doc_2 = {
+    id: "doc_2",
+    caseId: "case_yr",
+    kind: "admission_letter",
+    title: "Offer letter (uploaded by Yutong)",
+    text: "KINGSGATE UNIVERSITY: UNCONDITIONAL OFFER OF ADMISSION\nStudent: Zhou Yutong   Student ID: KG2611392\nProgramme: MSc Finance (full-time, 12 months)\nStart date: 18 January 2027",
+    fields: { studentId: "KG2611392", programme: "MSc Finance" },
+    origin: "family",
+    createdAt: start,
+  };
+  // entered by the father in the app (CarryPay sees no bank account)
+  w.funding = {
+    case_yr: {
+      caseId: "case_yr",
+      ownerPersonId: "p_jianhua",
+      currency: "CNY",
+      balances: [
+        { label: "Savings", amount: 280000 },
+        { label: "Current account", amount: 50000 },
+      ],
+      income: [{ label: "Salary", amount: 38000, firstAt: "2026-11-10T02:00:00.000Z", everyMonths: 1 }],
+      essentialsMonthly: 16000,
+      reserveFloor: 48000,
+      conditional: [{ label: "Year-end bonus", amount: 60000, expectedAt: "2027-01-25T02:00:00.000Z", status: "expected" }],
+      enteredBy: "p_jianhua",
+      updatedAt: start,
+    },
+  };
+  w.schedule = [{ id: "s_open", at: at(start, 0, 1, 1), kind: "beat", payload: { beat: "yr.open" }, label: "Yutong opens the case with her offer and scholarship letters" }];
+  w.counters = { mail: 0, doc: 2, inv: 0, pay: 0, apr: 0, msg: 0, sec: 0, sch: 0 };
   return w;
 }
 
