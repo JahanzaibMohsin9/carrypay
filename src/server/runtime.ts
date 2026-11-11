@@ -294,6 +294,9 @@ export function directorAction(body: Record<string, unknown>, sid?: string) {
       // the family's own bill can be replayed from the start; there is no seed for it without one
       const upload = id === "upload" ? store.world.upload : undefined;
       if (id === "upload" && !upload) throw new Error("No uploaded bill to restart from. Upload one in the app.");
+      // a scenario behind a feature flag doesn't exist while its flag is off (not even by name)
+      const listed = SCENARIOS.find((s) => s.id === id);
+      if (id !== "upload" && (!listed || (listed.flag && !serverFlags()[listed.flag]))) throw new Error(`Unknown scenario ${id}`);
       store.reset(upload ? seedUpload(upload) : seedScenario(id));
       store.mutate((w) => (w.agent.mode = mode));
       store.log({ actor: "director", type: "scenario.loaded", data: { scenarioId: id, mode } });
