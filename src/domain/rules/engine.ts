@@ -168,12 +168,14 @@ export function computeUsage(world: World, caseId: string, excludePaymentId?: st
   for (const card of world.cards) {
     usage.cardYearUSD[card.personId] = (usage.cardYearUSD[card.personId] ?? 0) + card.annualUsedUSD;
   }
+  const year = world.now.slice(0, 4);
   for (const c of Object.values(world.cases)) {
+    // FX bought "this calendar year, before the case" belongs to the year the case opened; the quota resets on 1 January
+    if (c.openedAt.slice(0, 4) !== year) continue;
     for (const p of c.people) {
       if (p.priorFxYearUSD) usage.fxYearUSD[p.id] = p.priorFxYearUSD;
     }
   }
-  const year = world.now.slice(0, 4);
   for (const p of Object.values(world.payments)) {
     if (p.id === excludePaymentId || !COUNTED.has(p.status)) continue;
     if (p.createdAt.slice(0, 4) !== year) continue;

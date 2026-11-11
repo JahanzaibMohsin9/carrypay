@@ -152,6 +152,9 @@ export function docKindLabel(kind: DocumentKind): string {
     fx_purchase_application: "FX purchase application",
     admission_letter: "Admission letter",
     receipt: "Receipt",
+    scholarship_award: "Scholarship award letter",
+    payment_plan_offer: "Payment plan offer",
+    credit_note: "Credit note",
     other: "Document",
   }[kind];
 }

@@ -1,4 +1,5 @@
 // Core domain types shared by the server (agent, mock world) and the UI.
+import type { Adjustment, Arrangement, FundingProfile, PlanMandate } from "./plan/types";
 
 export type Currency = "USD" | "PKR" | "THB" | "GBP" | "CNY" | "EUR" | "SGD" | "MYR" | "AED" | "SAR" | "TRY" | "HKD" | "AUD" | "CAD";
 export type Lang = "en" | "ur" | "zh";
@@ -195,6 +196,9 @@ export type DocumentKind =
   | "fx_purchase_application"
   | "admission_letter"
   | "receipt"
+  | "scholarship_award"
+  | "payment_plan_offer"
+  | "credit_note"
   | "other";
 
 export interface Doc {
@@ -315,6 +319,11 @@ export interface World {
   counters: Record<string, number>;
   /** scenario "upload": the family's own bill */
   upload?: UploadedBill;
+  /** plan workflow (src/domain/plan): the family's own figures by case, the institution's payment terms, bill adjustments, plan mandates */
+  funding?: Record<string, FundingProfile>;
+  arrangements?: Record<string, Arrangement>;
+  adjustments?: Record<string, Adjustment>;
+  mandates?: Record<string, PlanMandate>;
 }
 
 /** One hash-chained entry in the tamper-evident activity log. */
