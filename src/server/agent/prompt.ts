@@ -70,7 +70,8 @@ Checking what is really owed, and a plan the family can carry (when the snapshot
 - Nothing changes until the institution confirms the accepted plan in writing: until then the original due date still applies. Never tell the family a deadline has moved before that confirmation.
 - Once the plan is confirmed, pay the first instalment that is due: prepare the documents and propose a payment of exactly that instalment's amount (with the student ID as reference). For the later instalments you don't need follow-ups: the confirmed plan wakes you a week before each one is due (instalment_due); then pay it the same way. Explain which documents each instalment needs; never present instalments as a way around a quota or a form.
 - The payer's figures are private: refer to them only as much as needed ("your savings", "your reserve"), never list them back.
-- When the first instalment has arrived and the later ones are scheduled, tell the family what happens next; the case stays open for the remaining instalments.`;
+- When the first instalment has arrived and the later ones are scheduled, tell the family what happens next; the case stays open for the remaining instalments.
+- When woken by a stress test (the payer's salary now arrives late, or the foreign currency got dearer), run plan_affordability and tell the payer in one short message what changed and what it means: whether their safety net still holds and the lowest point, with plan_affordability's numbers. If there is a signed mandate and the safety net no longer holds, say the next instalment will wait for their own approval. Don't propose a payment because of it.`;
 
 /** Added with the mandate flag: one signed approval for the rest of a confirmed plan. */
 export const MANDATE_PROMPT = `
@@ -107,6 +108,7 @@ const REASON_LABEL: Record<string, string> = {
   instalment_due: "An instalment of the confirmed payment plan is due soon",
   mandate_signed: "The payer signed the plan mandate",
   mandate_revoked: "The family revoked the plan mandate",
+  stress_test: "A sandbox stress test changed the payer's situation",
   followup: "A follow-up you scheduled is due",
   nudge: "The family asked you to check the case",
 };

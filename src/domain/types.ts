@@ -336,6 +336,36 @@ export interface World {
   arrangements?: Record<string, Arrangement>;
   adjustments?: Record<string, Adjustment>;
   mandates?: Record<string, PlanMandate>;
+  /** sandbox rate overrides (Director stress test): from `from` on, `currency` costs `pct` more in every other currency */
+  fxShocks?: FxShock[];
+  /** Director stress tests applied to this world, with the engine's before/after figures */
+  stressTests?: AppliedStress[];
+}
+
+/** A sandbox rate override: from `from` on, one unit of `currency` costs `pct` more (0.05 = 5%) in every other currency. */
+export interface FxShock {
+  currency: Currency;
+  pct: number;
+  from: string;
+}
+
+/** Director stress tests that change the sandbox world itself (not just a what-if in the planner). */
+export type StressKind = "salary_late" | "fx_up";
+
+export interface AppliedStress {
+  id: string;
+  kind: StressKind;
+  caseId: string;
+  at: string;
+  /** e.g. "Salary 3 weeks late", "GBP 5% dearer" */
+  label: string;
+  /** the engine's projection for the case just before and just after (home currency) */
+  before: { lowestHeadroom: number; firstBreachAt?: string; shortBy?: number };
+  after: { lowestHeadroom: number; firstBreachAt?: string; shortBy?: number };
+  /** salary_late: each income's next date, before and after */
+  moved?: { label: string; from: string; to: string }[];
+  /** fx_up: the sandbox mid rate (home currency per unit of `currency`), before and after */
+  rate?: { currency: Currency; homeCurrency: Currency; before: number; after: number };
 }
 
 /** One hash-chained entry in the tamper-evident activity log. */

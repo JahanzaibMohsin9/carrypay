@@ -14,7 +14,18 @@ const when = z.string().datetime();
 
 export const FundingInput = z.object({
   balances: z.array(z.object({ label: z.string().min(1).max(60), amount: money })).max(10),
-  income: z.array(z.object({ label: z.string().min(1).max(60), amount: money, firstAt: when, everyMonths: z.number().int().min(1).max(12).optional() })).max(10),
+  income: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(60),
+        amount: money,
+        firstAt: when,
+        everyMonths: z.number().int().min(1).max(12).optional(),
+        // a late salary the sandbox applied (Director stress test): kept when the payer saves other figures
+        late: z.object({ from: when, days: z.number().int().min(1).max(366) }).optional(),
+      }),
+    )
+    .max(10),
   essentialsMonthly: money,
   reserveFloor: money,
   conditional: z.array(z.object({ label: z.string().min(1).max(60), amount: money, expectedAt: when, status: z.enum(["expected", "confirmed"]) })).max(10),

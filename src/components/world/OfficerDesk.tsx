@@ -8,6 +8,7 @@ import { corridorOf } from "@/domain/corridors";
 import { evaluateRoute, findRule } from "@/domain/rules/engine";
 import type { LedgerEntry, Payment, World } from "@/domain/types";
 import { RuleChip } from "../RuleChip";
+import { OfficerStress } from "./OfficerStress";
 
 // The bank's side of a CarryPay payment: the remittance package an FX officer
 // would review before releasing a transfer. Built from the same world state,
@@ -60,6 +61,7 @@ export function OfficerDesk() {
         <p className="text-[12px] leading-relaxed text-[#8193a8]">
           Every transfer CarryPay sends arrives as a complete package: applicant, verified beneficiary, the regulations checked with their sources, the signed forms, the family&apos;s approval and a draft SWIFT message. The officer reviews instead of re-collecting paperwork.
         </p>
+        <OfficerStress w={w} c={c} tz={tz} planOn={!!state.flags?.plan} />
         {transfers.length === 0 && <p className="px-1 py-3 text-[12px] text-[#8193a8]">No bank transfers on this case yet.</p>}
         {transfers.map((p) => (
           <Package key={p.id} w={w} p={p} ledger={state.ledger} tz={tz} city={corridor.fromCity.name} />

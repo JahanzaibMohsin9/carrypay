@@ -192,9 +192,9 @@ export function evaluateRun(w: World, ledger: LedgerEntry[]): RunEvaluation {
   check("chain_ok", "Activity log hash chain verifies", chain.ok);
 
   // money, all priced by the engine
-  const price = (route: Route, amount: number) => priceRoute({ corridor, route, deliverAmount: amount, institution: inst, simDate: w.now });
+  const price = (route: Route, amount: number) => priceRoute({ corridor, route, deliverAmount: amount, institution: inst, simDate: w.now, fxShocks: w.fxShocks });
   const paidSource = done.reduce((s, p) => s + p.cost.totalSource, 0);
-  const refundedSource = c.expectedRefund?.receivedAt ? c.expectedRefund.amount * midRate(src, dest, w.now) : 0;
+  const refundedSource = c.expectedRefund?.receivedAt ? c.expectedRefund.amount * midRate(src, dest, w.now, w.fxShocks) : 0;
   const baselineCardSource = done.reduce((s, p) => s + (price("card_payment", p.amount)?.totalSource ?? p.cost.totalSource), 0);
   const final = invoices.find((i) => i.kind === "final");
   const corrected = invoices.find((i) => i.kind === "corrected_final");

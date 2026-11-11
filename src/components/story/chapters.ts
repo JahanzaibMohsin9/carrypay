@@ -40,7 +40,7 @@ const pkr = (n: number) => money(Math.round(n / 1000) * 1000, "PKR");
 /** What the same amount would cost on another route, from the rules engine. */
 function routeDiff(w: World, p: Payment, other: "card_payment" | "bank_transfer") {
   const c = w.cases[p.caseId];
-  const alt = priceRoute({ corridor: c.corridor, route: other, deliverAmount: p.amount, institution: w.institutions[p.institutionId], simDate: p.createdAt });
+  const alt = priceRoute({ corridor: c.corridor, route: other, deliverAmount: p.amount, institution: w.institutions[p.institutionId], simDate: p.createdAt, fxShocks: w.fxShocks });
   return alt ? alt.totalSource - p.cost.totalSource : 0;
 }
 

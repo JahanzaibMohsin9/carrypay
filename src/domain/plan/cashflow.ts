@@ -131,8 +131,26 @@ export interface CashflowPoint {
 }
 
 export interface Assumption {
-  id: "rate_today" | "balances_entered" | "essentials_monthly" | "pay_ahead" | "conditional_excluded" | "conditional_counted" | "stress";
+  id: "rate_today" | "balances_entered" | "essentials_monthly" | "pay_ahead" | "conditional_excluded" | "conditional_counted" | "income_late" | "fx_override" | "stress";
   text: string;
+}
+
+type Income = FundingProfile["income"][number];
+
+/** When a payment of this income due at `at` really arrives: later if a late salary applies to it. */
+export function incomeArrives(income: Income, at: string): string {
+  return income.late && at >= income.late.from ? addDays(at, income.late.days) : at;
+}
+
+/** The next payment of an income on or after `at` (its due date, before any delay), or undefined if there is none. */
+export function nextIncomeDue(income: Income, at: string): string | undefined {
+  let d = income.firstAt;
+  for (let n = 0; n < 240; n++) {
+    if (d >= at) return d;
+    if (!income.everyMonths) return undefined;
+    d = addMonths(income.firstAt, income.everyMonths * (n + 1));
+  }
+  return undefined;
 }
 
 export interface Projection {
@@ -189,7 +207,9 @@ export function projectCashflow(world: World, caseId: string, opts: ProjectOptio
   for (const income of profile.income) {
     let at = income.firstAt;
     for (let n = 0; n < 240 && at <= until; n++) {
-      const lands = at >= now ? addDays(at, stress.incomeDelayDays ?? 0) : at;
+      // when it really arrives (a late salary in the sandbox), then any what-if delay on money not yet in
+      const due = incomeArrives(income, at);
+      const lands = due >= now ? addDays(due, stress.incomeDelayDays ?? 0) : due;
       if (at >= from && lands <= until) events.push({ at: lands, kind: "income", label: income.label, amount: income.amount, order: 2 });
       if (!income.everyMonths) break;
       at = addMonths(income.firstAt, income.everyMonths * (n + 1));
@@ -243,6 +263,12 @@ export function projectCashflow(world: World, caseId: string, opts: ProjectOptio
       ? { id: "conditional_counted", text: "Money that is expected but not confirmed is counted as if it were certain." }
       : { id: "conditional_excluded", text: "Money that is expected but not confirmed is not counted." },
   ];
+  for (const income of profile.income) {
+    if (income.late) assumptions.push({ id: "income_late", text: `${income.label} arrives ${income.late.days} days late from ${income.late.from.slice(0, 10)} (sandbox stress test).` });
+  }
+  for (const s of world.fxShocks ?? []) {
+    assumptions.push({ id: "fx_override", text: `${s.currency} is ${Math.round(s.pct * 100)}% dearer from ${s.from.slice(0, 10)} (sandbox stress test); today's rate already includes it.` });
+  }
   const stressText = describeStress(stress);
   if (stressText) assumptions.push({ id: "stress", text: `Stress test: ${stressText}.` });
 
@@ -275,7 +301,7 @@ function planPayments(world: World, caseFile: CaseFile, schedule: Schedule, stre
   for (const ob of obligationsFor(world, caseFile.id, schedule)) {
     const institution = world.institutions[ob.institutionId];
     const deliverAmount = r2(ob.amount * (1 + (stress.costIncreasePct ?? 0)));
-    const cost = priceRoute({ corridor: caseFile.corridor, route, deliverAmount, institution, simDate: now });
+    const cost = priceRoute({ corridor: caseFile.corridor, route, deliverAmount, institution, simDate: now, fxShocks: world.fxShocks });
     if (!cost) continue;
     const leadMs = (cost.arrivesInHours + 24) * 3_600_000;
     const ideal = new Date(Date.parse(ob.dueAt) - leadMs).toISOString();

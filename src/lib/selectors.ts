@@ -68,7 +68,7 @@ function savingsVs(w: World, caseId: string, against: "atm_cash" | "card_payment
   const c = w.cases[caseId];
   let saved = 0;
   for (const p of casePayments(w, caseId).filter((x) => x.status === "completed")) {
-    const alt = priceRoute({ corridor: c.corridor, route: against, deliverAmount: p.amount, institution: w.institutions[p.institutionId], simDate: p.createdAt });
+    const alt = priceRoute({ corridor: c.corridor, route: against, deliverAmount: p.amount, institution: w.institutions[p.institutionId], simDate: p.createdAt, fxShocks: w.fxShocks });
     if (alt) saved += alt.totalSource - p.cost.totalSource;
   }
   return { saved: Math.max(0, saved), against, currency: corridorOf(c.corridor).sourceCurrency };

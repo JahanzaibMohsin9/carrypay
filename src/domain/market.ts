@@ -1,5 +1,8 @@
-import type { CorridorId, Currency, Route } from "./types";
+import type { CorridorId, Currency, FxShock, Route } from "./types";
 import { corridorOf } from "./corridors";
+
+/** The world's rate overrides (World.fxShocks), passed wherever a rate is read. */
+export type FxShocks = readonly FxShock[] | undefined;
 
 /**
  * Sandbox market data. These are illustrative numbers for the demo, not live
@@ -22,22 +25,33 @@ export const USD_RATES: Record<Currency, number> = {
   CAD: 1.385,
 };
 
-/** Small deterministic daily drift so rates move a little across simulated days. */
-export function ratePerUSD(cur: Currency, simDate: string): number {
-  if (cur === "USD") return 1;
+/** How much dearer a currency is on a date because of the world's rate overrides (1 = none). */
+function shockFactor(cur: Currency, simDate: string, shocks: FxShocks): number {
+  let f = 1;
+  for (const s of shocks ?? []) if (s.currency === cur && s.from <= simDate) f *= 1 + s.pct;
+  return f;
+}
+
+/**
+ * Units of `cur` per USD. Small deterministic daily drift so rates move a little across simulated days;
+ * a sandbox rate override (a Director stress test) makes its currency dearer from its date on.
+ */
+export function ratePerUSD(cur: Currency, simDate: string, shocks?: FxShocks): number {
+  const shocked = shocks?.length ? shockFactor("USD", simDate, shocks) / shockFactor(cur, simDate, shocks) : 1;
+  if (cur === "USD") return shocked;
   const day = Math.floor(new Date(simDate).getTime() / 86_400_000);
   const seed = (day * 9301 + cur.charCodeAt(0) * 49297) % 233280;
   const drift = (seed / 233280 - 0.5) * 0.006; // ±0.3%
-  return USD_RATES[cur] * (1 + drift);
+  return USD_RATES[cur] * (1 + drift) * shocked;
 }
 
 /** source units per 1 unit of destination currency */
-export function midRate(source: Currency, dest: Currency, simDate: string): number {
-  return ratePerUSD(source, simDate) / ratePerUSD(dest, simDate);
+export function midRate(source: Currency, dest: Currency, simDate: string, shocks?: FxShocks): number {
+  return ratePerUSD(source, simDate, shocks) / ratePerUSD(dest, simDate, shocks);
 }
 
-export function toUSD(amount: number, cur: Currency, simDate: string): number {
-  return amount / ratePerUSD(cur, simDate);
+export function toUSD(amount: number, cur: Currency, simDate: string, shocks?: FxShocks): number {
+  return amount / ratePerUSD(cur, simDate, shocks);
 }
 
 export interface FeeRule {

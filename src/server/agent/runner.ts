@@ -7,7 +7,7 @@ import type { Store, Trigger } from "../store";
 import { systemPrompt, wakeMessage } from "./prompt";
 import { caseSnapshot } from "./snapshot";
 import { anthropicToolDefs, executeTool } from "./tools";
-import { SCRIPTS } from "./scripted";
+import { SCRIPTS, STRESS_STEPS } from "./scripted";
 import { fallbackConfig, hasProviderKey, providerConfig, type ProviderConfig } from "./llm";
 import { buildVault, type Vault } from "./privacy";
 
@@ -123,16 +123,22 @@ export class AgentRunner {
       w.agent.lastError = undefined;
       w.agent.runs += 1;
     });
+    // A Director stress test outside Live mode: no recorded or scripted run covers it. It gets fixed,
+    // hand-written steps (STRESS_STEPS) rather than consuming a run, which would play it out of context.
+    const stress = mode !== "live" && triggers.some((t) => t.reason === "stress_test");
+    const rest = mode === "live" ? triggers : triggers.filter((t) => t.reason !== "stress_test");
     this.store.log({
       actor: "system",
       type: "agent.wake",
       caseId,
-      data: { mode, triggers: triggers.map((t) => ({ reason: t.reason, detail: t.detail })) },
+      data: { mode, triggers: triggers.map((t) => ({ reason: t.reason, detail: t.detail })), ...(stress ? { handwritten: "stress_test" } : {}) },
     });
     try {
       if (mode === "live") await this.runLive(caseId, triggers);
-      else if (mode === "replay") await this.runReplay(caseId, triggers);
-      else await this.runScripted(caseId, triggers);
+      else {
+        if (rest.length) await (mode === "replay" ? this.runReplay(caseId, rest) : this.runScripted(caseId, rest));
+        if (stress) await this.runSteps(caseId, STRESS_STEPS);
+      }
     } catch (err) {
       const msg = describeError(err);
       this.store.mutate((w) => (w.agent.lastError = msg));
@@ -381,7 +387,11 @@ export class AgentRunner {
     const idx = script.findIndex((s, i) => !this.scriptedCursor.has(i) && s.when(triggers, this.store.world));
     if (idx < 0) return;
     this.scriptedCursor.add(idx);
-    for (const make of script[idx].steps) {
+    await this.runSteps(caseId, script[idx].steps);
+  }
+
+  private async runSteps(caseId: string, steps: ScriptedRun["steps"]) {
+    for (const make of steps) {
       if (this.store.world.agent.killSwitch) break;
       const step = make(this.store.world, caseId);
       if (!step) continue;

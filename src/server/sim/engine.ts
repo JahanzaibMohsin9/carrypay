@@ -1,9 +1,11 @@
-import type { Mail, Payment, PaymentStatus, ScheduledItem } from "@/domain/types";
+import type { AppliedStress, Mail, Payment, PaymentStatus, ScheduledItem, StressKind } from "@/domain/types";
 import { INSTITUTIONS } from "@/domain/institutions";
+import { corridorOf } from "@/domain/corridors";
+import { midRate } from "@/domain/market";
 import type { Store } from "../store";
 import { addDoc, hoursFrom, issueInvoice, sendMail } from "./factory";
 import { institutionReply } from "./institution";
-import { obligationsFor } from "@/domain/plan/cashflow";
+import { DEFAULT_STRESSES, incomeArrives, nextIncomeDue, obligationsFor, projectCashflow, type Projection } from "@/domain/plan/cashflow";
 import { flagOn } from "../flags";
 
 // ---------------------------------------------------------------------------
@@ -394,6 +396,94 @@ export function injectChaos(store: Store, kind: ChaosKind) {
     if (kind === "unallocated") chaos.unallocated = true;
   });
   store.log({ actor: "director", type: "chaos.injected", narration: `Chaos: ${label}`, data: { kind } });
+}
+
+// ---------------------------------------------------------------------------
+// Stress tests: the planner's what-ifs, applied to the sandbox world itself
+
+/** How late the salary gets, and how much dearer the foreign currency (the planner's default stress tests). */
+export const STRESS_SALARY_DAYS = DEFAULT_STRESSES.find((s) => s.id === "salary_late")!.stress.incomeDelayDays!;
+export const STRESS_FX_PCT = DEFAULT_STRESSES.find((s) => s.id === "fx_5")!.stress.fxShockPct!;
+
+const headroomOf = (p: Projection): AppliedStress["before"] => ({
+  lowestHeadroom: p.lowest.headroom,
+  ...(p.firstBreach ? { firstBreachAt: p.firstBreach.at, shortBy: p.firstBreach.shortBy } : {}),
+});
+
+/** The case a stress test applies to: one with the payer's figures (a funding profile), with the plan feature on. */
+export function stressCase(store: Store, caseId?: string) {
+  if (!flagOn("plan")) throw new Error("Stress tests are part of the plan feature, which is off.");
+  const w = store.world;
+  const c = caseId ? w.cases[caseId] : Object.values(w.cases).find((x) => w.funding?.[x.id]);
+  if (!c || !w.funding?.[c.id]) throw new Error("Stress tests need a case where the payer has entered their figures.");
+  return c;
+}
+
+/**
+ * Director: apply one of the planner's stress tests to the sandbox world for real. "salary_late" makes every
+ * payment of the payer's income from now on arrive three weeks late (in their funding profile); "fx_up" makes
+ * the institution's currency 5% dearer from now on (a sandbox rate override every price reads). The planner,
+ * the mandate's reserve check and the bank's view all see it, because they read the same world. The agent is
+ * woken to work out the effect with plan_affordability and tell the family.
+ */
+export function injectStress(store: Store, kind: StressKind, caseId?: string): AppliedStress {
+  const c = stressCase(store, caseId);
+  const w = store.world;
+  if (w.stressTests?.some((s) => s.caseId === c.id && s.kind === kind)) throw new Error("This stress test is already applied. Reset the scenario to start again.");
+  const profile = w.funding![c.id];
+  const before = projectCashflow(w, c.id)!;
+  const now = w.now;
+  const id = `st_${(w.stressTests?.length ?? 0) + 1}`;
+  let record: AppliedStress;
+  if (kind === "salary_late") {
+    const days = STRESS_SALARY_DAYS;
+    const moved = profile.income.flatMap((inc) => {
+      const due = nextIncomeDue(inc, now);
+      return due ? [{ label: inc.label, from: incomeArrives(inc, due), to: incomeArrives({ ...inc, late: { from: now, days: (inc.late?.days ?? 0) + days } }, due) }] : [];
+    });
+    if (!moved.length) throw new Error("The payer has no income still to come.");
+    store.mutate((x) => {
+      for (const inc of x.funding![c.id].income) {
+        if (nextIncomeDue(inc, now)) inc.late = { from: now, days: (inc.late?.days ?? 0) + days };
+      }
+    });
+    record = { id, kind, caseId: c.id, at: now, label: `Salary ${days / 7} weeks late`, before: headroomOf(before), after: headroomOf(projectCashflow(store.world, c.id)!), moved };
+  } else {
+    const currency = w.institutions[c.institutionId].bank.currency;
+    const home = corridorOf(c.corridor).sourceCurrency;
+    const rateBefore = midRate(home, currency, now, w.fxShocks);
+    store.mutate((x) => (x.fxShocks ??= []).push({ currency, pct: STRESS_FX_PCT, from: now }));
+    const rateAfter = midRate(home, currency, now, store.world.fxShocks);
+    record = {
+      id,
+      kind,
+      caseId: c.id,
+      at: now,
+      label: `${currency} ${Math.round(STRESS_FX_PCT * 100)}% dearer`,
+      before: headroomOf(before),
+      after: headroomOf(projectCashflow(store.world, c.id)!),
+      rate: { currency, homeCurrency: home, before: rateBefore, after: rateAfter },
+    };
+  }
+  store.mutate((x) => (x.stressTests ??= []).push(record));
+  const cur = profile.currency;
+  const fmt = (n: number) => `${cur} ${Math.round(n).toLocaleString("en-US")}`;
+  const effect = record.after.firstBreachAt
+    ? `the payer's balance would fall ${fmt(record.after.shortBy!)} below their safety net on ${record.after.firstBreachAt.slice(0, 10)}`
+    : `the lowest point is ${fmt(record.after.lowestHeadroom)} above the safety net (was ${fmt(record.before.lowestHeadroom)})`;
+  const what =
+    record.kind === "salary_late"
+      ? record.moved!.map((m) => `${m.label} now arrives ${m.to.slice(0, 10)} instead of ${m.from.slice(0, 10)}`).join("; ")
+      : `1 ${record.rate!.currency} now costs ${record.rate!.homeCurrency} ${record.rate!.after.toFixed(4)} instead of ${record.rate!.before.toFixed(4)}`;
+  store.log({
+    actor: "director",
+    type: "chaos.injected",
+    caseId: c.id,
+    narration: `Stress test: ${record.label}. ${what}; ${effect}`,
+    data: { kind, stressId: id, label: record.label, before: record.before, after: record.after, ...(record.moved ? { moved: record.moved } : {}), ...(record.rate ? { rate: record.rate } : {}) },
+  });
+  store.trigger({ caseId: c.id, reason: "stress_test", detail: `Sandbox stress test "${record.label}": ${what}. Run plan_affordability to see the effect and tell the payer.` });
+  return record;
 }
 
 // ---------------------------------------------------------------------------
