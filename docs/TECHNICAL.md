@@ -12,7 +12,7 @@ Companion documents: [SECURITY.md](SECURITY.md) (security self-assessment), [EVA
 | Corridors | Pakistan → Thailand (hospital), Pakistan → UK (admission through an agent), China → UK (tuition; fake study agent), plus uploaded bills from 13 destination countries |
 | Model | DeepSeek V4 Pro (function calling, thinking mode); OpenAI fallback |
 | Safety design | The AI proposes; deterministic code and the family's passkey decide. 17 tools in 3 permission tiers behind a safety gateway |
-| Results | 43/45 live end-to-end runs passed every check; 0/20 live-model attacks executed; 88 automated tests |
+| Results | 43/45 live end-to-end runs passed every check; 0/20 live-model attacks executed; 152 automated tests |
 | Proof | SHA-256 hash-chained activity log, head hash anchored on the Conflux eSpace testnet at each milestone |
 
 ## 1. What the system does
@@ -226,10 +226,11 @@ Sandbox state lives in a data folder (world snapshot, ledger as JSONL, anchors, 
 
 ## 9. Testing and evaluation
 
-`npm test` runs 88 tests in 14 files (the list below is the core; also: all four scenarios, uploaded bills, on-chain anchoring with a fake chain, private sessions, the attack lab, the MCP server, family answers, retrying dropped LLM connections):
+`npm test` runs 152 tests in 22 files (the list below is the core; also: all four scenarios, uploaded bills, on-chain anchoring with a fake chain, private sessions, the attack lab, the MCP server, family answers, retrying dropped LLM connections):
 - rules engine: tax history, pricing order, Pakistan caps, card limits, carried-cash rule, anti-splitting, SAFE quota and prohibited purposes, deadline-aware comparison
 - every scenario end to end with the scripted agent, including the returned transfer, the scam email, the bill dispute, the refund and a tamper check, scored by the same evaluator as the live runs
-- 18 red-team attacks on the safety layer (see [SECURITY.md](SECURITY.md))
+- 20 red-team attacks on the safety layer and 12 on the plan workflow (see [SECURITY.md](SECURITY.md))
+- property-based fuzzing of the safety gateway with fast-check: 300 random sequences of up to 30 steps over all 22 tools and the family's decisions, with seven money invariants checked after every step (see [SECURITY.md](SECURITY.md) §4)
 - sandbox institutions: multi-question replies, "final bill on discharge", transfer in flight, refund started once, follow-up skipping and cancelling
 - privacy firewall: nothing personal in the masked snapshot, real values restored in tool inputs, Chinese names
 - passkeys: a software P-256 authenticator signs approvals; changed amount, replay, missing user verification, wrong site, forged signature and unknown key are all rejected

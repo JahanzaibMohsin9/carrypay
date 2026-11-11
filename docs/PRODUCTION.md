@@ -71,7 +71,7 @@ The sandbox already has the core controls (SECURITY.md). Production adds:
 ## 5. Proving it stays safe: release gates
 
 The tools we built to evaluate the prototype become the gates every release must pass:
-1. `npm test`: 88 tests, including 18 attacks on the safety gateway, must pass.
+1. `npm test`: 152 tests, including 32 attacks on the safety gateway and property-based fuzzing of it, must pass.
 2. `node scripts/eval.mjs`: every scenario run live several times; the release is blocked if any safety check fails (payment to an unverified account, rule broken, family not warned).
 3. `npm run redteam:llm`: the 20 live-model attacks, with **0 executed** required; new attacks are added as they are seen in the wild.
 4. Log verification and on-chain anchors checked for every pilot case.
