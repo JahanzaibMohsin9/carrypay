@@ -108,6 +108,10 @@ describe.skipIf(!hasProviderKey())(`live: ${SCENARIO} ×${RUNS}`, () => {
     if (RUNS === 1) {
       const { store, ev } = results[0];
       console.log(JSON.stringify({ success: ev.success, failed: ev.checks.filter((c) => !c.pass), metrics: ev.metrics }, null, 1));
+      // vitest can swallow console output: keep the summary next to the recordings too
+      const dir = process.env.CARRYPAY_DATA_DIR ?? path.join(process.cwd(), ".data-live");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "last-run.json"), JSON.stringify({ scenario: SCENARIO, success: ev.success, checks: ev.checks, metrics: ev.metrics, money: ev.money, messages: store.world.messages.filter((x) => x.from === "agent").map((x) => `[${x.importance}] ${x.text}`) }, null, 1));
       for (const m of store.world.messages.filter((x) => x.from === "agent")) console.log(`[${m.importance}] ${m.text}`);
     }
     expect(results.filter((r) => !r.ev.success).map((r) => r.ev.checks.filter((c) => !c.pass))).toEqual([]);
