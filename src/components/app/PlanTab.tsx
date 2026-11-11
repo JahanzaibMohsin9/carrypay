@@ -23,7 +23,7 @@ const S = {
     keeps: "Keeps your safety net",
     keepsSub: "Even with a late salary or a dearer currency",
     keepsBase: "In the normal case",
-    dips: (amt: string, date: string) => `Goes ${amt} below your safety net on ${date}`,
+    dips: (amt: string, date: string) => `Falls below your safety net from ${date}, by up to ${amt}`,
     noFigures: "No figures yet",
     noFiguresHint: "The person who pays enters their money, income and essentials, so CarryPay can check what they can carry.",
     chart: "Your money over time",
@@ -32,10 +32,10 @@ const S = {
     ways: "Ways to pay",
     pick: "CarryPay's pick",
     total: "Total cost",
-    fees: "of it fees",
+    fees: (amt: string) => `${amt} of it fees`,
     lowest: "Lowest point",
-    aboveNet: "above your safety net",
-    belowNet: "below your safety net",
+    aboveNet: (amt: string) => `${amt} above your safety net`,
+    belowNet: (amt: string) => `${amt} below your safety net`,
     holds: "Holds",
     dipsShort: "Dips below",
     accept: "Accept this plan",
@@ -84,7 +84,7 @@ const S = {
     keeps: "应急储备不受影响",
     keepsSub: "即使工资晚到或汇率上涨",
     keepsBase: "正常情况下",
-    dips: (amt: string, date: string) => `${date}会比应急储备少 ${amt}`,
+    dips: (amt: string, date: string) => `从${date}起会低于应急储备，最多少 ${amt}`,
     noFigures: "还没有填写家庭收支",
     noFiguresHint: "由付款人填写可用资金、收入和必要开支，CarryPay 才能核算家里能承担多少。",
     chart: "资金变化",
@@ -93,10 +93,10 @@ const S = {
     ways: "付款方式",
     pick: "CarryPay 推荐",
     total: "总费用",
-    fees: "其中手续费",
+    fees: (amt: string) => `其中手续费 ${amt}`,
     lowest: "最低点",
-    aboveNet: "高于应急储备",
-    belowNet: "低于应急储备",
+    aboveNet: (amt: string) => `高于应急储备 ${amt}`,
+    belowNet: (amt: string) => `低于应急储备 ${amt}`,
     holds: "守住",
     dipsShort: "低于储备",
     accept: "接受此方案",
@@ -233,11 +233,11 @@ function Affordability({ w, c, s, lang, viewer, payerId, payerName, hasPasskey }
                     <dt className="text-ink-3">{s.total}</dt>
                     <dd className="num text-right font-semibold text-ink">
                       {money(r.totalHomeCost, cur)}
-                      {r.feesHomeCost > 0 && <span className="block text-[11px] font-normal text-ink-3">{money(r.feesHomeCost, cur)} {s.fees}</span>}
+                      {r.feesHomeCost > 0 && <span className="block text-[11px] font-normal text-ink-3">{s.fees(money(r.feesHomeCost, cur))}</span>}
                     </dd>
                     <dt className="text-ink-3">{s.lowest}</dt>
                     <dd className="num text-right text-ink">
-                      {money(Math.abs(r.lowestHeadroom), cur)} {r.lowestHeadroom >= 0 ? s.aboveNet : s.belowNet}
+                      {(r.lowestHeadroom >= 0 ? s.aboveNet : s.belowNet)(money(Math.abs(r.lowestHeadroom), cur))}
                     </dd>
                   </dl>
                   <ul className="mt-3 flex flex-wrap gap-1.5">
@@ -299,7 +299,7 @@ function Verdict({ p, holdsAll, s, tz, lang }: { p: Projection; holdsAll: boolea
       <div className="flex items-start gap-3">
         <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-strong" aria-hidden />
         <div>
-          <div className="font-semibold text-ink">{s.dips(money(p.firstBreach.shortBy, p.currency), dayLabel(p.firstBreach.at, tz, lang))}</div>
+          <div className="font-semibold text-ink">{s.dips(money(Math.max(p.firstBreach.shortBy, -p.lowest.headroom), p.currency), dayLabel(p.firstBreach.at, tz, lang))}</div>
           <div className="text-[13px] text-ink-3">
             {s.reserve}: {money(p.reserveFloor, p.currency)}
           </div>
