@@ -119,6 +119,16 @@ export function caseSnapshot(w: World, caseId: string) {
               : {}),
           }
         : {}),
+      ...(inst.pendingBank
+        ? {
+            account_change: {
+              announced_by_institution_at: inst.pendingBank.announcedAt,
+              old_account_accepted_until: inst.pendingBank.effectiveFrom,
+              status: inst.pendingBank.status === "review" ? "with the bank for review: not payable yet" : `rejected by the bank: ${inst.pendingBank.note ?? ""}`,
+              notice_document: inst.pendingBank.noticeDocId,
+            },
+          }
+        : {}),
       accepts_cards: inst.acceptsCards,
       card_surcharge_pct: inst.cardSurchargePct ?? 0,
       payment_reference_required: inst.referenceRule?.label,

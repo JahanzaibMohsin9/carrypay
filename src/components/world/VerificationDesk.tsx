@@ -137,3 +137,83 @@ function CheckCard({ inst, spec, state, tz }: { inst: Institution; spec: CheckSp
     </div>
   );
 }
+
+/** A known institution's announced new account, waiting for the bank's reviewer (flag "verification"). */
+export function BankChangeDesk({ inst, tz }: { inst: Institution; tz: string }) {
+  const [method, setMethod] = useState("institution_letter");
+  const [note, setNote] = useState("");
+  const [rejecting, setRejecting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const p = inst.pendingBank!;
+  const spec = checksOf(inst).find((c) => c.spec.id === "account")!.spec;
+  const send = async (action: "confirm" | "reject") => {
+    setBusy(true);
+    setError(null);
+    try {
+      await post("/api/verification", { kind: "bank_change", institutionId: inst.id, action, method: action === "confirm" ? method : undefined, note: action === "reject" ? note : undefined });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="rounded-xl border border-[#2a3441] bg-[#16202b]">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#2a3441] px-3 py-2.5">
+        <ShieldQuestion size={15} className="text-[#7fb3ff]" />
+        <span className="text-[13px] font-semibold text-white">Account change to review · {inst.name}</span>
+        <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold", p.status === "review" ? "bg-[#3a2c14] text-[#fbbf6b]" : "bg-[#3a1c1c] text-[#ff8a80]")}>
+          {p.status === "review" ? "Not payable until verified" : "Rejected"}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 p-3 text-[12px] md:grid-cols-2">
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8193a8]">On record (still paid)</p>
+          <p>{inst.bank.bankName}</p>
+          <p className="font-mono">{inst.bank.accountNumber} · {inst.bank.swift}</p>
+        </div>
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8193a8]">Announced {dateTime(p.announcedAt, tz)} from {inst.email}</p>
+          <p>{p.bank.bankName}</p>
+          <p className="font-mono">{p.bank.accountNumber} · {p.bank.swift}</p>
+          <p className="text-[#8193a8]">Old account accepted until {dateTime(p.effectiveFrom, tz)}</p>
+        </div>
+      </div>
+      {p.status === "review" ? (
+        <div className="space-y-1.5 border-t border-[#2a3441] p-3 text-[12px]">
+          <p className="text-[#8193a8]">A notice from the verified address is not enough: confirm the new account on independent evidence. Approvals and mandates for the old account will need the payer again.</p>
+          <label className="block text-[11px] text-[#8193a8]" htmlFor="bank-change-method">
+            Confirmed on
+          </label>
+          <select id="bank-change-method" value={method} onChange={(e) => setMethod(e.target.value)} className="w-full rounded-md border border-[#2a3441] bg-[#0b1016] px-2 py-1.5 text-[12px] text-[#d7e0ea] md:w-auto">
+            {spec.methods.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <div className="flex flex-wrap gap-1.5">
+            <button disabled={busy} onClick={() => send("confirm")} className="rounded-md bg-[#163626] px-2.5 py-1 font-semibold text-[#6ee7a8] hover:bg-[#1d4630] disabled:opacity-50">
+              Verify the new account
+            </button>
+            <button disabled={busy} onClick={() => setRejecting((v) => !v)} className="rounded-md bg-[#3a1c1c] px-2.5 py-1 font-semibold text-[#ff8a80] hover:bg-[#4a2424] disabled:opacity-50">
+              Reject
+            </button>
+          </div>
+          {rejecting && (
+            <div className="space-y-1.5">
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={400} aria-label="Reason for rejection" placeholder="Why it fails" className="w-full rounded-md border border-[#2a3441] bg-[#0b1016] px-2 py-1.5 text-[12px] text-[#d7e0ea]" />
+              <button disabled={busy} onClick={() => send("reject")} className="rounded-md bg-[#22303e] px-2.5 py-1 font-semibold text-white hover:bg-[#2a3a4b] disabled:opacity-50">
+                Reject the change
+              </button>
+            </div>
+          )}
+          {error && <p className="text-[#ff8a80]">{error}</p>}
+        </div>
+      ) : (
+        <p className="border-t border-[#2a3441] p-3 text-[12px] text-[#b9c6d4]">Reason: {p.note}</p>
+      )}
+    </div>
+  );
+}

@@ -223,6 +223,23 @@ export const TOOLS = [
           result: { verified: false, institution: r.inst.name, note: "This institution comes from a bill the family uploaded and the bank has not verified it yet, so there is no verified account to compare with. Nothing can be paid until it is verified; you will be woken when that happens." },
         };
       }
+      // the institution's own announced change, still with the bank's reviewer: not fraud, but not payable yet
+      const pending = r.inst.pendingBank;
+      if (!r.verified && pending && norm(i.account_number) === norm(pending.bank.accountNumber) && norm(i.swift) === norm(pending.bank.swift)) {
+        return {
+          decision: "allowed",
+          ruleIds: ["CARRYPAY.VERIFIED_BENEFICIARY"],
+          result: {
+            verified: false,
+            institution: r.inst.name,
+            account_change: pending.status === "review" ? "announced by the institution, waiting for the bank's review" : `rejected by the bank: ${pending.note ?? ""}`,
+            note:
+              pending.status === "review"
+                ? `These are the new details ${r.inst.name} announced from its verified address. They can't be paid until the bank has verified them; until then only the account on record is paid. You will be woken when the bank decides.`
+                : "The bank rejected this account change. Do not pay these details; pay only the account on record.",
+          },
+        };
+      }
       if (!r.verified) {
         security(ctx, {
           severity: "warning",

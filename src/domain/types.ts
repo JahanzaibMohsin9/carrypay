@@ -62,6 +62,19 @@ export interface Institution {
   verifiedAt?: string;
   /** the bank's separate checks on an uploaded institution (flag "verification", domain/verification.ts) */
   verification?: Partial<Record<VerificationCheckId, VerificationCheck>>;
+  /**
+   * A change of bank account the institution announced from its verified address (flag "verification").
+   * The account on record stays the only one paid until the bank's reviewer confirms the new one.
+   */
+  pendingBank?: {
+    bank: Institution["bank"];
+    announcedAt: string;
+    /** from this date the old account is no longer used, by the institution's own notice */
+    effectiveFrom: string;
+    noticeDocId: string;
+    status: "review" | "rejected";
+    note?: string;
+  };
 }
 
 export type VerificationCheckId = "institution" | "account" | "invoice";

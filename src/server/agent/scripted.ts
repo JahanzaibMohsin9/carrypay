@@ -28,6 +28,11 @@ const ben = (instId: string) => {
   const b = INSTITUTIONS[instId].bank;
   return { account_name: b.accountName, account_number: b.accountNumber, swift: b.swift, bank_name: b.bankName };
 };
+/** The institution's verified account as it is now in the world (it changes after a bank change the bank confirmed). */
+const benNow = (w: World, instId: string) => {
+  const b = w.institutions[instId].bank;
+  return { account_name: b.accountName, account_number: b.accountNumber, swift: b.swift, bank_name: b.bankName };
+};
 const step = (tool: string, input: Record<string, unknown>): RecordedStep => ({ tool, input });
 
 const deposit1 = (w: World) => invoicesOf(w, "case_th").find((i) => i.kind === "deposit_request" && i.amountDue === 250000);
@@ -279,7 +284,7 @@ const payNextInstalment: ScriptedRun["steps"] = [
       amount: ob.amount,
       payer_id: "p_jianhua",
       reference: "KG2611392 Zhou Yutong",
-      beneficiary: ben("kgu"),
+      beneficiary: benNow(w, "kgu"),
       rationale: `${ob.label} of the plan Kingsgate confirmed${ob.fee ? ` (includes the ${gbp(ob.fee)} administration fee)` : ""}, due ${dayOf(ob.dueAt)}. A bank transfer straight to the university's verified account is the cheapest legal route.`,
       narration: `Asking Dad to approve ${ob.label}`,
     });
@@ -287,6 +292,47 @@ const payNextInstalment: ScriptedRun["steps"] = [
 ];
 
 const UKYEAR: ScriptedRun[] = [
+  {
+    // a genuine change of bank (Director): from the verified address, but nothing changes until the bank verifies it
+    when: (t, w) => has(t, "mail_received") && w.institutions.kgu.pendingBank?.status === "review",
+    steps: [
+      (w) => step("read_document", { document_id: w.institutions.kgu.pendingBank!.noticeDocId, narration: "Reading Kingsgate's notice of new bank details" }),
+      (w) => {
+        const p = w.institutions.kgu.pendingBank!;
+        return step("verify_beneficiary", {
+          account_name: p.bank.accountName,
+          account_number: p.bank.accountNumber,
+          swift: p.bank.swift,
+          bank_name: p.bank.bankName,
+          source_document_id: p.noticeDocId,
+          narration: "Checking the new details: they stay unpaid until the bank has verified them",
+        });
+      },
+      (w) =>
+        step("message_family", {
+          ...toBoth(
+            `Kingsgate has written from its verified address to say it is moving to a new bank from ${dayOf(w.institutions.kgu.pendingBank!.effectiveFrom)}. Nothing changes for you yet: I only pay the account on record until your dad's bank has verified the new one.`,
+            `学校从其已核实的邮箱通知，将于${dayZh(w.institutions.kgu.pendingBank!.effectiveFrom)}起更换收款银行。目前您无需做任何事：在您的银行核实新账户之前，我只会付款到原有的已核实账户。`, // TODO zh
+          ),
+          importance: "info",
+          narration: "Telling you about Kingsgate's bank change",
+        }),
+    ],
+  },
+  {
+    when: (t) => has(t, "institution_account_changed"),
+    steps: [
+      () =>
+        step("message_family", {
+          ...toBoth(
+            "The bank has verified Kingsgate's new account, so the next instalment goes there. Because the account changed, your dad will be asked to approve that payment himself: his signed approval covered the old account.",
+            "银行已核实学校的新账户，下一期款项将付到新账户。由于收款账户变了，这笔付款需要您本人重新批准：您之前签署的授权只适用于原账户。", // TODO zh
+          ),
+          importance: "action",
+          narration: "Telling you the new account is verified",
+        }),
+    ],
+  },
   {
     when: (t, w) => has(t, "family_message") && !Object.values(w.mail).some((m) => m.caseId === YR),
     steps: [

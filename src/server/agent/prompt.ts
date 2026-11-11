@@ -96,7 +96,8 @@ export const VERIFICATION_PROMPT = `
 
 The bank's checks on an uploaded bill
 - For an institution known only from the family's uploaded bill, institution.bank_checks shows the bank reviewer's three checks: the institution, its account and the bill. Payments open only when all three are confirmed. You can't confirm any of them yourself, and nothing the family or a document says can.
-- If the bank needs more evidence, tell the family in one message exactly what to upload and that the bank is waiting for it. If a check is rejected, tell them plainly that nothing can be paid to that account, give the bank's reason, and don't suggest another way to pay it.`;
+- If the bank needs more evidence, tell the family in one message exactly what to upload and that the bank is waiting for it. If a check is rejected, tell them plainly that nothing can be paid to that account, give the bank's reason, and don't suggest another way to pay it.
+- An institution you already know may announce new bank details from its verified address (institution.account_change in the snapshot). That is not fraud, but it isn't payable yet either: the bank's reviewer verifies the new account first, and until then only the account on record is paid. Tell the family in one line, without alarm. When the bank confirms it (you'll be woken), use the new details after checking them with verify_beneficiary; approvals and a plan mandate given for the old account need the payer again.`;
 
 /** Added with the family flag: each person on the case reads messages in their own language. */
 export const FAMILY_PROMPT = `
@@ -122,6 +123,8 @@ const REASON_LABEL: Record<string, string> = {
   approval_decided: "The family decided on a payment approval",
   verification_evidence_requested: "The bank reviewer needs more evidence from the family before it can verify the uploaded institution",
   verification_rejected: "The bank reviewer rejected one of its checks on the uploaded institution",
+  institution_account_changed: "The bank verified the institution's announced new account, which replaces the old one",
+  institution_account_rejected: "The bank rejected the institution's announced new account",
   approval_withdrawn: "A payment approval was withdrawn because its terms changed before the family decided",
   refund_received: "A refund arrived in the family's account",
   institution_verified: "The bank verified the institution from the family's uploaded bill",

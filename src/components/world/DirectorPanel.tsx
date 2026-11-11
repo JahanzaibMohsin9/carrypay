@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, BadgeCheck, Anchor, Bot, FastForward, Flame, Pause, Play, RotateCcw, SkipForward, Skull, Zap } from "lucide-react";
+import { Activity, BadgeCheck, Anchor, Bot, FastForward, Flame, Landmark, Pause, Play, RotateCcw, SkipForward, Skull, Zap } from "lucide-react";
 import { useState } from "react";
 import { director, useCarry } from "@/lib/client";
 import { activeCase, caseTz } from "@/lib/selectors";
@@ -127,6 +127,16 @@ export function DirectorPanel({ dense = false }: { dense?: boolean }) {
             );
           })}
         </>
+      )}
+      {state.flags?.verification && w.institutions[c.institutionId]?.origin !== "uploaded_bill" && (
+        <button
+          onClick={() => run("bank_change")}
+          disabled={Boolean(w.institutions[c.institutionId]?.pendingBank) || state.agentBusy}
+          className="inline-flex h-8 items-center gap-1 rounded-lg border border-line px-2 font-semibold hover:border-amber disabled:opacity-50"
+          title="The institution genuinely changes its bank and says so from its verified address; the bank's reviewer must verify the new account (officer desk)"
+        >
+          <Landmark size={13} /> {w.institutions[c.institutionId]?.pendingBank ? "Bank change announced" : "Genuine bank change"}
+        </button>
       )}
       {w.institutions[c.institutionId]?.origin === "uploaded_bill" && (
         <>
