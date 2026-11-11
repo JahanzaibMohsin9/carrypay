@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { DocumentKind, Mail, Payment, Route, SecurityEvent, World } from "@/domain/types";
+import type { DocumentKind, Lang, Mail, Payment, Route, SecurityEvent, World } from "@/domain/types";
 import { INSTITUTIONS } from "@/domain/institutions";
 import { ROUTE_SHORT } from "@/domain/corridors";
 import { compareRoutes, evaluateRoute, priceRoute } from "@/domain/rules/engine";
@@ -40,6 +40,8 @@ interface ToolSpec<S extends z.ZodObject> {
   run: (input: z.infer<S>, ctx: ToolCtx) => ToolOutcome;
   /** offered to the model and runnable only when this feature flag is on */
   flag?: Flag;
+  /** optional fields offered to the model only when their flag is on (always accepted, so recorded runs replay) */
+  flaggedFields?: Record<string, Flag>;
 }
 
 const narration = z.string().min(3).max(240).describe("One short, plain-language sentence for the family explaining what you are doing and why. Write it in the family's language.");
@@ -58,10 +60,14 @@ function security(ctx: ToolCtx, ev: Omit<SecurityEvent, "id" | "at" | "caseId">)
   return id;
 }
 
-function familyMessage(ctx: ToolCtx, text: string, importance: "info" | "action" | "good_news" | "warning" = "info") {
+function familyMessage(ctx: ToolCtx, text: string, importance: "info" | "action" | "good_news" | "warning" = "info", translations?: Partial<Record<Lang, string>>) {
   const id = ctx.store.nextId("msg");
-  ctx.store.mutate((w) => w.messages.push({ id, caseId: ctx.caseId, from: "agent", text, at: w.now, importance }));
-  return id;
+  const caseLang = ctx.store.world.cases[ctx.caseId].lang;
+  // the case-language version is always `text`; a "translation" into the case language would only contradict it
+  const extra = Object.fromEntries(Object.entries(translations ?? {}).filter(([l, t]) => l !== caseLang && t?.trim()));
+  const texts = Object.keys(extra).length ? { [caseLang]: text, ...extra } : undefined;
+  ctx.store.mutate((w) => w.messages.push({ id, caseId: ctx.caseId, from: "agent", text, ...(texts ? { texts } : {}), at: w.now, importance }));
+  return { id, languages: texts ? Object.keys(texts) : [caseLang] };
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -398,10 +404,19 @@ export const TOOLS = [
     name: "message_family",
     tier: "communicate",
     description: "Send the family a short update in their language. Use for anything they should know or decide. Keep it warm, clear and brief.",
-    schema: z.object({ text: z.string().min(3).max(800).describe("Up to 800 characters, a few short paragraphs at most. Longer messages are rejected."), importance: z.enum(["info", "action", "good_news", "warning"]), narration }),
+    schema: z.object({
+      text: z.string().min(3).max(800).describe("Up to 800 characters, a few short paragraphs at most. Longer messages are rejected."),
+      translations: z
+        .object({ en: z.string().min(3).max(800).optional(), zh: z.string().min(3).max(800).optional() })
+        .optional()
+        .describe("Only when someone in the snapshot's people reads a language other than family_language: the same message in that language (en = English, zh = Simplified Chinese), same facts and amounts, up to 800 characters. Each person sees the version in their own language."),
+      importance: z.enum(["info", "action", "good_news", "warning"]),
+      narration,
+    }),
+    flaggedFields: { translations: "family" },
     run: (i, ctx) => {
-      const id = familyMessage(ctx, i.text, i.importance);
-      return { decision: "allowed", result: { delivered: true, message_id: id } };
+      const { id, languages } = familyMessage(ctx, i.text, i.importance, i.translations);
+      return { decision: "allowed", result: { delivered: true, message_id: id, ...(languages.length > 1 ? { languages } : {}) } };
     },
   }),
 
@@ -1017,10 +1032,16 @@ export function toolTier(name: string): Tier | undefined {
 /** JSON schema for the Messages API, generated from the same zod schema we validate with. */
 const enabled = (t: { flag?: Flag }) => !t.flag || flagOn(t.flag);
 
+export function toolJsonSchema(t: (typeof TOOLS)[number]) {
+  const schema = z.toJSONSchema(t.schema) as { properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown };
+  delete schema.$schema;
+  for (const [field, flag] of Object.entries((t as { flaggedFields?: Record<string, Flag> }).flaggedFields ?? {})) if (!flagOn(flag)) delete schema.properties?.[field];
+  return schema;
+}
+
 export function anthropicToolDefs() {
   return TOOLS.filter(enabled).map((t) => {
-    const schema = z.toJSONSchema(t.schema) as Record<string, unknown>;
-    delete schema.$schema;
+    const schema = toolJsonSchema(t);
     return { name: t.name, description: `[${t.tier.toUpperCase()}] ${t.description}`, input_schema: schema as { type: "object"; [k: string]: unknown } };
   });
 }

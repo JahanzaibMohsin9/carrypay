@@ -23,6 +23,8 @@ export interface Person {
   priorFxYearUSD?: number;
   /** identity document number for regulatory forms (sandbox values); never shown to the LLM */
   passport?: string;
+  /** the language this person reads, when it differs from the case language (flag "family") */
+  lang?: Lang;
 }
 
 export interface Institution {
@@ -229,7 +231,10 @@ export interface FamilyMessage {
   id: string;
   caseId: string;
   from: "family" | "agent";
+  /** in the case language */
   text: string;
+  /** the same message in each language someone on the case reads, including the case language; absent on older messages */
+  texts?: Partial<Record<Lang, string>>;
   at: string;
   importance?: "info" | "action" | "good_news" | "warning";
   /** the family spoke it (a voice note, transcribed) */

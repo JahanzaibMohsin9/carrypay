@@ -259,6 +259,9 @@ const yrPlan = (w: World) => yrArrangements(w).find((a) => a.status === "accepte
 const cny = (n: number) => `CNY ${(Math.round(n / 100) * 100).toLocaleString("en-US")}`;
 const gbp = (n: number) => `GBP ${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const dayOf = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "Asia/Shanghai" });
+const dayZh = (iso: string) => new Date(iso).toLocaleDateString("zh-CN", { day: "numeric", month: "long", timeZone: "Asia/Shanghai" });
+/** Yutong reads English, her father Chinese: each sees their own version (flag "family"; with it off the app shows both). */
+const toBoth = (en: string, zh: string) => ({ text: en, translations: { zh } });
 const nextInstalment = (w: World) => obligationsFor(w, YR).find((o) => o.source === "arrangement");
 
 /** Prepare the SAFE form and propose the next unpaid instalment of the confirmed plan. */
@@ -298,7 +301,10 @@ const UKYEAR: ScriptedRun[] = [
         }),
       () =>
         step("message_family", {
-          text: "Hi Yutong! I've written to Kingsgate's Student Finance Office to confirm your place and get the fee statement and their bank details. When it arrives I'll check it against your scholarship letter, then work out with your dad's figures how he can pay without touching the family's safety net.",
+          ...toBoth(
+            "Hi Yutong! I've written to Kingsgate's Student Finance Office to confirm your place and get the fee statement and their bank details. When it arrives I'll check it against your scholarship letter, then work out with your dad's figures how he can pay without touching the family's safety net.",
+            "您好！雨桐请 CarryPay 帮忙办理学费。我已写信给 Kingsgate 大学学生财务处，请他们确认录取，并发来学费单和收款账户。收到后我会先对照奖学金信核对，再根据您填写的收支情况，算出怎样付款才不会动用您的应急储备。", // TODO zh
+          ),
           importance: "info",
           narration: "Telling you what I've started",
         }),
@@ -324,7 +330,10 @@ const UKYEAR: ScriptedRun[] = [
         const adj = yrAdjustment(w);
         return adj
           ? step("message_family", {
-              text: `Kingsgate's fee statement charges the full tuition: your ${gbp(adj.amount)} scholarship isn't on it yet. I've sent them your award letter and asked for a corrected statement. Until they confirm, it's only a possible reduction, so I'm not counting it as saved.`,
+              ...toBoth(
+                `Kingsgate's fee statement charges the full tuition: your ${gbp(adj.amount)} scholarship isn't on it yet. I've sent them your award letter and asked for a corrected statement. Until they confirm, it's only a possible reduction, so I'm not counting it as saved.`,
+                `学校的学费单按全额收取学费，雨桐的 ${gbp(adj.amount)} 奖学金还没有扣除。我已把奖学金信发给学校，请他们出具更正后的学费单。学校确认之前，这只是可能的减免，我不会把它算作已经省下的钱。`, // TODO zh
+              ),
               importance: "action",
               narration: "Telling you the scholarship is missing from the statement",
             })
@@ -348,7 +357,10 @@ const UKYEAR: ScriptedRun[] = [
         const p = projectCashflow(w, YR, { schedule: "upfront" });
         const fs = yrStatement(w)!;
         return step("message_family", {
-          text: `Good news: Kingsgate has corrected the statement, so the year now costs ${gbp(fs.total)}. ${p?.firstBreach ? `Paying it all at once by ${dayOf(p.payments[0].payAt)} would take your dad ${cny(p.firstBreach.shortBy)} below the safety net he chose.` : ""} I've asked Kingsgate for its published instalment plans and will compare them when they arrive.`,
+          ...toBoth(
+            `Good news: Kingsgate has corrected the statement, so the year now costs ${gbp(fs.total)}. ${p?.firstBreach ? `Paying it all at once by ${dayOf(p.payments[0].payAt)} would take your dad ${cny(p.firstBreach.shortBy)} below the safety net he chose.` : ""} I've asked Kingsgate for its published instalment plans and will compare them when they arrive.`,
+            `好消息：学校已更正学费单，这一学年共 ${gbp(fs.total)}。${p?.firstBreach ? `如果在${dayZh(p.payments[0].payAt)}前一次付清，您的余额会比您设定的应急储备低 ${cny(p.firstBreach.shortBy)}。` : ""}我已向学校索取官方分期付款方案，收到后会帮您比较。`, // TODO zh
+          ),
           importance: "good_news",
           narration: "Telling you the statement is corrected and why I asked for a payment plan",
         });
@@ -367,8 +379,10 @@ const UKYEAR: ScriptedRun[] = [
         const others = cmp?.rows.filter((r) => r.id !== "full" && r.id !== cmp.pickId && !r.holdsAll) ?? [];
         if (!pick || !row) return null;
         return step("message_family", {
-          // TODO zh: the Chinese part for Dad goes to MiMo review
-          text: `Kingsgate has offered ${offers.length} instalment plans. I recommend the ${pick.title.toLowerCase()}: ${row.feesHomeCost > 0 ? `its fee costs about ${cny(row.feesHomeCost)}, but ` : ""}your dad keeps his safety net even if his salary is three weeks late or the pound gets 5% dearer.${others.length ? ` The ${others.map((r) => r.label.toLowerCase()).join(" and ")} would dip below it if his salary came late.` : ""} Dad, please accept it in the CarryPay app (Plan).\n\n爸爸：建议选择${pick.instalments.length}期付款方案。即使工资晚到三周或英镑上涨5%，您的应急储备也不会受影响。请在 CarryPay 的“计划”页面确认。`,
+          ...toBoth(
+            `Kingsgate has offered ${offers.length} instalment plans. I recommend the ${pick.title.toLowerCase()}: ${row.feesHomeCost > 0 ? `its fee costs about ${cny(row.feesHomeCost)}, but ` : ""}your dad keeps his safety net even if his salary is three weeks late or the pound gets 5% dearer.${others.length ? ` The ${others.map((r) => r.label.toLowerCase()).join(" and ")} would dip below it if his salary came late.` : ""} Your dad accepts it in the CarryPay app (Plan).`,
+            `学校提供了${offers.length}种分期方案。建议选择${pick.instalments.length}期付款方案：${row.feesHomeCost > 0 ? `手续费约 ${cny(row.feesHomeCost)}，但` : ""}即使工资晚到三周或英镑上涨5%，您的应急储备也不会受影响。请在 CarryPay 的“计划”页面确认。`, // TODO zh
+          ),
           importance: "action",
           narration: "Recommending the plan that keeps Dad's safety net",
         });
@@ -396,7 +410,10 @@ const UKYEAR: ScriptedRun[] = [
       },
       () =>
         step("message_family", {
-          text: "The instalment has reached Kingsgate's bank, but their system hasn't matched it to Yutong's account yet, so her fees still show as unpaid there. I've sent them the remittance advice with her Student ID; nothing needs paying again.",
+          ...toBoth(
+            "The instalment has reached Kingsgate's bank, but their system hasn't matched it to Yutong's account yet, so her fees still show as unpaid there. I've sent them the remittance advice with her Student ID; nothing needs paying again.",
+            "这一期款项已到学校的银行，但学校系统还没有把它记到雨桐的学生账户上，所以学校那边暂时仍显示未付。我已把汇款凭证和学号发给学校，不需要重新付款。", // TODO zh
+          ),
           importance: "info",
           narration: "Telling you the money arrived but isn't credited yet",
         }),
@@ -410,7 +427,14 @@ const UKYEAR: ScriptedRun[] = [
     steps: [
       (w) => {
         const ob = nextInstalment(w)!;
-        return step("message_family", { text: `Kingsgate has received the first instalment. The next one, ${gbp(ob.amount)}, is due on ${dayOf(ob.dueAt)}; I'll prepare it a week before.`, importance: "good_news", narration: "Confirming the first instalment arrived" });
+        return step("message_family", {
+          ...toBoth(
+            `Kingsgate has received the first instalment. The next one, ${gbp(ob.amount)}, is due on ${dayOf(ob.dueAt)}; I'll prepare it a week before.`,
+            `学校已收到第一期款项。下一期 ${gbp(ob.amount)} 将于${dayZh(ob.dueAt)}到期，我会提前一周准备好。`, // TODO zh
+          ),
+          importance: "good_news",
+          narration: "Confirming the first instalment arrived",
+        });
       },
       // with the mandate feature on: one signature for the rest of the plan
       (w) => (yrPlan(w) && !Object.values(w.mandates ?? {}).some((m) => m.caseId === YR) ? step("propose_plan_mandate", { arrangement_id: yrPlan(w)!.id, narration: "Offering Dad one signature for the remaining instalments" }) : null),
@@ -418,7 +442,10 @@ const UKYEAR: ScriptedRun[] = [
         const m = Object.values(w.mandates ?? {}).find((x) => x.caseId === YR && x.status === "awaiting_approval");
         return m
           ? step("message_family", {
-              text: `Dad, if you sign one approval now, I can pay the remaining ${m.windows.length} instalments (${m.windows.map((x) => gbp(x.amount)).join(" and ")}) in their windows without asking you each time: only to Kingsgate's verified account, and only while your safety net holds. Anything different and I'll ask you first. You can revoke it any time in the app (Plan).\n\n爸爸：如果您现在签一次授权，剩下的${m.windows.length}笔分期我会在到期前自动付到学校的已核实账户，前提是不影响您的应急储备。有任何变化我都会先问您，您也可以随时撤销。`, // TODO zh
+              ...toBoth(
+                `If your dad signs one approval now, I can pay the remaining ${m.windows.length} instalments (${m.windows.map((x) => gbp(x.amount)).join(" and ")}) in their windows without asking him each time: only to Kingsgate's verified account, and only while his safety net holds. Anything different and I'll ask him first. Anyone on the case can revoke it in the app (Plan).`,
+                `如果您现在签一次授权，剩下的${m.windows.length}笔分期（${m.windows.map((x) => gbp(x.amount)).join("、")}）我会在各自的付款窗口内自动付到学校的已核实账户，前提是不影响您的应急储备。有任何变化我都会先问您，您也可以随时在“计划”页面撤销。`, // TODO zh
+              ),
               importance: "action",
               narration: "Asking Dad to sign the plan mandate",
             })
@@ -428,7 +455,17 @@ const UKYEAR: ScriptedRun[] = [
   },
   {
     when: (t) => has(t, "mandate_signed"),
-    steps: [() => step("message_family", { text: "Thank you. The remaining instalments will go to Kingsgate in their windows. I'll tell you as each one arrives.", importance: "good_news", narration: "Confirming the mandate is signed" })],
+    steps: [
+      () =>
+        step("message_family", {
+          ...toBoth(
+            "Your dad has signed: the remaining instalments will go to Kingsgate in their windows. I'll tell you as each one arrives.",
+            "谢谢您。剩下的分期会在各自的付款窗口内付给学校，每一笔到账我都会告诉您。", // TODO zh
+          ),
+          importance: "good_news",
+          narration: "Confirming the mandate is signed",
+        }),
+    ],
   },
   {
     // the look-alike "extension" email: flag it, change nothing, warn the family
@@ -440,7 +477,10 @@ const UKYEAR: ScriptedRun[] = [
       },
       () =>
         step("message_family", {
-          text: "Please ignore the email saying your deadline moved to June and the bank account changed: it comes from a look-alike address (kingsgate-ac.uk), not from Kingsgate. Nothing has changed. Your plan and the university's verified account stay exactly as Kingsgate confirmed them, and nothing will be paid to that account.\n\n爸爸：那封说截止日期延到6月、银行账户已更换的邮件是冒充学校的诈骗邮件，请不要理会。付款方案和学校账户都没有变。", // TODO zh
+          ...toBoth(
+            "Please ignore the email saying your deadline moved to June and the bank account changed: it comes from a look-alike address (kingsgate-ac.uk), not from Kingsgate. Nothing has changed. Your plan and the university's verified account stay exactly as Kingsgate confirmed them, and nothing will be paid to that account.",
+            "那封说截止日期延到6月、银行账户已更换的邮件来自冒充学校的地址（kingsgate-ac.uk），是诈骗邮件，请不要理会。付款方案和学校的已核实账户都没有变，我们不会向那个账户付任何钱。", // TODO zh
+          ),
           importance: "warning",
           narration: "Warning you about the fake email",
         }),
@@ -453,7 +493,10 @@ const UKYEAR: ScriptedRun[] = [
         const ob = obligationsFor(w, YR).filter((o) => o.source === "arrangement").at(-1);
         return ob
           ? step("message_family", {
-              text: `Kingsgate has raised the last instalment to ${gbp(ob.amount)} for the larger studio from April. That's a real change from the university, but your signed approval doesn't cover it, so when it's due I'll ask you to approve it yourself.`,
+              ...toBoth(
+                `Kingsgate has raised the last instalment to ${gbp(ob.amount)} for the larger studio from April. That's a real change from the university, but your dad's signed approval doesn't cover it, so when it's due I'll ask him to approve it himself.`,
+                `学校因雨桐4月起换到更大的单间，把最后一期调整为 ${gbp(ob.amount)}。这是学校的真实变更，但您签的授权不包括它，所以到期时我会请您亲自批准。`, // TODO zh
+              ),
               importance: "info",
               narration: "Explaining the change to the last instalment",
             })
@@ -464,7 +507,15 @@ const UKYEAR: ScriptedRun[] = [
   {
     when: (t, w) => has(t, "payment_completed") && !!yrPlan(w) && !nextInstalment(w),
     steps: [
-      () => step("message_family", { text: "All instalments have reached Kingsgate: Yutong's fees for the year are fully paid, the scholarship is applied, and your dad's safety net stayed in place throughout.", importance: "good_news", narration: "Telling you the year is paid" }),
+      () =>
+        step("message_family", {
+          ...toBoth(
+            "All instalments have reached Kingsgate: Yutong's fees for the year are fully paid, the scholarship is applied, and your dad's safety net stayed in place throughout.",
+            "所有分期都已付到学校：雨桐这一学年的学费已全部付清，奖学金已扣除，您的应急储备始终没有动用。", // TODO zh
+          ),
+          importance: "good_news",
+          narration: "Telling you the year is paid",
+        }),
       () => step("close_case", { summary: "Scholarship corrected, three-instalment plan confirmed by the university and paid in full within the payer's reserve.", narration: "Closing the case" }),
     ],
   },

@@ -174,6 +174,9 @@ const en = {
   listen: "Listen",
   stopListening: "Stop",
   plan: "Plan",
+  alsoSentIn: "Also sent in {lang}",
+  hideOtherLang: "Hide {lang}",
+  waitingOn: "Waiting for {name} to approve",
 };
 
 type Dict = typeof en;
@@ -432,6 +435,9 @@ const zh: Dict = {
   listen: "朗读",
   stopListening: "停止",
   plan: "计划", // TODO zh
+  alsoSentIn: "另有 {lang} 版", // TODO zh
+  hideOtherLang: "收起 {lang} 版", // TODO zh
+  waitingOn: "等待{name}批准", // TODO zh
 };
 
 export const DICTS: Record<Lang, Partial<Dict>> = { en, ur, zh };

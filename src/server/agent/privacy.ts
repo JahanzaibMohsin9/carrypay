@@ -144,8 +144,10 @@ export function buildVault(w: World, caseId: string): Vault {
     });
   const unmask = (text: string) => unmaskAs(text);
   const FAMILY_FIELDS = new Set(["text", "narration", "rationale"]);
+  // message_family's translations: {zh: …} reads names in Chinese, {en: …} in the Latin spelling
+  const LANG_FIELDS: Record<string, "han" | "latin"> = { zh: "han", en: "latin" };
   const unmaskDeep = <T>(v: T, key?: string): T => {
-    if (typeof v === "string") return unmaskAs(v, key && FAMILY_FIELDS.has(key) ? familyScript : "latin") as T;
+    if (typeof v === "string") return unmaskAs(v, key && LANG_FIELDS[key] ? LANG_FIELDS[key] : key && FAMILY_FIELDS.has(key) ? familyScript : "latin") as T;
     if (Array.isArray(v)) return v.map((x) => unmaskDeep(x, key)) as T;
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unmaskDeep(x, k)])) as T;
     return v;

@@ -235,8 +235,8 @@ function seedUkYear(): World {
       "Hi! I'm Zhou Yutong. I've accepted Kingsgate University's offer for the MSc Finance in London, starting 18 January 2027 (Student ID KG2611392), and Kingsgate awarded me the Global Excellence Scholarship of GBP 4,000 off my tuition. I've uploaded the scholarship letter and my offer letter. My dad, Zhou Jianhua, pays my fees from Shenzhen out of his savings and salary, and he has entered his figures in CarryPay. He reads Chinese best. Please sort out my fees with the university, and work out how Dad can pay them without using up the money the family needs to live on.",
     people: [
       // the student opened the case, so the app opens as her; only her father (the payer) can approve or accept terms
-      { id: "p_yutong", name: "周雨桐 Zhou Yutong", role: "student", adult: true, abroad: false, passport: "E64019287" },
-      { id: "p_jianhua", name: "周建华 Zhou Jianhua", role: "parent", adult: true, abroad: false, priorFxYearUSD: 6000, passport: "E38852106" },
+      { id: "p_yutong", name: "周雨桐 Zhou Yutong", role: "student", adult: true, abroad: false, passport: "E64019287", lang: "en" },
+      { id: "p_jianhua", name: "周建华 Zhou Jianhua", role: "parent", adult: true, abroad: false, priorFxYearUSD: 6000, passport: "E38852106", lang: "zh" },
     ],
     notes: [],
   };

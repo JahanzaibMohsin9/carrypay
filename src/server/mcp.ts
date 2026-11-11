@@ -1,6 +1,5 @@
-import { z } from "zod";
 import type { Store } from "./store";
-import { executeTool, TOOLS } from "./agent/tools";
+import { executeTool, TOOLS, toolJsonSchema } from "./agent/tools";
 import { buildVault } from "./agent/privacy";
 
 // CarryPay as an MCP server: any AI assistant (Claude, ChatGPT, a bank's own assistant) can work on a
@@ -48,8 +47,7 @@ export function mcpToolList() {
     annotations: { readOnlyHint: true, openWorldHint: false },
   };
   const tools = TOOLS.filter((t) => (MCP_TOOLS as readonly string[]).includes(t.name)).map((t) => {
-    const schema = z.toJSONSchema(t.schema) as { properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown };
-    delete schema.$schema;
+    const schema = toolJsonSchema(t);
     return {
       name: t.name,
       description: `[${t.tier.toUpperCase()}] ${t.description}${t.name === "propose_payment" ? " The family must approve it with a passkey in the CarryPay app; you cannot approve it." : ""}`,
