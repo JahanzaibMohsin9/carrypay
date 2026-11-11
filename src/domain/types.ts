@@ -39,6 +39,8 @@ export interface Institution {
     start: string;
     /** awards the university has granted this student (the sandbox stand-in for its scholarships system) */
     awards?: { name: string; amount: number; appliesTo: "tuition" }[];
+    /** deposits the university has received from this student (its own finance records) */
+    deposits?: { amount: number; paidAt: string; reference: string }[];
   }[];
   legalName: string; // name on the bank account
   country: string;
@@ -255,6 +257,8 @@ export type DocumentKind =
   | "admission_letter"
   | "receipt"
   | "scholarship_award"
+  /** a receipt for a deposit already paid to the institution (for example the acceptance deposit) */
+  | "deposit_receipt"
   | "payment_plan_offer"
   | "credit_note"
   | "other";

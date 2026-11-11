@@ -567,7 +567,7 @@ export const TOOLS = [
     tier: "read",
     flag: "entitlements",
     description:
-      "Check the current fee statement against the family's evidence (scholarship award letters and similar). Returns each award as missing, already applied or not applicable, with the document it rests on. Missing ones are recorded as POTENTIAL adjustments: they are not savings until the institution issues a corrected statement.",
+      "Check the current fee statement against the family's evidence (scholarship award letters, receipts for deposits already paid, and similar). Returns each award as missing, already applied or not applicable, with the document it rests on. Missing ones are recorded as POTENTIAL adjustments: they are not savings until the institution issues a corrected statement.",
     schema: z.object({ narration }),
     run: (_i, ctx) => {
       const w = ctx.store.world;

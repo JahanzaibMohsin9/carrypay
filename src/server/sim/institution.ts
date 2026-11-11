@@ -1,4 +1,4 @@
-import type { Institution, Invoice, Mail } from "@/domain/types";
+import type { Doc, Institution, Invoice, Mail } from "@/domain/types";
 import type { Arrangement } from "@/domain/plan/types";
 import { INSTITUTIONS } from "@/domain/institutions";
 import type { Store } from "../store";
@@ -467,6 +467,9 @@ function correctStatement(c: ReplyCtx): Answer | null {
   const fs = currentStatement(c);
   // first contact: the statement goes out with a note on how awards are added (estimate handler)
   if (!fs || fs.issuedAt === c.store.world.now) return null;
+  // a deposit already paid that the statement doesn't credit: checked against the finance office's own records
+  const receipts = c.original.attachments.map((id) => c.store.world.docs[id]).filter((d) => d?.kind === "deposit_receipt");
+  if (receipts.length && !c.original.attachments.some((id) => c.store.world.docs[id]?.kind === "scholarship_award")) return creditDeposits(c, fs, receipts);
   const award = c.enrolled.awards?.[0];
   if (award && fs.lineItems.some((li) => li.amount < 0 && li.description.includes(award.name))) {
     return { text: `The ${award.name} is already applied to statement ${fs.number}.` };
@@ -524,6 +527,59 @@ function correctStatement(c: ReplyCtx): Answer | null {
   return {
     text: `Thank you for sending the award letter. You are right: the ${award.name} had not yet been applied. The revised fee statement ${corrected.number} is attached (${money("GBP", corrected.total)}, previously ${money("GBP", fs.total)}) and replaces ${fs.number}. The due date is unchanged.${plans ? ` ${plans.text}` : ""}`,
     attachments: [corrected.documentId, ...(plans?.attachments ?? [])],
+  };
+}
+
+/** A revised statement crediting deposits the university's records show it received; anything else is refused. */
+function creditDeposits(c: ReplyCtx, fs: Invoice, receipts: Doc[]): Answer {
+  const records = c.enrolled!.deposits ?? [];
+  const pending = Object.values(c.store.world.adjustments ?? {}).filter((a) => a.caseId === c.caseId && a.invoiceId === fs.id && (a.status === "potential" || a.status === "requested"));
+  const credited = new Set(fs.lineItems.filter((li) => li.amount < 0 && /deposit/i.test(li.description)).map((li) => Math.round(-li.amount * 100) / 100));
+  const matched = receipts
+    .map((d) => ({ d, rec: records.find((r) => r.amount === Number(d.fields.amount) && r.reference === String(d.fields.reference ?? "") && String(d.fields.studentId ?? c.enrolled!.id) === c.enrolled!.id) }))
+    .filter((x): x is { d: Doc; rec: { amount: number; paidAt: string; reference: string } } => !!x.rec && !credited.has(x.rec.amount));
+  if (!matched.length) {
+    c.store.mutate((w) => {
+      for (const a of pending.filter((p) => receipts.some((r) => r.id === p.basisDocId))) {
+        const adj = w.adjustments![a.id];
+        adj.status = "rejected";
+        adj.history.push({ at: w.now, status: "rejected", note: "No matching deposit in the university's finance records" });
+      }
+    });
+    return { text: `We have checked our finance records for ${c.enrolled!.name} (Student ID ${c.enrolled!.id}): there is no deposit matching that receipt, or it is already credited, so statement ${fs.number} stands. If you paid a deposit, please send us the payment reference and the date it was paid.` };
+  }
+  const lines = matched.map(({ rec }) => ({ description: `Deposit received ${rec.paidAt.slice(0, 10)} (${rec.reference})`, amount: -rec.amount }));
+  const corrected = issueInvoice(c.store, {
+    caseId: c.caseId,
+    institutionId: c.inst.id,
+    kind: "fee_statement",
+    title: "Revised fee statement",
+    patientName: c.enrolled!.name,
+    patientRef: c.enrolled!.id,
+    lineItems: [...fs.lineItems.map(({ description, amount }) => ({ description, amount })), ...lines],
+    ...(fs.dueAt ? { dueAt: fs.dueAt } : {}),
+    extraText: `This statement replaces ${fs.number}: the deposit already received (${lines.map((l) => money("GBP", -l.amount)).join(", ")}) has been credited. Please quote your Student ID as the payment reference.`,
+  });
+  const basis = new Set(matched.map((m) => m.d.id));
+  c.store.mutate((w) => {
+    w.invoices[fs.id].status = "superseded";
+    w.invoices[fs.id].supersededBy = corrected.id;
+    for (const a of pending.filter((p) => basis.has(p.basisDocId))) {
+      const adj = w.adjustments![a.id];
+      adj.status = "confirmed";
+      adj.resolutionDocId = corrected.documentId;
+      adj.history.push({ at: w.now, status: "confirmed", note: `Revised statement ${corrected.number}` });
+    }
+    for (const arr of Object.values(w.arrangements ?? {})) {
+      if (arr.invoiceId === fs.id && arr.status === "offered") {
+        arr.status = "expired";
+        arr.history.push({ at: w.now, status: "expired", note: `Statement ${fs.number} was replaced by ${corrected.number}` });
+      }
+    }
+  });
+  return {
+    text: `Thank you for the receipt. You are right: the deposit had not been credited. The revised fee statement ${corrected.number} is attached (${money("GBP", corrected.total)}, previously ${money("GBP", fs.total)}) and replaces ${fs.number}. The due date is unchanged.`,
+    attachments: [corrected.documentId],
   };
 }
 

@@ -66,6 +66,41 @@ export function reviewEntitlements(world: World, caseId: string): EntitlementFin
       });
     }
   }
+  // deposits already paid (a receipt the family holds) that the statement doesn't credit
+  const deposits = Object.values(world.docs).filter((d) => d.caseId === caseId && d.kind === "deposit_receipt");
+  for (const inv of currentStatements(world, caseId)) {
+    for (const doc of deposits) {
+      const amount = Number(doc.fields.amount);
+      const paidAt = String(doc.fields.paidAt ?? "").slice(0, 10);
+      const reference = String(doc.fields.reference ?? "");
+      const label = `Deposit paid${paidAt ? ` on ${paidAt}` : ""}${reference ? ` (${reference})` : ""}`;
+      const base = { invoiceId: inv.id, invoiceNumber: inv.number, basisDocId: doc.id, basisTitle: doc.title, award: label, currency: inv.currency, evidenceOrigin: doc.origin };
+      const studentId = String(doc.fields.studentId ?? "");
+      if (!Number.isFinite(amount) || amount <= 0) {
+        findings.push({ ...base, amount: 0, status: "not_applicable", reason: "The receipt states no amount CarryPay can check." });
+        continue;
+      }
+      if (inv.patientRef && studentId && inv.patientRef !== studentId) {
+        findings.push({ ...base, amount: 0, status: "not_applicable", reason: `The receipt is for student ${studentId}, the statement for ${inv.patientRef}.` });
+        continue;
+      }
+      if (doc.fields.currency && doc.fields.currency !== inv.currency) {
+        findings.push({ ...base, amount: 0, status: "not_applicable", reason: `The receipt is in ${doc.fields.currency}, the statement in ${inv.currency}.` });
+        continue;
+      }
+      const credit = inv.lineItems.find((li) => li.amount < 0 && /deposit/i.test(li.description) && r2(-li.amount) === r2(amount));
+      if (credit) {
+        findings.push({ ...base, amount: r2(amount), status: "applied", reason: `Already on the statement: "${credit.description}".` });
+        continue;
+      }
+      findings.push({
+        ...base,
+        amount: r2(Math.min(amount, inv.total)),
+        status: "missing",
+        reason: `The receipt shows ${inv.currency} ${amount.toFixed(2)} already paid as a deposit, but statement ${inv.number} doesn't credit it.`,
+      });
+    }
+  }
   return findings;
 }
 

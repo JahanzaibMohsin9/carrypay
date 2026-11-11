@@ -13,11 +13,15 @@ function planSection(w: World, caseId: string) {
   const adjustments = Object.values(w.adjustments ?? {}).filter((a) => a.caseId === caseId);
   const arrangements = Object.values(w.arrangements ?? {}).filter((a) => a.caseId === caseId);
   const awards = Object.values(w.docs).filter((d) => d.caseId === caseId && d.kind === "scholarship_award");
-  if (!funding && !adjustments.length && !arrangements.length && !awards.length) return undefined;
+  if (!funding && !adjustments.length && !arrangements.length && !awards.length && !Object.values(w.docs).some((d) => d.caseId === caseId && d.kind === "deposit_receipt")) return undefined;
   return {
     payer_figures_entered: !!funding,
     payer_id: funding?.ownerPersonId,
     award_letters: awards.map((d) => ({ id: d.id, title: d.title, origin: d.origin })),
+    ...(() => {
+      const receipts = Object.values(w.docs).filter((d) => d.caseId === caseId && d.kind === "deposit_receipt");
+      return receipts.length ? { deposit_receipts: receipts.map((d) => ({ id: d.id, title: d.title, origin: d.origin })) } : {};
+    })(),
     adjustments: adjustments.map((a) => ({ id: a.id, status: a.status, amount: `${a.currency} ${a.amount}`, statement_id: a.invoiceId, evidence_document: a.basisDocId })),
     payment_plans: arrangements.map((a) => ({
       id: a.id,

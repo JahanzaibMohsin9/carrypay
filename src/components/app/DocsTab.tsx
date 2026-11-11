@@ -18,6 +18,7 @@ const ICONS: Record<Doc["kind"], React.ComponentType<{ size?: number }>> = {
   admission_letter: GraduationCap,
   receipt: FileCheck2,
   scholarship_award: Award,
+  deposit_receipt: ReceiptText,
   payment_plan_offer: CalendarClock,
   credit_note: ReceiptText,
   other: FileText,

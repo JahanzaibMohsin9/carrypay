@@ -262,7 +262,7 @@ Sandbox state lives in a data folder (world snapshot, ledger as JSONL, anchors, 
 
 ## 9. Testing and evaluation
 
-`npm test` runs 190 tests in 28 files (the list below is the core; also: all five scenarios, uploaded bills, on-chain anchoring on two fake chains, private sessions, the attack lab, the MCP server, family answers, retrying dropped LLM connections, feature flags, per-person message language, the Director's stress tests):
+`npm test` runs 193 tests in 29 files (the list below is the core; also: all five scenarios, uploaded bills, on-chain anchoring on two fake chains, private sessions, the attack lab, the MCP server, family answers, retrying dropped LLM connections, feature flags, per-person message language, the Director's stress tests):
 - rules engine: tax history, pricing order, Pakistan caps, card limits, carried-cash rule, anti-splitting, SAFE quota and prohibited purposes, deadline-aware comparison
 - every scenario end to end with the scripted agent, including the returned transfer, the scam email, the bill dispute, the refund and a tamper check, scored by the same evaluator as the live runs
 - 20 red-team attacks on the safety layer and 12 on the plan workflow (see [SECURITY.md](SECURITY.md))
