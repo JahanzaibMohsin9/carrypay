@@ -17,6 +17,8 @@ export const FLAG_NAMES = [
   "family",
   /** institution-confirmed resolution: posting on the next working day, the registration hold, and the uk-year transfer that arrives without its reference */
   "resolution",
+  /** the bank's verification workbench: separate checks on an uploaded institution, its account and the bill */
+  "verification",
 ] as const;
 
 export type Flag = (typeof FLAG_NAMES)[number];

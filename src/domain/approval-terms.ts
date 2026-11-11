@@ -11,7 +11,7 @@ import type { ApprovalTerms, CostBreakdown, Payment, World } from "./types";
 export const QUOTE_HOLD_HOURS = 24;
 
 export interface TermsChange {
-  id: "invoice_replaced" | "invoice_closed" | "invoice_changed" | "instalment_changed" | "account_changed" | "cost_above_limit" | "more_than_outstanding";
+  id: "invoice_replaced" | "invoice_closed" | "invoice_changed" | "instalment_changed" | "account_changed" | "verification_withdrawn" | "cost_above_limit" | "more_than_outstanding";
   message: string;
 }
 
@@ -89,6 +89,7 @@ export function checkTerms(w: World, payment: Payment, terms: ApprovalTerms): Te
   const b = inst.bank;
   if (b.accountNumber !== terms.beneficiary.accountNumber || b.swift !== terms.beneficiary.swift || b.accountName !== terms.beneficiary.accountName)
     changes.push({ id: "account_changed", message: `${inst.name}'s verified bank account is no longer the one you approved.` });
+  if (inst.origin === "uploaded_bill" && !inst.verifiedAt) changes.push({ id: "verification_withdrawn", message: `The bank no longer has ${inst.name} and its account verified.` });
 
   // the quote holds until quoteHeldUntil; after that the transfer is priced again and must stay within the limit
   let cost = payment.cost;

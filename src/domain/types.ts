@@ -60,6 +60,20 @@ export interface Institution {
   origin?: "registry" | "uploaded_bill";
   /** when the bank verified an uploaded institution and its account (in the sandbox: the Director's button) */
   verifiedAt?: string;
+  /** the bank's separate checks on an uploaded institution (flag "verification", domain/verification.ts) */
+  verification?: Partial<Record<VerificationCheckId, VerificationCheck>>;
+}
+
+export type VerificationCheckId = "institution" | "account" | "invoice";
+
+export interface VerificationCheck {
+  /** requested: the reviewer asked the family for more evidence */
+  status: "open" | "requested" | "confirmed" | "rejected";
+  at?: string;
+  /** the evidence it was confirmed on (VERIFICATION_CHECKS methods) */
+  method?: string;
+  /** what was asked for, or why it was rejected */
+  note?: string;
 }
 
 /** A bill the family uploaded, as read from the file and confirmed by them. Kept on the world so a reset can replay it. */

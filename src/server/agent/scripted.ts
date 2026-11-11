@@ -658,7 +658,42 @@ function upBest(w: World) {
 }
 const upMoney = (cur: string, n: number) => `${cur} ${Math.round(n).toLocaleString("en-US")}`;
 
+/** The bank reviewer's note on the check it is waiting on or rejected (verification flag). */
+const upBankNote = (w: World, status: "requested" | "rejected") => {
+  const v = w.institutions.upl.verification ?? {};
+  return Object.values(v).find((x) => x?.status === status)?.note ?? "";
+};
+
 const UP: ScriptedRun[] = [
+  {
+    // the bank reviewer needs a document from the family before it can verify the institution
+    when: (t) => has(t, "verification_evidence_requested"),
+    steps: [
+      (w) =>
+        step("message_family", {
+          text:
+            w.cases.case_up.lang === "zh"
+              ? `银行在核实这家机构之前，需要您补充一份材料。银行的说明：“${upBankNote(w, "requested")}” 请在“文件”中上传。银行核实之前，这张账单不会付款。` // TODO zh
+              : `Before the bank can verify the institution, it needs one more document from you. The bank's note: "${upBankNote(w, "requested")}" You can add it in Documents. Nothing will be paid on this bill until the bank has verified it.`,
+          importance: "action",
+          narration: w.cases.case_up.lang === "zh" ? "告诉您银行需要什么材料" : "Telling you what the bank needs",
+        }),
+    ],
+  },
+  {
+    when: (t) => has(t, "verification_rejected"),
+    steps: [
+      (w) =>
+        step("message_family", {
+          text:
+            w.cases.case_up.lang === "zh"
+              ? `银行没有通过对这张账单的核实：${upBankNote(w, "rejected")} 因此不能向账单上的账户付款。请先不要通过其他方式付款，直接联系医院或学校确认。` // TODO zh
+              : `The bank could not verify this bill: ${upBankNote(w, "rejected")} So nothing can be paid to the account on it. Please don't pay it another way; contact the institution directly to check.`,
+          importance: "warning",
+          narration: w.cases.case_up.lang === "zh" ? "告诉您银行的结论" : "Telling you what the bank decided",
+        }),
+    ],
+  },
   {
     when: (t, w) => has(t, "family_message") && !Object.values(w.payments).length && !w.institutions.upl.verifiedAt,
     steps: [

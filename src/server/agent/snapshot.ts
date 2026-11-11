@@ -3,6 +3,7 @@ import { corridorOf } from "@/domain/corridors";
 import { computeUsage, findRule } from "@/domain/rules/engine";
 import { ratePerUSD } from "@/domain/market";
 import { flagOn } from "../flags";
+import { checksOf } from "@/domain/verification";
 
 const r0 = (n: number) => Math.round(n);
 
@@ -107,6 +108,15 @@ export function caseSnapshot(w: World, caseId: string) {
             verification_note: inst.verifiedAt
               ? "The bank has verified this institution and the account on the uploaded bill. It is outside the sandbox: it does not answer CarryPay's email automatically."
               : "Not verified yet. Read and price the bill and explain it to the family, but nothing can be paid and no email can be sent until the bank has verified it. You will be woken when that happens.",
+            ...(flagOn("verification")
+              ? {
+                  bank_checks: checksOf(inst).map(({ spec, state }) => ({
+                    question: spec.question,
+                    status: state.status === "requested" ? "the bank needs more evidence from the family" : state.status,
+                    ...(state.note ? { bank_note: state.note } : {}),
+                  })),
+                }
+              : {}),
           }
         : {}),
       accepts_cards: inst.acceptsCards,

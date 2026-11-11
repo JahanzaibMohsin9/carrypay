@@ -5,6 +5,8 @@ import { AgentRunner, hasApiCredentials, MODEL } from "./agent/runner";
 import { SCENARIOS, seedScenario, seedUpload } from "./scenarios";
 import { advanceTo, advanceToNext, injectChaos, injectStress, nextScheduled, runBeat, setPaymentStatus, submitPayment, verifyInstitution, withdrawApproval, type ChaosKind } from "./sim/engine";
 import { checkTerms } from "@/domain/approval-terms";
+import { verifyAllForSandbox } from "./verification";
+import { flagOn } from "./flags";
 import { hoursFrom } from "./sim/factory";
 import { verifyChain } from "./hash";
 import { listPasskeys } from "./passkey";
@@ -373,9 +375,13 @@ export function directorAction(body: Record<string, unknown>, sid?: string) {
       if (!["salary_late", "fx_up"].includes(String(body.kind))) throw new Error("stress kind must be salary_late or fx_up");
       injectStress(store, body.kind as StressKind, body.caseId ? String(body.caseId) : undefined);
       return;
-    case "verify_institution":
-      verifyInstitution(store);
+    case "verify_institution": {
+      // with the workbench on, the shortcut confirms each of the bank's checks (logged as the Director's)
+      const inst = Object.values(store.world.cases)[0] && store.world.institutions[Object.values(store.world.cases)[0].institutionId];
+      if (flagOn("verification") && inst?.origin === "uploaded_bill") verifyAllForSandbox(store, inst.id);
+      else verifyInstitution(store);
       return;
+    }
     case "anchor": {
       const note = String(body.note ?? "Manual anchor").slice(0, 60);
       if (anchors) anchors.flush(note);
