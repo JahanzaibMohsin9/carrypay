@@ -49,3 +49,48 @@ describe("Replay evaluation (curated live runs)", () => {
     expect(verifyChain(store.ledger).ok).toBe(true);
   });
 });
+
+describe("Replay evaluation: a year in London (plan workflow, all features on)", () => {
+  it("uk-year passes every evaluation check", async () => {
+    const { parseFlags } = await import("@/domain/flags");
+    const { setFlagsForTest } = await import("./flags");
+    const { compareSchedules } = await import("@/domain/plan/cashflow");
+    const { decideArrangement, signMandate } = await import("./plan");
+    setFlagsForTest(parseFlags("all"));
+    try {
+      const store = new Store();
+      store.load(() => seedScenario("uk-year"));
+      store.reset(seedScenario("uk-year"));
+      store.world.agent.mode = "replay";
+      const runner = new AgentRunner(store);
+      runner.resetSession();
+      (globalThis as Record<string, unknown>).__carrypay = { store, runner, autoplayTimer: setInterval(() => {}, 1 << 30), runnerClass: AgentRunner };
+      const { decideApproval } = await import("./runtime");
+      const settle = async () => {
+        await new Promise((r) => setTimeout(r, 1));
+        for (let i = 0; i < 2000 && (runner.isBusy || store.world.agent.status === "working"); i++) await new Promise((r) => setTimeout(r, 5));
+      };
+      const w = () => store.world;
+      // the family's part, as in the live harness: approve, accept the engine's pick, sign the mandate
+      for (let i = 0; i < MAX_STEPS; i++) {
+        const pending = Object.values(w().approvals).filter((a) => !a.decision);
+        const offered = Object.values(w().arrangements ?? {}).filter((a) => a.status === "offered");
+        const accepted = Object.values(w().arrangements ?? {}).some((a) => a.status === "accepted");
+        const unsigned = Object.values(w().mandates ?? {}).find((m) => m.status === "awaiting_approval");
+        if (pending.length) for (const a of pending) decideApproval(a.id, "approved", "hold");
+        else if (unsigned) signMandate(store, unsigned.id, unsigned.payerId, "hold");
+        else if (offered.length && !accepted) decideArrangement(store, compareSchedules(w(), "case_yr", offered.map((a) => ({ id: a.id, label: a.title, schedule: a })))!.pickId!, "accept", "p_jianhua");
+        else if (w().schedule.length) advanceToNext(store);
+        else break;
+        await settle();
+      }
+      const ev = evaluateRun(w(), store.ledger);
+      expect(ev.mode).toBe("replay");
+      expect(ev.checks.filter((c) => !c.pass)).toEqual([]);
+      expect(ev.metrics.llmCalls).toBe(0);
+      expect(verifyChain(store.ledger).ok).toBe(true);
+    } finally {
+      setFlagsForTest(undefined);
+    }
+  });
+});
