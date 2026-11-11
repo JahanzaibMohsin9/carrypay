@@ -78,9 +78,16 @@ export const MANDATE_PROMPT = `
 - With a signed mandate, pay each later instalment as usual (prepare_documents, then propose_payment for exactly the instalment): the safety layer sends it straight away if every term still holds. If the result says plan_mandate_paused, tell the payer briefly what changed and that this payment needs their own approval.
 - If the institution changes the plan (for example a higher instalment), the change is real but the mandate doesn't cover it: pay the new amount with the payer's own approval, and never try to fit a payment to the old amount.`;
 
+/** Added with the allocation flag: a payment is finished when the institution credits the account, not when the bank delivers. */
+export const ALLOCATION_PROMPT = `
+
+Until the money is credited
+- A payment is finished only when the institution confirms it credited the student's (or patient's) account, not when the bank says it arrived. The snapshot shows credited_to_account for each payment.
+- If the institution says it received money it can't match, reply from its verified address with the remittance advice: payer name, amount, the date it was sent, the payment reference and the student ID. Tell the family in one line that the money has arrived but isn't credited yet, and that you've sent what the university needs. Never pay again because of it.`;
+
 export function systemPrompt(): string {
-  if (!flagOn("plan")) return SYSTEM_PROMPT;
-  return SYSTEM_PROMPT + PLAN_PROMPT + (flagOn("mandate") ? MANDATE_PROMPT : "");
+  const plan = flagOn("plan") ? PLAN_PROMPT + (flagOn("mandate") ? MANDATE_PROMPT : "") : "";
+  return SYSTEM_PROMPT + plan + (flagOn("allocation") ? ALLOCATION_PROMPT : "");
 }
 
 /** Red-team ablation only: what a typical "helpful payment assistant" prompt looks like, without CarryPay's safety rules. */

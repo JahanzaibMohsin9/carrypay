@@ -233,3 +233,43 @@ describe("A year in London (scripted agent, plan workflow)", () => {
     }
   });
 });
+
+describe("A year in London: a transfer the university can't match (scripted agent)", () => {
+  it("doesn't count a delivered payment as done until the university credits the student's account", async () => {
+    const { parseFlags } = await import("@/domain/flags");
+    const { setFlagsForTest } = await import("./flags");
+    const { compareSchedules } = await import("@/domain/plan/cashflow");
+    const { decideArrangement, signMandate } = await import("./plan");
+    const { injectChaos } = await import("./sim/engine");
+    setFlagsForTest(parseFlags("all"));
+    try {
+      const { store, next, approveAll, settle } = await boot("uk-year");
+      const w = () => store.world;
+      injectChaos(store, "unallocated"); // the first transfer will land unmatched
+      for (let i = 0; i < 40; i++) {
+        const offered = Object.values(w().arrangements ?? {}).filter((a) => a.status === "offered");
+        const accepted = Object.values(w().arrangements ?? {}).some((a) => a.status === "accepted");
+        const unsigned = Object.values(w().mandates ?? {}).find((m) => m.status === "awaiting_approval");
+        if (Object.values(w().approvals).some((a) => !a.decision)) await approveAll();
+        else if (unsigned) {
+          signMandate(store, unsigned.id, "p_jianhua", "hold");
+          await settle();
+        } else if (offered.length && !accepted) {
+          decideArrangement(store, compareSchedules(w(), "case_yr", offered.map((a) => ({ id: a.id, label: a.title, schedule: a })))!.pickId!, "accept", "p_jianhua");
+          await settle();
+        } else if (w().schedule.length) await next();
+        else break;
+      }
+      const first = Object.values(w().payments).sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      // it arrived unmatched, the agent sent the remittance advice, and only then was it credited
+      expect(store.ledger.some((e) => e.type === "payment.unallocated")).toBe(true);
+      expect(first.allocation).toMatchObject({ status: "allocated", account: "KG2611392", note: "Allocated after the remittance advice" });
+      expect(Object.values(w().payments).filter((p) => p.status === "completed")).toHaveLength(3); // never paid twice
+      const ev = evaluateRun(w(), store.ledger);
+      expect(ev.checks.filter((c) => !c.pass)).toEqual([]);
+      expect(ev.checks.map((c) => c.id)).toContain("credited_to_student");
+    } finally {
+      setFlagsForTest(undefined);
+    }
+  });
+});

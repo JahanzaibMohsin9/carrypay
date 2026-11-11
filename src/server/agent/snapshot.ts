@@ -126,6 +126,9 @@ export function caseSnapshot(w: World, caseId: string) {
       attempts: p.attempts,
       return_reason: p.returnReason,
       cost_to_family: `${p.cost.sourceCurrency} ${r0(p.cost.totalSource).toLocaleString()}`,
+      ...(p.allocation
+        ? { credited_to_account: p.allocation.status === "allocated" ? p.allocation.account ?? true : false, ...(p.allocation.status === "unallocated" ? { not_credited_yet: p.allocation.note } : {}) }
+        : {}),
     })),
     pending_approvals: Object.values(w.approvals).filter((a) => a.caseId === caseId && !a.decision).map((a) => ({ id: a.id, payment_id: a.paymentId, summary: a.summary })),
     limits_used: {

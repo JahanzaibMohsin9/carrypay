@@ -45,6 +45,8 @@ const S = {
     confirmed: "Confirmed by the university",
     instalments: "Instalments",
     paid: "Paid",
+    credited: "Credited to the student's account",
+    notCredited: "Arrived, not yet credited",
     due: "Due",
     quota: (y: number) => `${y} FX quota`,
     above: "Above quota: needs proof of the expense",
@@ -104,6 +106,8 @@ const S = {
     confirmed: "学校已确认",
     instalments: "分期",
     paid: "已付",
+    credited: "已入学生账户",
+    notCredited: "已到账，尚未入学生账户",
     due: "到期",
     quota: (y: number) => `${y} 年购汇额度`,
     above: "超出额度：需提供真实用途证明",
@@ -409,7 +413,8 @@ function Instalments({ p, w, c, s, tz, lang }: { p: Projection; w: World; c: Cas
         {paid.map((x) => (
           <div key={x.id} className="flex items-center justify-between gap-3 px-4 py-3 text-[13px]">
             <span className="flex items-center gap-2 text-ink">
-              <Check size={16} className="text-success" aria-hidden /> {s.paid} · {dayLabel(x.completedAt ?? x.createdAt, tz, lang)}
+              {x.allocation?.status === "unallocated" ? <CircleDashed size={16} className="text-amber-strong" aria-hidden /> : <Check size={16} className="text-success" aria-hidden />}
+              {x.allocation?.status === "allocated" ? s.credited : x.allocation?.status === "unallocated" ? s.notCredited : s.paid} · {dayLabel(x.completedAt ?? x.createdAt, tz, lang)}
             </span>
             <span className="num font-semibold text-ink">{money(x.amount, x.currency)}</span>
           </div>

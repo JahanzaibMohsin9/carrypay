@@ -327,7 +327,7 @@ export function directorAction(body: Record<string, unknown>, sid?: string) {
       store.trigger({ caseId: String(body.caseId), reason: "nudge" });
       return;
     case "chaos":
-      if (!["bank_outage", "card_decline", "silent"].includes(String(body.kind))) throw new Error("chaos kind must be bank_outage, card_decline or silent");
+      if (!["bank_outage", "card_decline", "silent", "unallocated"].includes(String(body.kind))) throw new Error("chaos kind must be bank_outage, card_decline, silent or unallocated");
       injectChaos(store, body.kind as ChaosKind);
       return;
     case "verify_institution":

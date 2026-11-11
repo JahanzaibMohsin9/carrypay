@@ -163,6 +163,8 @@ export interface Payment {
   completedAt?: string;
   returnReason?: string;
   attempts: number;
+  /** the institution's own confirmation that it credited the student's or patient's account (allocation flag) */
+  allocation?: { status: "allocated" | "unallocated"; at: string; account?: string; note?: string };
 }
 
 export interface Approval {
@@ -323,7 +325,7 @@ export interface World {
   agent: AgentState;
   autoReply: boolean;
   /** director's chaos mode: faults injected into the outside world, each consumed when it fires */
-  chaos?: { bankOutage?: boolean; cardDecline?: boolean; silentUntil?: string };
+  chaos?: { bankOutage?: boolean; cardDecline?: boolean; silentUntil?: string; unallocated?: boolean };
   /** director: advance the clock automatically whenever the agent is idle */
   autoplay: boolean;
   counters: Record<string, number>;

@@ -87,6 +87,7 @@ export function DirectorPanel({ dense = false }: { dense?: boolean }) {
           ["bank_outage", "Bank outage", Boolean(w.chaos?.bankOutage)],
           ["card_decline", "Card declined", Boolean(w.chaos?.cardDecline)],
           ["silent", "Institution silent", Boolean(w.chaos?.silentUntil && w.chaos.silentUntil > w.now)],
+          ...(state.flags?.allocation ? ([["unallocated", "Not matched to student", Boolean(w.chaos?.unallocated)]] as const) : []),
         ] as const
       ).map(([kind, label, armed]) => (
         <button

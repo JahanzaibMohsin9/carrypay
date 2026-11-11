@@ -99,7 +99,7 @@ function PaymentCard({ p, tz, lang }: { p: Payment; tz: string; lang: string }) 
         </div>
       </div>
       {!terminalBad && (
-        <ol className="mt-3 grid grid-cols-4 gap-1" aria-label="Payment progress">
+        <ol className={cn("mt-3 grid gap-1", p.allocation ? "grid-cols-5" : "grid-cols-4")} aria-label="Payment progress">
           {STEPS.map((s, i) => {
             const stepIdx = order.indexOf(s.status[s.status.length - 1]);
             const doneStep = idx >= stepIdx || p.status === "completed";
@@ -112,7 +112,20 @@ function PaymentCard({ p, tz, lang }: { p: Payment; tz: string; lang: string }) 
               </li>
             );
           })}
+          {/* the institution's own confirmation: delivered is not the same as credited to the student's account */}
+          {p.allocation && (
+            <li className="flex flex-col gap-1">
+              <span className={cn("h-1.5 rounded-full", p.allocation.status === "allocated" ? "bg-brand" : "bg-amber")} />
+              <span className="text-[10.5px] font-medium text-ink-2">Credited</span>
+            </li>
+          )}
         </ol>
+      )}
+      {p.allocation?.status === "unallocated" && (
+        <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-soft px-3 py-2 text-[12px] text-amber-strong">
+          <CircleDashed size={14} className="mt-0.5 shrink-0" />
+          <span>{"Arrived at the university's bank, but not yet credited to the student's account. CarryPay has sent them what they need to match it."}</span>
+        </div>
       )}
       {p.statusHistory.some((h) => h.status === "returned") && (
         <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-soft px-3 py-2 text-[12px] text-amber-strong">

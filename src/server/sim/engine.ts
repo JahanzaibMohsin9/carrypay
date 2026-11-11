@@ -4,6 +4,7 @@ import type { Store } from "../store";
 import { addDoc, hoursFrom, issueInvoice, sendMail } from "./factory";
 import { institutionReply } from "./institution";
 import { obligationsFor } from "@/domain/plan/cashflow";
+import { flagOn } from "../flags";
 
 // ---------------------------------------------------------------------------
 // Clock
@@ -375,7 +376,7 @@ export function onOutboundMail(store: Store, mail: Mail) {
   schedule(store, { at, kind: "reply", payload: { mailId: mail.id }, label: `${inst.name} replies` });
 }
 
-export type ChaosKind = "bank_outage" | "card_decline" | "silent";
+export type ChaosKind = "bank_outage" | "card_decline" | "silent" | "unallocated";
 
 /** Director: inject a fault into the outside world. The agent isn't told; it finds out the way it would in real life. */
 export function injectChaos(store: Store, kind: ChaosKind) {
@@ -383,12 +384,14 @@ export function injectChaos(store: Store, kind: ChaosKind) {
     bank_outage: "the beneficiary bank will bounce the next transfer",
     card_decline: "the card issuer will decline the next card payment",
     silent: "the institution stops answering email for 36 hours",
+    unallocated: "the university will receive the next transfer but fail to match it to the student's account",
   }[kind];
   store.mutate((w) => {
     const chaos = (w.chaos ??= {});
     if (kind === "bank_outage") chaos.bankOutage = true;
     if (kind === "card_decline") chaos.cardDecline = true;
     if (kind === "silent") chaos.silentUntil = hoursFrom(w.now, 36);
+    if (kind === "unallocated") chaos.unallocated = true;
   });
   store.log({ actor: "director", type: "chaos.injected", narration: `Chaos: ${label}`, data: { kind } });
 }
@@ -471,11 +474,39 @@ function settlePayment(store: Store, paymentId: string) {
     store.trigger({ caseId: p.caseId, reason: "payment_completed", detail: `${p.id} received; confirmation ${conf.id}` });
     return;
   }
+  // the university credits the student's account (allocation flag); with the chaos fault it can't match the transfer
+  if (flagOn("allocation") && inst.kind === "university") {
+    const unmatched = !!store.world.chaos?.unallocated;
+    const account = studentAccountOf(store, p.caseId);
+    store.mutate((w) => {
+      if (unmatched) w.chaos!.unallocated = false;
+      w.payments[p.id].allocation = unmatched
+        ? { status: "unallocated", at: w.now, note: "Received by the university's bank but not matched to a student account" }
+        : { status: "allocated", at: w.now, account };
+    });
+    if (unmatched) {
+      store.log({ actor: "university", type: "payment.unallocated", caseId: p.caseId, narration: `${inst.name} received ${p.currency} ${p.amount.toLocaleString()} but couldn't match it to the student's account yet`, data: { paymentId: p.id } });
+      const m = sendMail(store, {
+        caseId: p.caseId,
+        direction: "inbound",
+        from: inst.email,
+        fromName: "Kingsgate Student Finance",
+        to: "cases@carrypay.app",
+        subject: `Payment received but not yet allocated: ${p.currency} ${p.amount.toLocaleString()}`,
+        body: `Dear CarryPay team,\n\nOur bank has received ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} (reference "${p.reference}"), but our finance system could not match it to a student account, so it is held unallocated and the student's fees still show as outstanding. Please send us the remittance advice (payer name, amount, date sent and the Student ID) and we will allocate it.\n\nKind regards,\nStudent Finance Office\nKingsgate University`,
+        attachments: [],
+        topics: ["allocation"],
+      });
+      store.trigger({ caseId: p.caseId, reason: "payment_completed", detail: `${p.id} reached the university's bank but is NOT yet credited to the student's account; mail ${m.id}` });
+      return;
+    }
+  }
+  const allocated = store.world.payments[p.id].allocation?.status === "allocated" ? store.world.payments[p.id].allocation!.account : undefined;
   const receipt = addDoc(store, {
     caseId: p.caseId,
     kind: "receipt",
     title: `Receipt: ${p.currency} ${p.amount.toLocaleString()}`,
-    text: `${inst.name}\nOFFICIAL RECEIPT\nReceived with thanks ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}\nReference: ${p.reference}\nMethod: ${p.route === "bank_transfer" ? "International bank transfer" : "Card"}`,
+    text: `${inst.name}\nOFFICIAL RECEIPT\nReceived with thanks ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}\nReference: ${p.reference}\nMethod: ${p.route === "bank_transfer" ? "International bank transfer" : "Card"}${allocated ? `\nCredited to student account ${allocated}` : ""}`,
     fields: { amount: p.amount, currency: p.currency, reference: p.reference },
     origin: "institution",
   });
@@ -486,10 +517,18 @@ function settlePayment(store: Store, paymentId: string) {
     fromName: inst.kind === "hospital" ? "SRH International Patient Services" : "Kingsgate Student Finance",
     to: "cases@carrypay.app",
     subject: `Payment received: ${p.currency} ${p.amount.toLocaleString()}`,
-    body: `Dear CarryPay team,\n\nWe confirm receipt of ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} (reference ${p.reference}). The official receipt is attached.\n\nKind regards,\n${inst.name}`,
+    body: `Dear CarryPay team,\n\nWe confirm receipt of ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} (reference ${p.reference})${allocated ? `, credited to student account ${allocated}` : ""}. The official receipt is attached.\n\nKind regards,\n${inst.name}`,
     attachments: [receipt.id],
   });
   store.trigger({ caseId: p.caseId, reason: "payment_completed", detail: `${p.id} received; mail ${m.id}` });
+}
+
+/** The student's account at the university: the enrolled student on the case. */
+export function studentAccountOf(store: Store, caseId: string): string | undefined {
+  const c = store.world.cases[caseId];
+  const inst = store.world.institutions[c.institutionId];
+  const student = c.people.find((x) => x.role === "student");
+  return inst.students?.find((st) => student && student.name.includes(st.name))?.id;
 }
 
 function returnPayment(store: Store, paymentId: string, reason: string) {

@@ -381,7 +381,31 @@ const UKYEAR: ScriptedRun[] = [
   { when: (t, w) => has(t, "instalment_due") && nextInstalment(w)?.instalment === 2, steps: payNextInstalment },
   { when: (t, w) => has(t, "instalment_due") && nextInstalment(w)?.instalment === 3, steps: payNextInstalment },
   {
-    when: (t, w) => has(t, "payment_completed") && !!nextInstalment(w),
+    // the bank delivered it, but the university couldn't match it: send the remittance advice
+    when: (t, w) => has(t, "payment_completed") && Object.values(w.payments).some((p) => p.caseId === YR && p.allocation?.status === "unallocated"),
+    steps: [
+      (w) => {
+        const p = Object.values(w.payments).find((x) => x.caseId === YR && x.allocation?.status === "unallocated")!;
+        return step("send_email", {
+          to: "student.finance@kingsgate.ac.uk",
+          subject: `Remittance advice: ${gbp(p.amount)} for Zhou Yutong (KG2611392)`,
+          body: `Dear Student Finance Office,\n\nRemittance advice for the payment you received but could not match:\n- Payer: Zhou Jianhua\n- Amount: ${gbp(p.amount)}\n- Sent: ${p.createdAt.slice(0, 10)} by international bank transfer\n- Payment reference: ${p.reference}\n- Student: Zhou Yutong, Student ID KG2611392\n\nPlease allocate it to her student account.\n\nKind regards,\nCarryPay, on behalf of the family`,
+          narration: "Sending Kingsgate the remittance advice so it can credit Yutong's account",
+        });
+      },
+      () =>
+        step("message_family", {
+          text: "The instalment has reached Kingsgate's bank, but their system hasn't matched it to Yutong's account yet, so her fees still show as unpaid there. I've sent them the remittance advice with her Student ID; nothing needs paying again.",
+          importance: "info",
+          narration: "Telling you the money arrived but isn't credited yet",
+        }),
+    ],
+  },
+  {
+    when: (t, w) =>
+      (has(t, "payment_completed") || (has(t, "mail_received") && !!lastInbound(w, YR, (m) => /credited to student account/.test(m.body)))) &&
+      !!nextInstalment(w) &&
+      !Object.values(w.payments).some((p) => p.caseId === YR && p.allocation?.status === "unallocated"),
     steps: [
       (w) => {
         const ob = nextInstalment(w)!;

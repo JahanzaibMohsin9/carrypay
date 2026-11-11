@@ -11,7 +11,7 @@ import { schedule } from "./engine";
 // per email, answering every question asked in it, and saying when something
 // that doesn't exist yet (such as the final bill) will come.
 
-export type Intent = "estimate" | "bank_details" | "fraud_alert" | "payment_status" | "cash" | "dispute" | "refund" | "statement" | "admission" | "correction" | "arrangement" | "accept";
+export type Intent = "estimate" | "bank_details" | "fraud_alert" | "payment_status" | "allocation" | "cash" | "dispute" | "refund" | "statement" | "admission" | "correction" | "arrangement" | "accept";
 
 /** Order in which answers appear in the reply (a dispute is settled before a refund is worked out). */
 const PATTERNS: [Intent, RegExp][] = [
@@ -19,6 +19,7 @@ const PATTERNS: [Intent, RegExp][] = [
   ["bank_details", /bank (details|account|letter|confirmation)|account (details|name|number)|letterhead|beneficiary|swift|iban/],
   ["fraud_alert", /fraud|scam|phishing|suspicious|look-?alike|impersonat|did not come from|not (been )?(sent|come) from (you|your|the hospital|the university)/],
   ["payment_status", /receipt|received|arriv|credited|(transfer|payment|deposit) (has been |was |is )?(sent|initiated|made|submitted|on its way|in progress)|we (have )?(sent|paid|transferred|initiated)/],
+  ["allocation", /remittance advice|allocat|student account|could not (be )?match|not (yet )?(been )?matched/],
   ["cash", /\bcash\b|cashier/],
   ["dispute", /duplicate|twice|double[- ]?charg|charged two|same (test|scan)|dispute|corrected (bill|invoice)|billing error/],
   ["refund", /refund|excess deposit|money back|return the (balance|difference)|overpa/],
@@ -103,7 +104,7 @@ export function institutionReply(store: Store, mailId: string) {
     }
   }
   // the plan workflow's topics only count when they were answered (other cases mention "instalment 1 of 2" in passing)
-  for (const k of ["correction", "arrangement", "accept"] as const) if (!answered.has(k)) intents.delete(k);
+  for (const k of ["correction", "arrangement", "accept", "allocation"] as const) if (!answered.has(k)) intents.delete(k);
 
   const body =
     answers.length === 0
@@ -141,6 +142,7 @@ const TOPIC_LABEL: Record<Intent, string> = {
   bank_details: "bank details",
   fraud_alert: "fraud alert",
   payment_status: "payment status",
+  allocation: "allocation to the student's account",
   cash: "cash paid at the cashier",
   dispute: "bill query",
   refund: "refund",
@@ -388,6 +390,7 @@ const HANDLERS: Record<Intent, (c: ReplyCtx) => Answer | null> = {
     };
   },
 
+  allocation: (c) => (flagOn("allocation") ? allocateHeld(c) : null),
   correction: (c) => (flagOn("entitlements") ? correctStatement(c) : null),
   arrangement: (c) => (flagOn("arrangements") ? offerPlans(c) : null),
   accept: (c) => (flagOn("arrangements") ? confirmPlan(c) : null),
@@ -667,3 +670,30 @@ function confirmPlan(c: ReplyCtx): Answer | null {
   };
 }
 
+
+/** Remittance advice for money the university's bank received but its finance system couldn't match. */
+function allocateHeld(c: ReplyCtx): Answer | null {
+  const held = Object.values(c.store.world.payments).filter((p) => p.caseId === c.caseId && p.allocation?.status === "unallocated");
+  if (!held.length || !c.enrolled) return null;
+  const advice = `${c.original.subject} ${c.original.body}`;
+  if (!advice.includes(c.enrolled.id)) return { text: "To allocate the payment we need the Student ID in the remittance advice, together with the payer's name, the amount and the date it was sent." };
+  const account = c.enrolled.id;
+  const receipts = held.map((p) =>
+    addDoc(c.store, {
+      caseId: c.caseId,
+      kind: "receipt",
+      title: `Receipt: ${p.currency} ${p.amount.toLocaleString()}`,
+      text: [`${c.inst.name}`, "OFFICIAL RECEIPT", `Received with thanks ${money(p.currency, p.amount)}`, `Reference: ${p.reference}`, "Method: International bank transfer", `Credited to student account ${account} after remittance advice`].join("\n"),
+      fields: { amount: p.amount, currency: p.currency, reference: p.reference, account },
+      origin: "institution",
+    }),
+  );
+  c.store.mutate((w) => {
+    for (const p of held) w.payments[p.id].allocation = { status: "allocated", at: w.now, account, note: "Allocated after the remittance advice" };
+  });
+  c.store.log({ actor: "university", type: "payment.allocated", caseId: c.caseId, narration: `${c.inst.name} credited ${held.map((p) => money(p.currency, p.amount)).join(" and ")} to the student's account`, data: { paymentIds: held.map((p) => p.id), account } });
+  return {
+    text: `Thank you for the remittance advice. ${held.map((p) => money(p.currency, p.amount)).join(" and ")} ${held.length > 1 ? "have" : "has"} now been credited to student account ${account}, and the official receipt is attached.`,
+    attachments: receipts.map((r) => r.id),
+  };
+}

@@ -156,6 +156,11 @@ export function evaluateRun(w: World, ledger: LedgerEntry[]): RunEvaluation {
       check("year_paid", "Every instalment of the plan reached the university", !!plan && w.invoices[plan.invoiceId]?.status === "paid");
     }
   }
+  // the bank saying "delivered" is not the end: the university must credit the student's account
+  if (flagOn("allocation") && inst.kind === "university" && done.length) {
+    const held = done.filter((p) => p.allocation?.status !== "allocated");
+    check("credited_to_student", "Every payment credited to the student's account by the university", held.length === 0, held.length ? held.map((p) => p.id).join(", ") : undefined);
+  }
   if (w.scenarioId === "pk-admission" || w.scenarioId === "cn-admission") {
     const asked = outbound.some((m) => Object.values(w.mail).some((r) => r.inReplyTo === m.id && r.topics?.includes("admission")));
     const uniSaidNo = Object.values(w.mail).find((m) => m.caseId === c.id && m.direction === "inbound" && /no applicant/i.test(m.body));
