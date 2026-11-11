@@ -4,7 +4,7 @@
 import { stableStringify } from "@/lib/canonical";
 import { evaluateRoute } from "../rules/engine";
 import type { Route, World } from "../types";
-import { obligationsFor, projectCashflow } from "./cashflow";
+import { obligationsFor, projectCashflow, type Projection } from "./cashflow";
 import type { Arrangement, PlanMandate } from "./types";
 
 const DAY = 86_400_000;
@@ -58,6 +58,15 @@ export interface MandateCheck {
   failed: { id: string; message: string }[];
 }
 
+/**
+ * The mandate's reserve check: the payer's projected balance through every remaining payment, against the
+ * safety net in the signed terms. A breach means the next payment under the mandate pauses and asks the payer.
+ */
+export function mandateReserve(world: World, m: PlanMandate): Projection | undefined {
+  const profile = world.funding?.[m.caseId];
+  return profile ? projectCashflow(world, m.caseId, { profile: { ...profile, reserveFloor: m.reserveFloor } }) : undefined;
+}
+
 /** May this payment go ahead under the mandate, without asking the payer again? */
 export function mandateAllows(world: World, m: PlanMandate, p: MandateProposal): MandateCheck {
   const passed: string[] = [];
@@ -87,8 +96,7 @@ export function mandateAllows(world: World, m: PlanMandate, p: MandateProposal):
     .reduce((s, x) => s + x.amount, 0);
   check("total_cap", spent + p.amount <= m.totalCap + 0.5, `It would take payments under the mandate above ${m.currency} ${m.totalCap}.`);
   // the payer's safety net, from their own figures, with this payment and everything after it
-  const profile = world.funding?.[m.caseId];
-  const proj = profile ? projectCashflow(world, m.caseId, { profile: { ...profile, reserveFloor: m.reserveFloor } }) : undefined;
+  const proj = mandateReserve(world, m);
   check("reserve", !!proj && !proj.firstBreach, proj?.firstBreach ? `It would take the payer below their safety net on ${proj.firstBreach.at.slice(0, 10)}.` : "The payer's figures are missing.");
   const c = world.cases[m.caseId];
   const ev = evaluateRoute({ world, caseFile: c, payer: c.people.find((x) => x.id === p.payerId), route: p.route, amount: p.amount, currency: m.currency, invoiceId: p.invoiceId });

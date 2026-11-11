@@ -9,11 +9,12 @@ import { compareRoutes, priceRoute } from "@/domain/rules/engine";
 import { ROUTE_LABEL } from "@/domain/corridors";
 import type { CorridorId, Route } from "@/domain/types";
 import { compareSchedules, obligationsFor, projectCashflow } from "@/domain/plan/cashflow";
+import { mandateReserve } from "@/domain/plan/mandate";
 
 /** Cost difference between two routes for the same amount, rounded to the nearest 1,000 (or 100 for CNY). */
 function diff(w: World, corridor: CorridorId, inst: string, amount: number, a: Route, b: Route) {
-  const pa = priceRoute({ corridor, route: a, deliverAmount: amount, institution: w.institutions[inst], simDate: w.now })!;
-  const pb = priceRoute({ corridor, route: b, deliverAmount: amount, institution: w.institutions[inst], simDate: w.now })!;
+  const pa = priceRoute({ corridor, route: a, deliverAmount: amount, institution: w.institutions[inst], simDate: w.now, fxShocks: w.fxShocks })!;
+  const pb = priceRoute({ corridor, route: b, deliverAmount: amount, institution: w.institutions[inst], simDate: w.now, fxShocks: w.fxShocks })!;
   const step = pa.sourceCurrency === "CNY" ? 100 : 1000;
   return `${pa.sourceCurrency} ${(Math.round(Math.abs(pb.totalSource - pa.totalSource) / step) * step).toLocaleString("en-US")}`;
 }
@@ -671,6 +672,60 @@ const UP: ScriptedRun[] = [
         }),
       (w) => step("close_case", { summary: `Uploaded bill ${upInvoice(w).number} paid in full to ${w.institutions.upl.name} after the bank verified it.`, narration: w.cases.case_up.lang === "zh" ? "结案" : "Closing the case" }),
     ],
+  },
+];
+
+// ---------------------------------------------------------------------------
+// A Director stress test outside Live mode: no recorded or scripted run covers it, so these fixed steps run
+// instead of consuming one (which would play a recorded step out of context). They are hand-written, not the
+// AI: they call the real plan_affordability and repeat the engine's numbers, nothing else.
+
+const fmtMoney = (n: number, cur: string) => `${cur} ${Math.round(n).toLocaleString("en-US")}`;
+const dayIn = (iso: string, corridor: string, lang: "en" | "zh" = "en") =>
+  new Date(iso).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-GB", { day: "numeric", month: "long", timeZone: corridor.startsWith("CN") ? "Asia/Shanghai" : "Asia/Karachi" });
+
+/** What the stress tests on a case did, from the engine: the family's message (English, plus Chinese for a Chinese payer). */
+export function stressMessage(w: World, caseId: string): { text: string; importance: "info" | "warning" } | null {
+  const c = w.cases[caseId];
+  const tests = (w.stressTests ?? []).filter((s) => s.caseId === caseId);
+  const p = projectCashflow(w, caseId);
+  if (!c || !tests.length || !p) return null;
+  const payer = c.people.find((x) => x.id === w.funding?.[caseId]?.ownerPersonId)?.name ?? "the payer";
+  const cur = p.currency;
+  const mandate = Object.values(w.mandates ?? {}).find((m) => m.caseId === caseId && m.status === "active");
+  const check = mandate ? mandateReserve(w, mandate) : p;
+  const breach = check?.firstBreach;
+  const pct = (t: (typeof tests)[number]) => Math.round((t.rate!.after / t.rate!.before - 1) * 100);
+  const what = tests.map((t) =>
+    t.kind === "salary_late"
+      ? t.moved!.map((m) => `${m.label.toLowerCase()} now arrives ${dayIn(m.to, c.corridor)} instead of ${dayIn(m.from, c.corridor)}`).join(", ")
+      : `${t.rate!.currency} is ${pct(t)}% dearer: 1 ${t.rate!.currency} now costs ${t.rate!.homeCurrency} ${t.rate!.after.toFixed(2)} instead of ${t.rate!.before.toFixed(2)}`,
+  );
+  const was = tests[0].before.lowestHeadroom;
+  const effect = breach
+    ? `That would take ${payer} ${fmtMoney(breach.shortBy, cur)} below the safety net of ${fmtMoney(p.reserveFloor, cur)} on ${dayIn(breach.at, c.corridor)}.`
+    : `The safety net of ${fmtMoney(p.reserveFloor, cur)} still holds: the lowest point is ${fmtMoney(p.lowest.balance, cur)} on ${dayIn(p.lowest.at, c.corridor)}, ${fmtMoney(p.lowest.headroom, cur)} above it (${fmtMoney(was, cur)} before).`;
+  const mandateLine = mandate ? (breach ? ` So the next instalment won't go ahead under the signed mandate: it will wait for ${payer}'s own approval.` : " The signed mandate can still pay the next instalment.") : "";
+  let text = `Stress test in the sandbox: ${what.join("; ")}. ${effect}${mandateLine}`;
+  if (c.corridor.startsWith("CN")) {
+    // TODO zh: MiMo review
+    const zhWhat = tests.map((t) =>
+      t.kind === "salary_late"
+        ? `工资晚到（下一笔改为${dayIn(t.moved![0].to, c.corridor, "zh")}到账，原定${dayIn(t.moved![0].from, c.corridor, "zh")}）`
+        : `${t.rate!.currency} 贵了 ${pct(t)}%（1 ${t.rate!.currency} = ${t.rate!.homeCurrency} ${t.rate!.after.toFixed(2)}）`,
+    );
+    const zhEffect = breach ? `这样在${dayIn(breach.at, c.corridor, "zh")}会低于应急储备 ${fmtMoney(breach.shortBy, cur)}。` : `应急储备仍然守得住，最低点比储备高 ${fmtMoney(p.lowest.headroom, cur)}。`;
+    const zhMandate = mandate ? (breach ? "下一期不会按授权自动支付，会先请您确认。" : "已签的授权仍可支付下一期。") : "";
+    text += `\n\n压力测试：${zhWhat.join("；")}。${zhEffect}${zhMandate}`;
+  }
+  return { text, importance: breach ? "warning" : "info" };
+}
+
+export const STRESS_STEPS: ScriptedRun["steps"] = [
+  () => step("plan_affordability", { narration: "Re-running the plan with the stress test applied (hand-written step, not the AI)" }),
+  (w, caseId) => {
+    const m = stressMessage(w, caseId);
+    return m ? step("message_family", { ...m, narration: "Telling you what the stress test changes, with the engine's numbers (hand-written step, not the AI)" }) : null;
   },
 ];
 

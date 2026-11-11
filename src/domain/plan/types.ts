@@ -13,7 +13,14 @@ export interface FundingProfile {
   /** money available now, by account or pot */
   balances: { label: string; amount: number }[];
   /** salary and other regular income; everyMonths = 1 for a monthly salary, absent for a one-off */
-  income: { label: string; amount: number; firstAt: string; everyMonths?: number }[];
+  income: {
+    label: string;
+    amount: number;
+    firstAt: string;
+    everyMonths?: number;
+    /** every payment of it due on or after `from` arrives `days` late (a Director stress test in the sandbox) */
+    late?: { from: string; days: number };
+  }[];
   /** household costs that must be covered every month whatever happens (rent, food, school, loans) */
   essentialsMonthly: number;
   /** the family's chosen safety net: the plan should never take the balance below it */

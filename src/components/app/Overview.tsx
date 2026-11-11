@@ -208,7 +208,7 @@ export function RouteCard() {
   const corridor = corridorOf(c.corridor);
   const inFlight = Object.values(w.payments).filter((p) => p.caseId === c.id && ["submitted", "processing"].includes(p.status));
   const dest = w.institutions[c.institutionId].bank.currency;
-  const rate = ratePerUSD(corridor.sourceCurrency, w.now) / ratePerUSD(dest, w.now);
+  const rate = ratePerUSD(corridor.sourceCurrency, w.now, w.fxShocks) / ratePerUSD(dest, w.now, w.fxShocks);
   const path = "M 28 64 C 110 -6, 250 -6, 332 64";
 
   return (

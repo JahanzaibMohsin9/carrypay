@@ -3,11 +3,11 @@ import path from "node:path";
 import { DATA_DIR, Store } from "./store";
 import { AgentRunner, hasApiCredentials, MODEL } from "./agent/runner";
 import { SCENARIOS, seedScenario, seedUpload } from "./scenarios";
-import { advanceTo, advanceToNext, injectChaos, nextScheduled, runBeat, setPaymentStatus, submitPayment, verifyInstitution, type ChaosKind } from "./sim/engine";
+import { advanceTo, advanceToNext, injectChaos, injectStress, nextScheduled, runBeat, setPaymentStatus, submitPayment, verifyInstitution, type ChaosKind } from "./sim/engine";
 import { hoursFrom } from "./sim/factory";
 import { verifyChain } from "./hash";
 import { listPasskeys } from "./passkey";
-import type { AgentMode, UploadedBill } from "@/domain/types";
+import type { AgentMode, StressKind, UploadedBill } from "@/domain/types";
 import { AnchorService, milestoneOf } from "./anchor/service";
 import { ANCHOR_CHAIN, anchorConfig, explorerAddress, FISCO_NAME, fiscoConfig, fiscoPublisher, viemPublisher, type ChainPublisher } from "./anchor/chain";
 import { DEFAULT_SESSION } from "./session";
@@ -348,6 +348,10 @@ export function directorAction(body: Record<string, unknown>, sid?: string) {
     case "chaos":
       if (!["bank_outage", "card_decline", "silent", "unallocated"].includes(String(body.kind))) throw new Error("chaos kind must be bank_outage, card_decline, silent or unallocated");
       injectChaos(store, body.kind as ChaosKind);
+      return;
+    case "stress":
+      if (!["salary_late", "fx_up"].includes(String(body.kind))) throw new Error("stress kind must be salary_late or fx_up");
+      injectStress(store, body.kind as StressKind, body.caseId ? String(body.caseId) : undefined);
       return;
     case "verify_institution":
       verifyInstitution(store);

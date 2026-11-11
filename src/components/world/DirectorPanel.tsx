@@ -1,10 +1,11 @@
 "use client";
 
-import { BadgeCheck, Anchor, Bot, FastForward, Flame, Pause, Play, RotateCcw, SkipForward, Skull, Zap } from "lucide-react";
+import { Activity, BadgeCheck, Anchor, Bot, FastForward, Flame, Pause, Play, RotateCcw, SkipForward, Skull, Zap } from "lucide-react";
 import { useState } from "react";
 import { director, useCarry } from "@/lib/client";
 import { activeCase, caseTz } from "@/lib/selectors";
 import { cn, dateTime, dayNumber } from "@/lib/format";
+import { DEFAULT_STRESSES } from "@/domain/plan/cashflow";
 import type { AgentMode } from "@/domain/types";
 
 export function DirectorPanel({ dense = false }: { dense?: boolean }) {
@@ -100,6 +101,33 @@ export function DirectorPanel({ dense = false }: { dense?: boolean }) {
           {armed ? " ✓" : ""}
         </button>
       ))}
+      {state.flags?.plan && w.funding?.[c.id] && (
+        <>
+          <span className="mx-1 h-5 w-px bg-line" />
+          <span className="inline-flex items-center gap-1 font-semibold text-ink-2" title="Apply the planner's stress tests to the sandbox world: the payer's figures and the sandbox rate change for real">
+            <Activity size={13} className="text-amber" /> Stress
+          </span>
+          {DEFAULT_STRESSES.map((st) => {
+            const kind = st.id === "salary_late" ? "salary_late" : "fx_up";
+            const dest = w.institutions[c.institutionId].bank.currency;
+            const pct = Math.round((st.stress.fxShockPct ?? 0) * 100);
+            const label = kind === "fx_up" ? `${dest} +${pct}%` : st.label;
+            const applied = w.stressTests?.find((s) => s.caseId === c.id && s.kind === kind);
+            return (
+              <button
+                key={kind}
+                onClick={() => run("stress", { kind, caseId: c.id })}
+                disabled={!!applied || state.agentBusy}
+                title={applied ? `Applied ${dateTime(applied.at, tz)}` : kind === "fx_up" ? `${dest} costs ${pct}% more in the sandbox from now on` : `Every coming salary in the payer's figures arrives ${st.stress.incomeDelayDays} days late`}
+                className={cn("inline-flex h-8 items-center rounded-lg border px-2 font-semibold disabled:cursor-not-allowed", applied ? "border-amber bg-amber-soft text-amber-strong" : "border-line hover:border-amber disabled:opacity-40")}
+              >
+                {label}
+                {applied ? " ✓" : ""}
+              </button>
+            );
+          })}
+        </>
+      )}
       {w.institutions[c.institutionId]?.origin === "uploaded_bill" && (
         <>
           <span className="mx-1 h-5 w-px bg-line" />

@@ -839,7 +839,7 @@ export const TOOLS = [
       const dup = Object.values(w.payments).find((p) => p.invoiceId === inv.id && p.route === i.route && p.status === "awaiting_approval");
       if (dup) return { decision: "error", result: { error: `A payment on this invoice is already waiting for the family's approval (${dup.id}).` } };
 
-      const cost = priceRoute({ corridor: c.corridor, route: i.route as Route, deliverAmount: i.amount, institution: w.institutions[inv.institutionId], simDate: w.now })!;
+      const cost = priceRoute({ corridor: c.corridor, route: i.route as Route, deliverAmount: i.amount, institution: w.institutions[inv.institutionId], simDate: w.now, fxShocks: w.fxShocks })!;
       // The payment carries the registry's record, never the model's copy of it: the check above ignores
       // case, spacing and punctuation, so the model's text could still hold invisible or look-alike characters
       // or any bank name. What the bank and the family's approval screen see is the verified account itself.

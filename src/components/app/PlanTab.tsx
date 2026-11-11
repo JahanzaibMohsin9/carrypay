@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, Check, CircleDashed, FileCheck2, Fingerprint, Info, ShieldCheck, Sparkles, X } from "lucide-react";
+import { Activity, AlertTriangle, CalendarClock, Check, CircleDashed, FileCheck2, Fingerprint, Info, ShieldCheck, Sparkles, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { post, useCarry } from "@/lib/client";
 import { passkeysSupported, signMandateWithPasskey } from "@/lib/passkey";
@@ -9,6 +9,7 @@ import { useViewer } from "@/lib/viewer";
 import { activeCase, caseTz } from "@/lib/selectors";
 import { cn, dayLabel, money } from "@/lib/format";
 import { compareSchedules, DEFAULT_STRESSES, projectCashflow, type Projection, type Schedule, type ScheduleOption } from "@/domain/plan/cashflow";
+import { mandateReserve } from "@/domain/plan/mandate";
 import type { Arrangement, FundingProfile, PlanMandate } from "@/domain/plan/types";
 import type { CaseFile, Lang, World } from "@/domain/types";
 import { Badge, Button, Card, Empty, SectionTitle } from "../ui";
@@ -77,6 +78,13 @@ const S = {
     revoke: "Revoke",
     onlyPayerSign: (name: string) => `Only ${name}, who pays, can sign. Anyone on the case can revoke it.`,
     pausedBecause: "Paused because:",
+    stressTitle: "Sandbox stress test",
+    stressSalary: (label: string, to: string, from: string) => `${label} now arrives ${to} instead of ${from}`,
+    stressFx: (cur: string, home: string, after: string, before: string) => `1 ${cur} now costs ${home} ${after} (was ${before})`,
+    stressLowest: (now: string, was: string) => `Lowest point: ${now}. Before the test: ${was}.`,
+    reserveCheck: "Safety net check now:",
+    reserveHolds: "holds for every remaining instalment.",
+    reservePauses: (d: string) => `fails on ${d}, so the next instalment will wait for your own approval.`,
   },
   // TODO zh: whole block to MiMo review
   zh: {
@@ -138,6 +146,13 @@ const S = {
     revoke: "撤销",
     onlyPayerSign: (name: string) => `只有付款人 ${name} 可以签字。案件中的任何人都可以撤销。`,
     pausedBecause: "暂停原因：",
+    stressTitle: "沙盒压力测试", // TODO zh
+    stressSalary: (label: string, to: string, from: string) => `${label}改为${to}到账（原定${from}）`, // TODO zh
+    stressFx: (cur: string, home: string, after: string, before: string) => `1 ${cur} 现在需要 ${home} ${after}（原来 ${before}）`, // TODO zh
+    stressLowest: (now: string, was: string) => `最低点：${now}。测试前：${was}。`, // TODO zh
+    reserveCheck: "当前应急储备检查：", // TODO zh
+    reserveHolds: "剩余各期都守得住。", // TODO zh
+    reservePauses: (d: string) => `${d}会低于储备，下一期会先等您本人确认。`, // TODO zh
   },
 };
 type Strings = (typeof S)["en"];
@@ -201,6 +216,8 @@ function Affordability({ w, c, s, lang, viewer, payerId, payerName, hasPasskey }
         </Card>
       </section>
 
+      <StressNotice w={w} c={c} s={s} tz={tz} lang={lang} />
+
       {awaiting && (
         <Card className="flex items-start gap-3 p-4 text-[13px] text-ink-2">
           <CircleDashed size={18} className="mt-0.5 shrink-0 text-amber-strong" aria-hidden />
@@ -260,7 +277,7 @@ function Affordability({ w, c, s, lang, viewer, payerId, payerName, hasPasskey }
         .filter((m) => m.caseId === c.id && m.status !== "revoked")
         .slice(-1)
         .map((m) => (
-          <MandateCard key={m.id} m={m} s={s} tz={tz} lang={lang} viewer={viewer} payerName={payerName} hasPasskey={hasPasskey} />
+          <MandateCard key={m.id} w={w} m={m} s={s} tz={tz} lang={lang} viewer={viewer} payerName={payerName} hasPasskey={hasPasskey} />
         ))}
 
       <Instalments p={projection} w={w} c={c} s={s} tz={tz} lang={lang} />
@@ -277,6 +294,34 @@ function Affordability({ w, c, s, lang, viewer, payerId, payerName, hasPasskey }
         </ul>
       </details>
     </>
+  );
+}
+
+/** Stress tests the Director applied to this sandbox world: what changed, and the engine's lowest point now and before. */
+function StressNotice({ w, c, s, tz, lang }: { w: World; c: CaseFile; s: Strings; tz: string; lang: Lang }) {
+  const tests = (w.stressTests ?? []).filter((t) => t.caseId === c.id);
+  const now = useMemo(() => (tests.length ? projectCashflow(w, c.id) : undefined), [w, c.id, tests.length]);
+  if (!tests.length || !now) return null;
+  const cur = now.currency;
+  const net = (h: number) => (h >= 0 ? s.aboveNet : s.belowNet)(money(Math.abs(h), cur));
+  return (
+    <Card className="border-amber/40 bg-amber-soft/40 p-4 text-[13px]">
+      <div className="flex items-center gap-2 font-semibold text-ink">
+        <Activity size={16} className="text-amber-strong" aria-hidden /> {s.stressTitle}
+      </div>
+      <ul className="mt-2 space-y-1 text-ink-2">
+        {tests.map((t) => (
+          <li key={t.id}>
+            <b className="text-ink">{stressLabel(t.kind === "salary_late" ? "salary_late" : "fx_5", lang, t.label)}</b>
+            {" · "}
+            {t.kind === "salary_late"
+              ? t.moved?.map((m) => s.stressSalary(m.label, dayLabel(m.to, tz, lang), dayLabel(m.from, tz, lang))).join(" · ")
+              : t.rate && s.stressFx(t.rate.currency, t.rate.homeCurrency, t.rate.after.toFixed(2), t.rate.before.toFixed(2))}
+          </li>
+        ))}
+      </ul>
+      <p className="num mt-2 text-ink">{s.stressLowest(net(now.lowest.headroom), net(tests[0].before.lowestHeadroom))}</p>
+    </Card>
   );
 }
 
@@ -535,7 +580,7 @@ function Figures({ c, s, f, canEdit }: { c: CaseFile; s: Strings; f: FundingProf
         personId: f.ownerPersonId,
         funding: {
           balances: f.balances.map((b, i) => ({ label: b.label, amount: draft.balances[i] })),
-          income: f.income.map((x, i) => ({ label: x.label, amount: draft.income[i], firstAt: x.firstAt, everyMonths: x.everyMonths })),
+          income: f.income.map((x, i) => ({ label: x.label, amount: draft.income[i], firstAt: x.firstAt, everyMonths: x.everyMonths, late: x.late })),
           essentialsMonthly: draft.essentials,
           reserveFloor: draft.reserve,
           conditional: f.conditional,
@@ -603,7 +648,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function MandateCard({ m, s, tz, lang, viewer, payerName, hasPasskey }: { m: PlanMandate; s: Strings; tz: string; lang: Lang; viewer?: string; payerName: string; hasPasskey: boolean }) {
+function MandateCard({ w, m, s, tz, lang, viewer, payerName, hasPasskey }: { w: World; m: PlanMandate; s: Strings; tz: string; lang: Lang; viewer?: string; payerName: string; hasPasskey: boolean }) {
+  // the gateway's own reserve check, run now: what the next payment under the mandate would meet
+  const reserve = useMemo(() => (m.status === "active" ? mandateReserve(w, m) : undefined), [w, m]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = async (fn: () => Promise<unknown>) => {
@@ -638,6 +685,14 @@ function MandateCard({ m, s, tz, lang, viewer, payerName, hasPasskey }: { m: Pla
           ))}
         </ul>
         <p className="mt-3 text-[12px] text-ink-3">{s.mandateWhat}</p>
+        {reserve && (
+          <p className="mt-2 flex items-start gap-2 text-[12px] text-ink-2">
+            {reserve.firstBreach ? <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-strong" aria-hidden /> : <ShieldCheck size={14} className="mt-0.5 shrink-0 text-success" aria-hidden />}
+            <span>
+              {s.reserveCheck} {reserve.firstBreach ? s.reservePauses(dayLabel(reserve.firstBreach.at, tz, lang)) : s.reserveHolds}
+            </span>
+          </p>
+        )}
         {m.status === "paused" && m.pausedReason && (
           <p className="mt-2 flex items-start gap-2 text-[12px] text-ink-2">
             <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-strong" aria-hidden />

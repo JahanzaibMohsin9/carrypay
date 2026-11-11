@@ -1,7 +1,7 @@
 import pkPack from "./packs/pk-sbp.json";
 import cnPack from "./packs/cn-safe.json";
 import { corridorOf } from "../corridors";
-import { pricingOf, midRate, ratePerUSD } from "../market";
+import { pricingOf, midRate, ratePerUSD, type FxShocks } from "../market";
 import type {
   CaseFile,
   CorridorId,
@@ -79,14 +79,16 @@ export function priceRoute(opts: {
   deliverAmount: number;
   institution: Institution;
   simDate: string;
+  /** the world's sandbox rate overrides (World.fxShocks) */
+  fxShocks?: FxShocks;
 }): CostBreakdown | undefined {
-  const { corridor, route, deliverAmount, institution, simDate } = opts;
+  const { corridor, route, deliverAmount, institution, simDate, fxShocks } = opts;
   const c = corridorOf(corridor);
   const pricing = pricingOf(corridor)[route];
   if (!pricing) return undefined;
   const src = c.sourceCurrency;
   const dest = institution.bank.currency;
-  const mid = midRate(src, dest, simDate);
+  const mid = midRate(src, dest, simDate, fxShocks);
   const base = deliverAmount * mid;
   const fxMarkupCost = base * pricing.fxMarkupPct;
   const fees: { label: string; amount: number }[] = [];
@@ -98,7 +100,7 @@ export function priceRoute(opts: {
         amount = f.value;
         break;
       case "flat_usd":
-        amount = f.value * ratePerUSD(src, simDate);
+        amount = f.value * ratePerUSD(src, simDate, fxShocks);
         break;
       case "pct_source":
         amount = Math.min(f.max ?? Infinity, Math.max(f.min ?? 0, base * f.value));
@@ -144,7 +146,7 @@ export function priceRoute(opts: {
     fees,
     taxes,
     totalSource,
-    totalUSD: round2(totalSource / ratePerUSD(src, simDate)),
+    totalUSD: round2(totalSource / ratePerUSD(src, simDate, fxShocks)),
     arrivesInHours: pricing.arrivesInHours,
   };
 }
@@ -179,7 +181,7 @@ export function computeUsage(world: World, caseId: string, excludePaymentId?: st
   for (const p of Object.values(world.payments)) {
     if (p.id === excludePaymentId || !COUNTED.has(p.status)) continue;
     if (p.createdAt.slice(0, 4) !== year) continue;
-    const usd = p.amount / ratePerUSD(p.currency, p.createdAt);
+    const usd = p.amount / ratePerUSD(p.currency, p.createdAt, world.fxShocks);
     if (p.route === "bank_transfer") {
       if (p.caseId === caseId) usage.caseBankTransferUSD += usd;
       usage.fxYearUSD[p.payerId] = (usage.fxYearUSD[p.payerId] ?? 0) + usd;
@@ -230,7 +232,7 @@ export function evaluateRoute(opts: {
   const purpose = opts.purpose ?? caseFile.type;
   const corridor = caseFile.corridor;
   const pack = packFor(corridor);
-  const usd = amount / ratePerUSD(currency, world.now);
+  const usd = amount / ratePerUSD(currency, world.now, world.fxShocks);
   const usage = computeUsage(world, caseFile.id, opts.excludePaymentId);
   const ev: RouteEvaluation = { route, allowed: true, blockers: [], warnings: [], requiredDocs: [], limits: [] };
   const block = (ruleId: string, message: string) => ev.blockers.push({ ruleId, message });
@@ -366,7 +368,7 @@ export function compareRoutes(opts: {
   return corridor.routes
     .filter((route) => route !== "card_payment" || institution.acceptsCards)
     .map((route) => {
-      const cost = priceRoute({ corridor: caseFile.corridor, route, deliverAmount: amount, institution, simDate: world.now });
+      const cost = priceRoute({ corridor: caseFile.corridor, route, deliverAmount: amount, institution, simDate: world.now, fxShocks: world.fxShocks });
       const evaluation = evaluateRoute({ world, caseFile, payer: opts.payer, route, amount, currency: institution.bank.currency, invoiceId: opts.invoiceId });
       const arrivesAt = cost ? new Date(new Date(world.now).getTime() + cost.arrivesInHours * 3_600_000).toISOString() : undefined;
       return {

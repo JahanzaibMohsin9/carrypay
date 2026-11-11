@@ -162,6 +162,6 @@ export function caseSnapshot(w: World, caseId: string) {
       .map((d) => ({ id: d.id, kind: d.kind, title: d.title, origin: d.origin })),
     recent_family_messages: w.messages.filter((m) => m.caseId === caseId).slice(-6).map((m) => ({ from: m.from, text: m.text, at: m.at })),
     ...(flagOn("plan") ? { plan: planSection(w, caseId) } : {}),
-    fx_sandbox_rates_per_usd: Object.fromEntries([...new Set(["PKR", "THB", "GBP", "CNY", inst.bank.currency] as const)].map((k) => [k, Math.round(ratePerUSD(k, w.now) * 1000) / 1000])),
+    fx_sandbox_rates_per_usd: Object.fromEntries([...new Set(["PKR", "THB", "GBP", "CNY", inst.bank.currency] as const)].map((k) => [k, Math.round(ratePerUSD(k, w.now, w.fxShocks) * 1000) / 1000])),
   };
 }
