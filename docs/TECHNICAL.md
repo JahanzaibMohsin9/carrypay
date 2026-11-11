@@ -12,7 +12,7 @@ Companion documents: [SECURITY.md](SECURITY.md) (security self-assessment), [EVA
 | Corridors | Pakistan → Thailand (hospital), Pakistan → UK (admission through an agent), China → UK (tuition; fake study agent; a whole year of fees in instalments), plus uploaded bills from 13 destination countries |
 | Model | DeepSeek V4 Pro (function calling, thinking mode); OpenAI fallback |
 | Safety design | The AI proposes; deterministic code and the family's passkey decide. 22 tools in 3 permission tiers behind a safety gateway |
-| Results | 43/45 live end-to-end runs passed every check (sandbox results, not customer outcomes); 0/20 live-model attacks executed; 145 automated tests |
+| Results | 43/45 live end-to-end runs passed every check (sandbox results, not customer outcomes); 0/20 live-model attacks executed; 171 automated tests |
 | Proof | SHA-256 hash-chained activity log, head hash anchored at each milestone on the Conflux eSpace testnet and on a FISCO BCOS chain |
 
 ## 1. What the system does
@@ -133,7 +133,7 @@ Returned transfers come back with a reason (e.g. the receiving bank needs the pa
 
 ### 3.7 Plans: what is owed, what the family can carry, what the institution agreed
 
-Paying one bill is not the whole problem; carrying a year of fees is. The plan workflow answers that with one shared model in `src/domain/plan/` (pure functions, used by the server, the agent's tools and the UI), so the engine does the arithmetic and the model only explains it. Each part is behind a feature flag (`plan`, `arrangements`, `entitlements`, `mandate`, `allocation`; `CARRYPAY_FLAGS=all` turns them all on) so it can be switched off without a code change.
+Paying one bill is not the whole problem; carrying a year of fees is. The plan workflow answers that with one shared model in `src/domain/plan/` (pure functions, used by the server, the agent's tools and the UI), so the engine does the arithmetic and the model only explains it. Each part is behind a feature flag (`plan`, `arrangements`, `entitlements`, `mandate`, `allocation`, `family`; `CARRYPAY_FLAGS=all` turns them all on) so it can be switched off without a code change.
 
 - **Bill review** (`reviewEntitlements`): compares the structured fields of each award letter (amount, currency, student ID, what it applies to) with the lines of the current fee statement. A gap becomes a *potential* adjustment that cites its document. The agent asks the institution's verified address for a corrected statement (`request_bill_correction`); only the institution's corrected bill makes it *confirmed*, and only money actually credited counts as saved. The states are reported side by side, never added together.
 - **Funding profile**: the payer's own figures, typed by them (money available, salary and its date, monthly essentials, a reserve they choose). CarryPay sees no bank account.
@@ -143,6 +143,8 @@ Paying one bill is not the whole problem; carrying a year of fees is. The plan w
 - **No self-made instalments**: a tuition payment below the amount outstanding must equal an instalment of the confirmed plan (`CARRYPAY.NO_STRUCTURING`, a CarryPay policy rule in both packs). CarryPay never shapes a schedule around a quota.
 - **Plan mandate** (`mandateTerms`, `mandateAllows`): one passkey signature for the rest of a confirmed plan. The terms are derived from the plan, not written by the model: each remaining instalment exactly, a window from two weeks before each due date, a per-instalment and a total cap, the verified account and the payer's reserve floor. The passkey signs a SHA-256 digest of the canonical terms. Each payment under it must pass 13 checks in code; one failure pauses the mandate and the payment goes back to a normal approval. The payer can revoke it at any time.
 - **Credited, not just delivered**: with `allocation` on, a payment to a university is finished when the university confirms it credited the student's account. A transfer it can't match stays open until the agent sends the remittance advice and the university allocates it.
+- **Stress tests on stage**: the Director's "Salary 3 weeks late" and "GBP +5%" change the sandbox itself (the payer's next salary arrives late; the pound is dearer from now on), wake the agent, and flow through the projection, the mandate's reserve check and the officer view. If the reserve would break, the next mandate payment pauses instead of paying.
+- **Each person in their own language** (`family` flag): people on a case carry a language, and the agent's message to the family can carry an English and a Chinese text; each viewer sees their own, with the other one a tap away. In `uk-year` the student reads English and the father Chinese.
 - **Progress per instalment** (`instalmentProgress`): money sent pays the earliest instalments first, the same rule the projection uses, so the app, the officer view and the planner agree on what is paid and what is still owed.
 
 ## 4. LLM integration
@@ -258,7 +260,7 @@ Sandbox state lives in a data folder (world snapshot, ledger as JSONL, anchors, 
 
 ## 9. Testing and evaluation
 
-`npm test` runs 145 tests in 21 files (the list below is the core; also: all five scenarios, uploaded bills, on-chain anchoring on two fake chains, private sessions, the attack lab, the MCP server, family answers, retrying dropped LLM connections, feature flags):
+`npm test` runs 171 tests in 25 files (the list below is the core; also: all five scenarios, uploaded bills, on-chain anchoring on two fake chains, private sessions, the attack lab, the MCP server, family answers, retrying dropped LLM connections, feature flags, per-person message language, the Director's stress tests):
 - rules engine: tax history, pricing order, Pakistan caps, card limits, carried-cash rule, anti-splitting, SAFE quota and prohibited purposes, deadline-aware comparison
 - every scenario end to end with the scripted agent, including the returned transfer, the scam email, the bill dispute, the refund and a tamper check, scored by the same evaluator as the live runs
 - 20 red-team attacks on the safety layer and 12 on the plan workflow (see [SECURITY.md](SECURITY.md))
