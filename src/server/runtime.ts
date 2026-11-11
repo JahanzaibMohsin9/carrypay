@@ -12,6 +12,7 @@ import { AnchorService, milestoneOf } from "./anchor/service";
 import { ANCHOR_CHAIN, anchorConfig, explorerAddress, viemPublisher, type ChainPublisher } from "./anchor/chain";
 import { DEFAULT_SESSION } from "./session";
 import { answerFamily } from "./agent/answer";
+import { serverFlags } from "./flags";
 
 interface Runtime {
   id: string;
@@ -152,6 +153,7 @@ export function publicState(sid?: string) {
     passkeys: listPasskeys().map((k) => ({ id: k.id.slice(0, 12), label: k.label, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt })),
     model: MODEL,
     scenarios: SCENARIOS,
+    flags: serverFlags(),
   };
 }
 export type PublicState = ReturnType<typeof publicState>;
