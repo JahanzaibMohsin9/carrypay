@@ -189,3 +189,36 @@ describe("Fake study agent in China (scripted agent)", () => {
   });
 
 });
+
+describe("A year in London (scripted agent, plan workflow)", () => {
+  it("corrects the scholarship, agrees a plan within the reserve and pays every instalment", async () => {
+    const { parseFlags } = await import("@/domain/flags");
+    const { setFlagsForTest } = await import("./flags");
+    const { compareSchedules } = await import("@/domain/plan/cashflow");
+    const { decideArrangement } = await import("./plan");
+    setFlagsForTest(parseFlags("all"));
+    try {
+      const { store, next, approveAll, settle } = await boot("uk-year");
+      const w = () => store.world;
+      for (let i = 0; i < 40; i++) {
+        const offered = Object.values(w().arrangements ?? {}).filter((a) => a.status === "offered");
+        const accepted = Object.values(w().arrangements ?? {}).some((a) => a.status === "accepted");
+        if (Object.values(w().approvals).some((a) => !a.decision)) await approveAll();
+        else if (offered.length && !accepted) {
+          const pick = compareSchedules(w(), "case_yr", offered.map((a) => ({ id: a.id, label: a.title, schedule: a })))!.pickId!;
+          decideArrangement(store, pick, "accept", "p_jianhua");
+          await settle();
+        } else if (w().schedule.length) await next();
+        else break;
+      }
+      const done = Object.values(w().payments).filter((p) => p.status === "completed");
+      expect(done.map((p) => p.amount)).toEqual([14370, 10665, 10665]);
+      expect(w().cases.case_yr.status).toBe("closed");
+      const ev = evaluateRun(w(), store.ledger);
+      expect(ev.checks.filter((c) => !c.pass)).toEqual([]);
+      expect(ev.checks.map((c) => c.id)).toEqual(expect.arrayContaining(["scholarship_corrected", "engine_pick_recommended", "reserve_kept", "instalments_only"]));
+    } finally {
+      setFlagsForTest(undefined);
+    }
+  });
+});

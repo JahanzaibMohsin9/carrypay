@@ -3,6 +3,7 @@ import { INSTITUTIONS } from "@/domain/institutions";
 import type { Store } from "../store";
 import { addDoc, hoursFrom, issueInvoice, sendMail } from "./factory";
 import { institutionReply } from "./institution";
+import { obligationsFor } from "@/domain/plan/cashflow";
 
 // ---------------------------------------------------------------------------
 // Clock
@@ -53,6 +54,17 @@ function runScheduled(store: Store, item: ScheduledItem) {
       return returnPayment(store, p.paymentId, p.reason);
     case "refund.credit":
       return creditRefund(store, p.caseId);
+    case "plan.instalment_due": {
+      // the confirmed plan's own calendar: wake the agent a week before each later instalment, unless it's paid
+      const arr = store.world.arrangements?.[p.arrangementId];
+      const due = arr && arr.status === "accepted" ? obligationsFor(store.world, p.caseId).find((o) => o.id === `${arr.id}#${p.instalment}`) : undefined;
+      if (!arr || !due || store.world.cases[p.caseId]?.status === "closed") {
+        store.log({ actor: "system", type: "plan.instalment_skipped", caseId: p.caseId, data: { arrangementId: p.arrangementId, instalment: p.instalment } });
+        return;
+      }
+      store.log({ actor: "system", type: "plan.instalment_due", caseId: p.caseId, narration: `${due.label} is due on ${due.dueAt.slice(0, 10)}`, data: { arrangementId: arr.id, instalment: p.instalment, amount: due.amount } });
+      return store.trigger({ caseId: p.caseId, reason: "instalment_due", detail: `${due.label}: ${due.currency} ${due.amount} is due by ${due.dueAt} under the confirmed ${arr.title.toLowerCase()}.` });
+    }
     case "agent.followup": {
       if (store.world.cases[p.caseId]?.status === "closed") {
         store.log({ actor: "system", type: "followup.skipped", caseId: p.caseId, data: { followupId: item.id, reason: p.reason, because: "the case is closed" } });

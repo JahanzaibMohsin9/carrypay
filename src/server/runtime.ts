@@ -152,7 +152,7 @@ export function publicState(sid?: string) {
     hasKey: hasApiCredentials(),
     passkeys: listPasskeys().map((k) => ({ id: k.id.slice(0, 12), label: k.label, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt })),
     model: MODEL,
-    scenarios: SCENARIOS,
+    scenarios: SCENARIOS.filter((s) => !s.flag || serverFlags()[s.flag]),
     flags: serverFlags(),
   };
 }

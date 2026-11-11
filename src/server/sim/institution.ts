@@ -642,12 +642,23 @@ function confirmPlan(c: ReplyCtx): Answer | null {
     const a = w2.arrangements![arr.id];
     a.confirmationDocId = doc.id;
     a.history.push({ at: w2.now, status: "accepted", note: "Confirmed by the university" });
+    // the plan's administration fee is charged to the fee account, so the statement now owes it too
+    if (fee > 0) {
+      const inv = w2.invoices[arr.invoiceId];
+      inv.lineItems.push({ id: `${inv.id}_li${inv.lineItems.length + 1}`, description: `${arr.title} administration fee`, amount: fee });
+      inv.total = Math.round((inv.total + fee) * 100) / 100;
+      inv.amountDue = Math.round((inv.amountDue + fee) * 100) / 100;
+    }
     for (const other of Object.values(w2.arrangements!)) {
       if (other.id !== arr.id && other.invoiceId === arr.invoiceId && other.status === "offered") {
         other.status = "declined";
         other.history.push({ at: w2.now, status: "declined", note: `Not chosen: the family accepted the ${arr.title.toLowerCase()}` });
       }
     }
+  });
+  // the confirmed plan becomes a calendar: a reminder a week before each later instalment
+  arr.instalments.slice(1).forEach((ins, k) => {
+    schedule(c.store, { at: hoursFrom(ins.dueAt, -7 * 24), kind: "plan.instalment_due", payload: { caseId: c.caseId, arrangementId: arr.id, instalment: k + 2 }, label: `Instalment ${k + 2} of the ${arr.title.toLowerCase()} is due in a week` });
   });
   const first = arr.instalments[0];
   return {

@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import type { World } from "@/domain/types";
 import type { Store, Trigger } from "../store";
-import { SYSTEM_PROMPT, wakeMessage } from "./prompt";
+import { systemPrompt, wakeMessage } from "./prompt";
 import { caseSnapshot } from "./snapshot";
 import { anthropicToolDefs, executeTool } from "./tools";
 import { SCRIPTS } from "./scripted";
@@ -52,10 +52,10 @@ export class AgentRunner {
 
   private onTrigger = (t: Trigger) => this.enqueue(t);
 
-  /** systemPrompt is only overridden by the red-team ablation (a naive agent without CarryPay's safety rules) */
+  /** the prompt is only overridden by the red-team ablation (a naive agent without CarryPay's safety rules) */
   constructor(
     private store: Store,
-    private systemPrompt: string = SYSTEM_PROMPT,
+    private promptOverride?: string,
   ) {
     store.on("trigger", this.onTrigger);
   }
@@ -175,7 +175,7 @@ export class AgentRunner {
     // DeepSeek needs reasoning_content sent back on every request when tools are used,
     // so assistant messages keep it as an extra field.
     const messages: (OpenAI.Chat.Completions.ChatCompletionMessageParam & { reasoning_content?: string })[] = [
-      { role: "system", content: this.systemPrompt },
+      { role: "system", content: this.promptOverride ?? systemPrompt() },
       { role: "user", content: vault.prompt },
     ];
 
@@ -274,7 +274,7 @@ export class AgentRunner {
         fallbacks: "default",
         thinking: { type: "adaptive", display: "summarized" },
         output_config: { effort: cfg.effort as "low" | "medium" | "high" | "xhigh" | "max" },
-        system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: this.promptOverride ?? systemPrompt(), cache_control: { type: "ephemeral" } }],
         tools,
         messages,
       });

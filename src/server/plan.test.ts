@@ -95,6 +95,10 @@ describe("A year in London (plan workflow)", () => {
     expect(w().arrangements![two.id].status).toBe("declined");
     const plan = obligationsFor(w(), "case_yr");
     expect(plan.map((o) => o.amount)).toEqual([14370, 10665, 10665]); // 40% + GBP 150 fee, 30%, 30%
+    // the plan's fee is charged on the statement, so all three instalments fit what is owed
+    expect(w().invoices[revised.id].amountDue).toBe(35700);
+    // and the confirmed plan becomes the calendar: a reminder a week before each later instalment
+    expect(w().schedule.filter((s) => s.kind === "plan.instalment_due").map((s) => s.at)).toEqual(["2027-01-25T12:00:00.000Z", "2027-03-25T12:00:00.000Z"]);
 
     // 8. CARRYPAY.NO_STRUCTURING: a part payment must be one of the confirmed instalments
     const pay = (amount: number) => tool("propose_payment", { invoice_id: revised.id, route: "bank_transfer", amount, payer_id: "p_jianhua", reference: "KG2611392", beneficiary: BEN, rationale: "First instalment of the confirmed plan." });

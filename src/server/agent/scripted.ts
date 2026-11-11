@@ -8,6 +8,7 @@ import type { RecordedStep, ScriptedRun } from "./runner";
 import { compareRoutes, priceRoute } from "@/domain/rules/engine";
 import { ROUTE_LABEL } from "@/domain/corridors";
 import type { CorridorId, Route } from "@/domain/types";
+import { compareSchedules, obligationsFor, projectCashflow } from "@/domain/plan/cashflow";
 
 /** Cost difference between two routes for the same amount, rounded to the nearest 1,000 (or 100 for CNY). */
 function diff(w: World, corridor: CorridorId, inst: string, amount: number, a: Route, b: Route) {
@@ -245,6 +246,158 @@ const UK: ScriptedRun[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// A year in London (uk-year): every amount in these messages is computed by the engine when the step runs.
+
+const YR = "case_yr";
+const yrStatement = (w: World) => invoicesOf(w, YR).find((i) => i.kind === "fee_statement" && i.status === "open");
+const yrAdjustment = (w: World) => Object.values(w.adjustments ?? {}).find((a) => a.caseId === YR);
+const yrArrangements = (w: World) => Object.values(w.arrangements ?? {}).filter((a) => a.caseId === YR);
+const yrOffers = (w: World) => yrArrangements(w).filter((a) => a.status === "offered" && (!a.expiresAt || a.expiresAt > w.now));
+const yrPlan = (w: World) => yrArrangements(w).find((a) => a.status === "accepted" && a.confirmationDocId);
+const cny = (n: number) => `CNY ${(Math.round(n / 100) * 100).toLocaleString("en-US")}`;
+const gbp = (n: number) => `GBP ${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+const dayOf = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "Asia/Shanghai" });
+const nextInstalment = (w: World) => obligationsFor(w, YR).find((o) => o.source === "arrangement");
+
+/** Prepare the SAFE form and propose the next unpaid instalment of the confirmed plan. */
+const payNextInstalment: ScriptedRun["steps"] = [
+  (w) => {
+    const ob = nextInstalment(w);
+    return ob ? step("prepare_documents", { kinds: ["fx_purchase_application"], invoice_id: ob.invoiceId, payer_id: "p_jianhua", amount: ob.amount, narration: `Filling in the SAFE FX purchase application for ${ob.label}` }) : null;
+  },
+  (w) => {
+    const ob = nextInstalment(w);
+    if (!ob) return null;
+    return step("propose_payment", {
+      invoice_id: ob.invoiceId,
+      route: "bank_transfer",
+      amount: ob.amount,
+      payer_id: "p_jianhua",
+      reference: "KG2611392 Zhou Yutong",
+      beneficiary: ben("kgu"),
+      rationale: `${ob.label} of the plan Kingsgate confirmed${ob.fee ? ` (includes the ${gbp(ob.fee)} administration fee)` : ""}, due ${dayOf(ob.dueAt)}. A bank transfer straight to the university's verified account is the cheapest legal route.`,
+      narration: `Asking Dad to approve ${ob.label}`,
+    });
+  },
+];
+
+const UKYEAR: ScriptedRun[] = [
+  {
+    when: (t, w) => has(t, "family_message") && !Object.values(w.mail).some((m) => m.caseId === YR),
+    steps: [
+      () => step("get_case_overview", { narration: "Reading your message, the offer letter and the scholarship letter" }),
+      () =>
+        step("send_email", {
+          to: "student.finance@kingsgate.ac.uk",
+          subject: "Zhou Yutong (KG2611392): admission, fee statement and bank details",
+          body:
+            "Dear Student Finance Office,\n\nCarryPay is arranging fee payment on behalf of the family of Zhou Yutong (Student ID KG2611392, MSc Finance, January 2027 start).\n\nCould you please:\n1. Confirm her admission.\n2. Send the fee statement for 2026/27 with the due date.\n3. Send your bank details for international transfers on letterhead.\n\nShe holds the Kingsgate Global Excellence Scholarship; please make sure it is applied to her tuition.\n\nKind regards,\nCarryPay, on behalf of the family",
+          narration: "Asking Kingsgate to confirm the admission and send the fee statement and bank details",
+        }),
+      () =>
+        step("message_family", {
+          text: "Hi Yutong! I've written to Kingsgate's Student Finance Office to confirm your place and get the fee statement and their bank details. When it arrives I'll check it against your scholarship letter, then work out with your dad's figures how he can pay without touching the family's safety net.",
+          importance: "info",
+          narration: "Telling you what I've started",
+        }),
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && !!yrStatement(w) && !yrAdjustment(w),
+    steps: [
+      (w) => step("read_document", { document_id: yrStatement(w)!.documentId, narration: "Reading Kingsgate's fee statement" }),
+      () => step("review_entitlements", { narration: "Checking the statement against your scholarship letter" }),
+      (w) => {
+        const adj = yrAdjustment(w);
+        return adj
+          ? step("request_bill_correction", {
+              adjustment_id: adj.id,
+              subject: `Scholarship missing from fee statement ${yrStatement(w)?.number} (KG2611392)`,
+              body: `Dear Student Finance Office,\n\nThank you for the fee statement for Zhou Yutong (Student ID KG2611392). It charges the full tuition fee, but she holds the Kingsgate Global Excellence Scholarship for 2026/27 (${gbp(adj.amount)} off tuition). The award letter and the statement are attached.\n\nCould you please issue a corrected statement?\n\nKind regards,\nCarryPay, on behalf of the family`,
+              narration: "Sending Kingsgate the award letter and asking for a corrected statement",
+            })
+          : null;
+      },
+      (w) => {
+        const adj = yrAdjustment(w);
+        return adj
+          ? step("message_family", {
+              text: `Kingsgate's fee statement charges the full tuition: your ${gbp(adj.amount)} scholarship isn't on it yet. I've sent them your award letter and asked for a corrected statement. Until they confirm, it's only a possible reduction, so I'm not counting it as saved.`,
+              importance: "action",
+              narration: "Telling you the scholarship is missing from the statement",
+            })
+          : null;
+      },
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && yrAdjustment(w)?.status === "confirmed" && yrArrangements(w).length === 0,
+    steps: [
+      () => step("plan_affordability", { narration: "Checking whether Dad can pay the corrected statement and keep his reserve" }),
+      (w) =>
+        step("request_arrangement", {
+          invoice_id: yrStatement(w)!.id,
+          kind: "published_plan",
+          subject: `Instalment plans for statement ${yrStatement(w)!.number} (KG2611392)`,
+          body: `Dear Student Finance Office,\n\nThank you for the corrected statement ${yrStatement(w)!.number}. Could you please send us your published instalment plans for it?\n\nKind regards,\nCarryPay, on behalf of the family`,
+          narration: "Asking Kingsgate for its published instalment plans",
+        }),
+      (w) => {
+        const p = projectCashflow(w, YR, { schedule: "upfront" });
+        const fs = yrStatement(w)!;
+        return step("message_family", {
+          text: `Good news: Kingsgate has corrected the statement, so the year now costs ${gbp(fs.total)}. ${p?.firstBreach ? `Paying it all at once by ${dayOf(p.payments[0].payAt)} would take your dad ${cny(p.firstBreach.shortBy)} below the safety net he chose.` : ""} I've asked Kingsgate for its published instalment plans and will compare them when they arrive.`,
+          importance: "good_news",
+          narration: "Telling you the statement is corrected and why I asked for a payment plan",
+        });
+      },
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && yrOffers(w).length > 0 && !yrPlan(w),
+    steps: [
+      () => step("plan_affordability", { narration: "Comparing paying in full with Kingsgate's plans under stress tests" }),
+      (w) => {
+        const offers = yrOffers(w);
+        const cmp = compareSchedules(w, YR, [{ id: "full", label: "Pay in full", schedule: "upfront" }, ...offers.map((a) => ({ id: a.id, label: a.title, schedule: a }))]);
+        const pick = offers.find((a) => a.id === cmp?.pickId);
+        const row = cmp?.rows.find((r) => r.id === cmp.pickId);
+        const others = cmp?.rows.filter((r) => r.id !== "full" && r.id !== cmp.pickId && !r.holdsAll) ?? [];
+        if (!pick || !row) return null;
+        return step("message_family", {
+          // TODO zh: the Chinese part for Dad goes to MiMo review
+          text: `Kingsgate has offered ${offers.length} instalment plans. I recommend the ${pick.title.toLowerCase()}: ${row.feesHomeCost > 0 ? `its fee costs about ${cny(row.feesHomeCost)}, but ` : ""}your dad keeps his safety net even if his salary is three weeks late or the pound gets 5% dearer.${others.length ? ` The ${others.map((r) => r.label.toLowerCase()).join(" and ")} would dip below it if his salary came late.` : ""} Dad, please accept it in the CarryPay app (Plan).\n\n爸爸：建议选择${pick.instalments.length}期付款方案。即使工资晚到三周或英镑上涨5%，您的应急储备也不会受影响。请在 CarryPay 的“计划”页面确认。`,
+          importance: "action",
+          narration: "Recommending the plan that keeps Dad's safety net",
+        });
+      },
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && !!yrPlan(w) && Object.values(w.payments).filter((p) => p.caseId === YR).length === 0,
+    steps: [(w) => step("read_document", { document_id: yrPlan(w)!.confirmationDocId!, narration: "Reading Kingsgate's confirmation of the plan" }), ...payNextInstalment],
+  },
+  { when: (t, w) => has(t, "instalment_due") && nextInstalment(w)?.instalment === 2, steps: payNextInstalment },
+  { when: (t, w) => has(t, "instalment_due") && nextInstalment(w)?.instalment === 3, steps: payNextInstalment },
+  {
+    when: (t, w) => has(t, "payment_completed") && !!nextInstalment(w),
+    steps: [
+      (w) => {
+        const ob = nextInstalment(w)!;
+        return step("message_family", { text: `Kingsgate has received the first instalment. The next one, ${gbp(ob.amount)}, is due on ${dayOf(ob.dueAt)}; I'll prepare it a week before.`, importance: "good_news", narration: "Confirming the first instalment arrived" });
+      },
+    ],
+  },
+  {
+    when: (t, w) => has(t, "payment_completed") && !!yrPlan(w) && !nextInstalment(w),
+    steps: [
+      () => step("message_family", { text: "All instalments have reached Kingsgate: Yutong's fees for the year are fully paid, the scholarship is applied, and your dad's safety net stayed in place throughout.", importance: "good_news", narration: "Telling you the year is paid" }),
+      () => step("close_case", { summary: "Scholarship corrected, three-instalment plan confirmed by the university and paid in full within the payer's reserve.", narration: "Closing the case" }),
+    ],
+  },
+];
+
 const offerDoc = (w: World) => Object.values(w.docs).find((d) => d.caseId === "case_pk" && d.title.startsWith("Offer letter"));
 const uniSaidNo = (w: World) => !!lastInbound(w, "case_pk", (m) => /no applicant/i.test(m.body));
 
@@ -450,4 +603,4 @@ const UP: ScriptedRun[] = [
   },
 ];
 
-export const SCRIPTS: Record<string, ScriptedRun[]> = { "th-medical": TH, "uk-tuition": UK, "pk-admission": PK, "cn-admission": CN, upload: UP };
+export const SCRIPTS: Record<string, ScriptedRun[]> = { "th-medical": TH, "uk-tuition": UK, "pk-admission": PK, "cn-admission": CN, upload: UP, "uk-year": UKYEAR };

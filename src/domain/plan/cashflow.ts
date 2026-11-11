@@ -180,20 +180,23 @@ export function projectCashflow(world: World, caseId: string, opts: ProjectOptio
   const lastPay = payments.reduce((m, p) => (p.payAt > m ? p.payAt : m), now);
   const until = opts.until ?? addDays(lastPay, payments.length ? 31 : 90);
 
+  // The family's figures are a snapshot from the day they entered them. Project from that day: what has
+  // happened since (salary in, essentials out, payments actually sent) is history; stress tests only touch the future.
+  const from = profile.updatedAt < now ? profile.updatedAt : now;
   type Ev = Omit<CashflowPoint, "balance"> & { order: number };
   const events: Ev[] = [];
   // outflows before inflows at the same moment: a salary paid "today" can't be assumed to land before a bill
   for (const income of profile.income) {
     let at = income.firstAt;
     for (let n = 0; n < 240 && at <= until; n++) {
-      const lands = addDays(at, stress.incomeDelayDays ?? 0);
-      if (at >= now && lands <= until) events.push({ at: lands, kind: "income", label: income.label, amount: income.amount, order: 2 });
+      const lands = at >= now ? addDays(at, stress.incomeDelayDays ?? 0) : at;
+      if (at >= from && lands <= until) events.push({ at: lands, kind: "income", label: income.label, amount: income.amount, order: 2 });
       if (!income.everyMonths) break;
       at = addMonths(income.firstAt, income.everyMonths * (n + 1));
     }
   }
   if (profile.essentialsMonthly > 0) {
-    const d = new Date(now);
+    const d = new Date(from);
     let first = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString();
     while (first <= until) {
       events.push({ at: first, kind: "essentials", label: "Monthly essentials", amount: -profile.essentialsMonthly, order: 0 });
@@ -202,8 +205,13 @@ export function projectCashflow(world: World, caseId: string, opts: ProjectOptio
   }
   for (const c of profile.conditional) {
     if (c.status !== "confirmed" && !stress.countExpectedConditional) continue;
-    const at = addDays(c.expectedAt, stress.conditionalDelayDays ?? 0);
-    if (at >= now && at <= until) events.push({ at, kind: "conditional", label: c.label, amount: c.amount, order: 2 });
+    const at = c.expectedAt >= now ? addDays(c.expectedAt, stress.conditionalDelayDays ?? 0) : c.expectedAt;
+    if (at >= from && at <= until) events.push({ at, kind: "conditional", label: c.label, amount: c.amount, order: 2 });
+  }
+  // money this case has actually sent since the figures were entered
+  for (const p of Object.values(world.payments)) {
+    if (p.caseId !== caseId || !SENT.has(p.status) || p.createdAt < from) continue;
+    events.push({ at: p.createdAt, kind: "payment", label: `Paid: ${world.invoices[p.invoiceId]?.number ?? p.invoiceId}`, amount: -p.cost.totalSource, order: 1 });
   }
   for (const p of payments) {
     events.push({ at: p.payAt, kind: "payment", label: p.obligation.label, amount: -p.homeCost, order: 1 });
@@ -211,16 +219,20 @@ export function projectCashflow(world: World, caseId: string, opts: ProjectOptio
   events.sort((a, b) => a.at.localeCompare(b.at) || a.order - b.order);
 
   const start = r2(profile.balances.reduce((s, b) => s + b.amount, 0));
-  const points: CashflowPoint[] = [{ at: now, kind: "start", label: "Available now", amount: start, balance: start }];
+  const points: CashflowPoint[] = [{ at: from, kind: "start", label: from < now ? `Available on ${from.slice(0, 10)}` : "Available now", amount: start, balance: start }];
   let balance = start;
+  let balanceNow = start;
   for (const e of events) {
     balance = r2(balance + e.amount);
+    if (e.at < now) balanceNow = balance;
     points.push({ at: e.at, kind: e.kind, label: e.label, amount: r2(e.amount), balance });
   }
 
+  // the plan is about what comes next: judge the reserve from today on
   const reserve = profile.reserveFloor;
-  const low = points.reduce((m, p) => (p.balance < m.balance ? p : m), points[0]);
-  const breach = points.find((p) => p.balance < reserve - 0.005);
+  const ahead: CashflowPoint[] = [{ at: now, kind: "start", label: "Today", amount: 0, balance: balanceNow }, ...points.filter((p) => p.at >= now && p !== points[0])];
+  const low = ahead.reduce((m, p) => (p.balance < m.balance ? p : m), ahead[0]);
+  const breach = ahead.find((p) => p.balance < reserve - 0.005);
 
   const assumptions: Assumption[] = [
     { id: "rate_today", text: "Every payment is priced at today's exchange rate and fees; no forecast." },
@@ -239,7 +251,7 @@ export function projectCashflow(world: World, caseId: string, opts: ProjectOptio
     currency: profile.currency,
     reserveFloor: reserve,
     stress,
-    from: now,
+    from,
     until,
     points,
     payments,

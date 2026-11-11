@@ -2,8 +2,36 @@ import type { World } from "@/domain/types";
 import { corridorOf } from "@/domain/corridors";
 import { computeUsage, findRule } from "@/domain/rules/engine";
 import { ratePerUSD } from "@/domain/market";
+import { flagOn } from "../flags";
 
 const r0 = (n: number) => Math.round(n);
+
+/** The plan workflow's state. Numbers about affordability come only from plan_affordability, never from here. */
+function planSection(w: World, caseId: string) {
+  const funding = w.funding?.[caseId];
+  const adjustments = Object.values(w.adjustments ?? {}).filter((a) => a.caseId === caseId);
+  const arrangements = Object.values(w.arrangements ?? {}).filter((a) => a.caseId === caseId);
+  const awards = Object.values(w.docs).filter((d) => d.caseId === caseId && d.kind === "scholarship_award");
+  if (!funding && !adjustments.length && !arrangements.length && !awards.length) return undefined;
+  return {
+    payer_figures_entered: !!funding,
+    payer_id: funding?.ownerPersonId,
+    award_letters: awards.map((d) => ({ id: d.id, title: d.title, origin: d.origin })),
+    adjustments: adjustments.map((a) => ({ id: a.id, status: a.status, amount: `${a.currency} ${a.amount}`, statement_id: a.invoiceId, evidence_document: a.basisDocId })),
+    payment_plans: arrangements.map((a) => ({
+      id: a.id,
+      title: a.title,
+      kind: a.kind,
+      status: a.status,
+      statement_id: a.invoiceId,
+      instalments: a.instalments.map((x, k) => ({ amount: `${a.currency} ${x.amount + (k === 0 ? a.fee ?? 0 : 0)}`, due_at: x.dueAt })),
+      admin_fee: a.fee ? `${a.currency} ${a.fee}` : undefined,
+      offer_expires_at: a.status === "offered" ? a.expiresAt : undefined,
+      confirmed_by_institution: !!a.confirmationDocId,
+    })),
+    note: "Run plan_affordability for any number about whether the family can carry the payments.",
+  };
+}
 
 /** Compact, model-facing view of one case. Everything the agent needs to decide its next step. */
 export function caseSnapshot(w: World, caseId: string) {
@@ -32,6 +60,10 @@ export function caseSnapshot(w: World, caseId: string) {
         in_flight: inFlight,
         document_id: i.documentId,
         reference_on_document: i.patientRef,
+        ...(() => {
+          const plan = Object.values(w.arrangements ?? {}).find((a) => a.invoiceId === i.id && a.status === "accepted" && a.confirmationDocId);
+          return plan ? { paid_by_confirmed_plan: { id: plan.id, title: plan.title, note: "The plan's instalment due dates (in plan.payment_plans) replace due_at." } } : {};
+        })(),
       };
     });
   const caseMail = Object.values(w.mail).filter((m) => m.caseId === caseId);
@@ -123,6 +155,7 @@ export function caseSnapshot(w: World, caseId: string) {
       .filter((d) => d.caseId === caseId)
       .map((d) => ({ id: d.id, kind: d.kind, title: d.title, origin: d.origin })),
     recent_family_messages: w.messages.filter((m) => m.caseId === caseId).slice(-6).map((m) => ({ from: m.from, text: m.text, at: m.at })),
+    ...(flagOn("plan") ? { plan: planSection(w, caseId) } : {}),
     fx_sandbox_rates_per_usd: Object.fromEntries([...new Set(["PKR", "THB", "GBP", "CNY", inst.bank.currency] as const)].map((k) => [k, Math.round(ratePerUSD(k, w.now) * 1000) / 1000])),
   };
 }

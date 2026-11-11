@@ -178,6 +178,22 @@ describe("cash-flow projection", () => {
     expect(projectCashflow(w, "case_uk")!.payments[0].evaluation.limits[0].afterUSD).toBeCloseTo(before, 2);
   });
 
+  it("counts money sent since the figures were entered once, not twice", () => {
+    const w = tuitionWorld();
+    w.arrangements = { arr_1: threeInstalments({ status: "accepted", confirmationDocId: "doc_c" }) };
+    const before = projectCashflow(w, "case_uk")!;
+    // the first instalment left on 28 Nov; it is now 5 Dec and the family hasn't re-entered their figures
+    w.payments.pay_1 = { id: "pay_1", caseId: "case_uk", invoiceId: "inv_1", amount: 8375, currency: "GBP", route: "bank_transfer", payerId: "p_linwei", status: "completed", createdAt: before.payments[0].payAt, cost: before.payments[0].cost } as Payment;
+    w.now = "2026-12-05T00:00:00.000Z";
+    const after = projectCashflow(w, "case_uk")!;
+    expect(after.payments).toHaveLength(2);
+    expect(after.points.some((p) => p.label === "Paid: KGU-FS-1")).toBe(true);
+    // the same money either way (later payments are re-priced at today's rate, within a fraction of a percent)
+    expect(Math.abs(after.endBalance - before.endBalance)).toBeLessThan(before.totalHomeCost * 0.01);
+    // the reserve is judged from today on
+    expect(after.lowest.at >= w.now).toBe(true);
+  });
+
   it("applies explicit stress tests, not forecasts", () => {
     const w = tuitionWorld();
     const base = projectCashflow(w, "case_uk", { schedule: threeInstalments() })!;
