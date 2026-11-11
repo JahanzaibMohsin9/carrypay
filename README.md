@@ -6,6 +6,8 @@
 
 CarryPay is an AI agent that pays a family's hospital and university bills abroad: legally, safely and for less. It emails the institution, reads invoices, checks the home country's foreign-exchange rules, compares every way to pay, prepares the regulatory forms, asks the family for a fingerprint approval, tracks the money, fixes returned transfers, checks the final bill line by line and claims refunds.
 
+For a whole year of fees it also works out what is really owed (a scholarship the fee statement left out), whether the family can carry it without dropping below the reserve they choose, and which of the institution's own instalment plans fixes that. The family accepts a plan and signs once for the rest of it, within limits checked in code, and each payment is followed until the university confirms it was credited.
+
 Built for the 2026 Shenzhen International FinTech Competition, International Track (Topic C: Cross-border & Student Finance Assistant).
 
 **Live demo:** https://carrypay.duckdns.org (family app at [/app](https://carrypay.duckdns.org/app), demo stage at [/stage](https://carrypay.duckdns.org/stage)). Sandbox only: fictional institutions, no real money.
@@ -19,7 +21,7 @@ Built for the 2026 Shenzhen International FinTech Competition, International Tra
 | [docs/TECHNICAL.md](docs/TECHNICAL.md) | Architecture, core algorithms, LLM integration, ledger |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, permission tiers, controls, red-team results, known risks |
 | [docs/PRODUCTION.md](docs/PRODUCTION.md) | From sandbox to product: what is real today, what replaces each simulated part, who operates it, a pilot plan |
-| [docs/EVAL.md](docs/EVAL.md) | Live evaluation: 45 end-to-end runs on the real model, scored by code |
+| [docs/EVAL.md](docs/EVAL.md) | Live evaluation: 45 end-to-end runs on the real model, scored by code (sandbox results, not customer outcomes) |
 | [docs/evidence/](docs/evidence/README.md) | Execution evidence: one log per scenario, with on-chain anchors checked against the chain |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Deploying: server, Docker + Caddy (HTTPS), checks after deploying, known limits of the public demo |
 
@@ -46,11 +48,11 @@ Open:
 | `http://localhost:3000/app` | The family app (mobile-first) |
 | `http://localhost:3000/hospital` | The institution's billing desk (outside world) |
 | `http://localhost:3000/bank` | Payment rails: SWIFT tracker and card network |
-| `http://localhost:3000/bank/officer` | The bank's FX officer view: each transfer as a ready-to-review package (applicant, verified beneficiary, rules checked, signed forms, passkey approval, draft SWIFT MT103) |
+| `http://localhost:3000/bank/officer` | The bank's FX officer view: each transfer as a ready-to-review package (applicant, verified beneficiary, rules checked, signed forms, passkey approval, draft SWIFT MT103); for a plan payment also the confirmed plan, the mandate and its checks, the reserve check and whether the university credited it |
 | `http://localhost:3000/pack` | Printable case pack (Save as PDF): payments, every bill, receipt and form, and the log verification |
 | `http://localhost:3000/director` | Director controls + raw agent log, including **chaos mode** (bank outage, card declined, institution silent) |
 
-Run the tests (88: rules engine, all four scenarios end to end, uploaded bills, on-chain anchoring, the MCP server, 18 red-team attacks on the safety layer, sandbox institutions, chaos mode, privacy firewall, passkey verification):
+Run the tests (145: rules engine, all five scenarios end to end, uploaded bills, the plan workflow, on-chain anchoring on two chains, the MCP server, 18 red-team attacks on the safety layer and 11 on the plan workflow, sandbox institutions, chaos mode, privacy firewall, passkey verification):
 
 ```bash
 npm test
@@ -111,6 +113,10 @@ A family brings an offer letter from a consultant who wants the tuition and a "v
 
 A Shenzhen family has been sold a "保录取" (guaranteed admission) place at Kingsgate with a 40% scholarship. The 留学中介 wants a RMB 38,000 guarantee fee, the tuition paid to its own account or the consultant's personal WeChat, and offers to buy the pounds in relatives' names to stay under the USD 50,000 quota (蚂蚁搬家). The agent flags the letter, checks with the university (no such applicant), pays nothing, refuses the quota split, and tells the family in Chinese that it isn't their fault, not to send more money, to keep the evidence and to report it to the police. Together with scenario 3 this covers the fraud in both capital-control countries.
 
+**5. A year in London (China → UK, SAFE rules; the student in English, the father in Chinese)**
+
+The fee statement leaves out the student's scholarship. The agent finds the gap from the award letter, sends both documents to the university's verified address and gets a corrected statement. The father's own figures show that paying it all now would take him below the reserve he chose, so the agent asks for the university's instalment plans and the engine compares them, with a salary three weeks late and the pound 5% dearer as stress tests. The father accepts a plan, the university confirms it, and he signs a plan mandate once. The engine shows which year's FX quota each instalment falls in and what documents it needs. A look-alike email claiming the deadline moved to June, with a new account, changes nothing. The next instalment goes out under the mandate after 13 checks in code; when the university raises the last instalment, the mandate pauses and asks him. Each payment ends when the university credits the student's account. These features are behind feature flags (`CARRYPAY_FLAGS=all`).
+
 **Upload your own bill (any country CarryPay has rates for)**
 
 The family enters their names, then uploads a PDF or a photo of a hospital or university bill (or uses the sample bill). A PDF is read by CarryPay's own code; a photo is read by a vision model (OpenAI, since DeepSeek's API doesn't take images), and the screen says so. The family's names are hidden from the model that pulls out the amounts and bank details, and the family checks every field before the case starts. The agent prices the bill under the home country's rules and explains it, but the institution is unknown, so the safety layer (`CARRYPAY.VERIFIED_INSTITUTION`) refuses any payment or email until the bank has verified it. In the sandbox, the Director's "Verify institution" button stands in for that check; then the agent verifies the account, fills in the forms and asks for approval.
@@ -141,7 +147,8 @@ The family enters their names, then uploads a PDF or a photo of a hospital or un
 
 - `src/domain/rules/packs/*.json`: regulations as data. One file per country, every rule with source, status and effective dates (e.g. Pakistan's card tax history 5% → 0.5% on 2026-07-01).
 - `src/domain/rules/engine.ts`: limits, documents, forbidden patterns, route pricing and comparison. Pure functions, used by the server and the UI.
-- `src/server/agent/tools.ts`: the 15 agent tools and the gateway (`executeTool`). Tiers: **read**, **communicate** (verified contacts only), **money** (needs family approval).
+- `src/domain/plan/`: the plan workflow, also pure: cash-flow projection under stress, plan comparison, bill review against award letters, plan mandate terms and checks.
+- `src/server/agent/tools.ts`: the 22 agent tools and the gateway (`executeTool`). Tiers: **read**, **communicate** (verified contacts only), **money** (needs family approval, or a plan mandate the payer signed).
 - `src/server/agent/runner.ts`: event-driven agent loop (wake on email, payment status, approval, family message, follow-up).
 - `src/server/sim/`: the simulated hospital, university, bank and card rails.
 - `src/server/store.ts` + `hash.ts`: world state and the tamper-evident log.
@@ -157,10 +164,14 @@ The family enters their names, then uploads a PDF or a photo of a hospital or un
 | Numbers from tools | Costs, limits and balances come from the engine, not the model. |
 | Emergency stop | One switch blocks every tool call instantly. |
 | Passkey approval | The family approves with fingerprint or face (WebAuthn). The passkey signs a digest of the exact payment, checked on the server. |
+| No self-made instalments | `CARRYPAY.NO_STRUCTURING`: a tuition payment below the amount owed must be an instalment of a plan the institution confirmed, so a bill is never cut up to get under a quota. |
+| Deadlines and offers | A due date moves only on the institution's written confirmation. A plan offer counts only if it answers a request to the institution's verified address and hasn't expired. A forged "deadline extended" email changes nothing. |
+| Payer-only decisions | Only the payer accepts an institution's terms or signs a mandate; anyone on the case can decline or revoke. The agent can do neither. |
+| Plan mandate | One passkey signature for the rest of a confirmed plan. Its terms come from the plan, not the model, and every payment under it passes 13 checks in code (exact instalment, its window, verified account, caps, the payer's reserve, the rules engine). Anything else pauses it and asks the payer. |
 | Privacy firewall | Known identifiers on the case (names, hospital and student numbers, card and passport numbers, medical terms) are replaced with placeholders before the agent's model sees them, and restored only inside CarryPay's code. Uploaded photos and voice notes are sent to OpenAI as provided; the public sandbox uses fictional data. |
-| Tamper-evident log | Each entry is SHA-256 hashed with the previous entry's hash. Verify in the Security Centre (recomputed in the browser), export from `/api/ledger`. At each milestone the head hash is anchored on the **Conflux eSpace testnet** ([contract](https://evmtestnet.confluxscan.org/address/0x7cebbc3ac1a2ec61607025a589efa01b597c42cf), source verified); "Check against the chain" proves the log wasn't edited afterwards. |
+| Tamper-evident log | Each entry is SHA-256 hashed with the previous entry's hash. Verify in the Security Centre (recomputed in the browser), export from `/api/ledger`. At each milestone the head hash is anchored on the **Conflux eSpace testnet** ([contract](https://evmtestnet.confluxscan.org/address/0x7cebbc3ac1a2ec61607025a589efa01b597c42cf), source verified) and on a **FISCO BCOS** chain; "Check against the chain" checks both copies and proves the log wasn't edited afterwards. |
 
-Red-team results: `src/server/redteam.test.ts` (18 attacks on the safety layer, all blocked) and [docs/redteam/REPORT.md](docs/redteam/REPORT.md) (20 attacks on the live DeepSeek agent: 0 executed; a naive prompt tried 2, the gateway blocked both).
+Red-team results: `src/server/redteam.test.ts` (18 attacks on the safety layer, all blocked), `src/server/redteam.plan.test.ts` (11 attacks on the plan workflow, all held) and [docs/redteam/REPORT.md](docs/redteam/REPORT.md) (20 attacks on the live DeepSeek agent: 0 executed; a naive prompt tried 2, the gateway blocked both).
 
 ## Use CarryPay from your own AI (MCP)
 
