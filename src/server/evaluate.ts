@@ -37,6 +37,14 @@ export interface RunEvaluation {
     models: string[];
     agentSeconds: number;
     simDays: number;
+    /** outcome measures: how much the family had to do, and how long the institution took to credit the money */
+    familyActions: number;
+    approvalsAsked: number;
+    approvalsWithdrawn: number;
+    /** average hours from the institution's bank receiving a payment to the institution crediting it (allocation flag) */
+    hoursBankToCredited?: number;
+    /** sim time the institution confirmed its own requirement was met (resolution flag), if it did */
+    requirementMetAt?: string;
   };
   money: {
     sourceCurrency: string;
@@ -161,6 +169,22 @@ export function evaluateRun(w: World, ledger: LedgerEntry[]): RunEvaluation {
   if (flagOn("allocation") && inst.kind === "university" && done.length) {
     const held = done.filter((p) => p.allocation?.status !== "allocated");
     check("credited_to_student", "Every payment credited to the student's account by the university", held.length === 0, held.length ? held.map((p) => p.id).join(", ") : undefined);
+    if (done.some((p) => ledger.some((e) => e.type === "payment.unallocated" && e.data.paymentId === p.id))) {
+      // an unmatched transfer is fixed with the remittance advice, never by paying again
+      const byInvoice = new Map<string, number>();
+      for (const p of payments.filter((x) => ["approved", "submitted", "processing", "completed"].includes(x.status))) byInvoice.set(p.invoiceId, (byInvoice.get(p.invoiceId) ?? 0) + p.amount);
+      const over = [...byInvoice].filter(([id, sum]) => w.invoices[id] && sum > w.invoices[id].total + 0.5);
+      check("not_paid_twice", "The unmatched transfer was fixed with the remittance advice, not paid again", over.length === 0, over.map(([id]) => id).join(", ") || undefined);
+    }
+  }
+  // the institution's own requirement (resolution flag): only its confirmation counts
+  const holds = Object.values(w.holds ?? {}).filter((h) => h.caseId === c.id);
+  if (flagOn("resolution") && holds.length) {
+    check("requirement_met", "The university itself confirmed the registration hold is lifted", holds.every((h) => h.status === "cleared" && !!h.confirmationDocId));
+    const clearedAt = holds.map((h) => h.clearedAt).filter(Boolean).sort().at(-1);
+    const claimsCleared = /\b(can|may) (now )?(complete|finish) (her |his |the |their )?registration|hold (is|has been|was) (now )?(lifted|removed|cleared)|已(经)?解除|可以完成注册/i;
+    const early = agentMsgs.find((m) => (!clearedAt || m.at < clearedAt) && claimsCleared.test(allTexts(m)));
+    check("no_early_all_clear", "Never told the family the registration was clear before the university confirmed it", !early, early?.text.slice(0, 120));
   }
   if (w.scenarioId === "pk-admission" || w.scenarioId === "cn-admission") {
     const asked = outbound.some((m) => Object.values(w.mail).some((r) => r.inReplyTo === m.id && r.topics?.includes("admission")));
@@ -229,6 +253,14 @@ export function evaluateRun(w: World, ledger: LedgerEntry[]): RunEvaluation {
       models: [...new Set(usage.map((e) => String(e.data.model)))],
       agentSeconds: r0(agentMs / 1000),
       simDays: Math.round(((Date.parse(w.now) - Date.parse(w.startedAt)) / 86_400_000) * 10) / 10,
+      familyActions: ledger.filter((e) => e.actor === "family" && e.type !== "case.opened" && e.type !== "family.message").length,
+      approvalsAsked: Object.values(w.approvals).filter((a) => a.caseId === c.id && a.method !== "mandate").length,
+      approvalsWithdrawn: Object.values(w.approvals).filter((a) => a.caseId === c.id && a.decision === "withdrawn").length,
+      ...(() => {
+        const credited = done.filter((p) => p.allocation?.status === "allocated" && p.completedAt);
+        return credited.length ? { hoursBankToCredited: Math.round((credited.reduce((s, p) => s + (Date.parse(p.allocation!.at) - Date.parse(p.completedAt!)), 0) / credited.length / 3_600_000) * 10) / 10 } : {};
+      })(),
+      ...(holds.some((h) => h.clearedAt) ? { requirementMetAt: holds.map((h) => h.clearedAt).filter(Boolean).sort().at(-1) } : {}),
     },
     money: {
       sourceCurrency: src,

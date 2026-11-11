@@ -4,7 +4,7 @@ import { INSTITUTIONS } from "@/domain/institutions";
 import type { Store } from "../store";
 import { flagOn } from "../flags";
 import { addDoc, hoursFrom, issueInvoice, sendMail } from "./factory";
-import { schedule } from "./engine";
+import { liftHolds, schedule } from "./engine";
 
 // ---------------------------------------------------------------------------
 // Sandbox institutions answer email like a competent back office: one reply
@@ -237,8 +237,17 @@ const HANDLERS: Record<Intent, (c: ReplyCtx) => Answer | null> = {
       patientRef: c.enrolled.id,
       lineItems: fees.lineItems,
       ...(fees.dueAt ? { dueAt: fees.dueAt } : { dueInHours: fees.dueInHours }),
-      extraText: fees.extraText,
+      extraText: fees.hold && flagOn("resolution") ? `${fees.extraText} ${fees.hold.label}: ${fees.hold.condition} Until then the student cannot complete registration.` : fees.extraText,
     });
+    if (fees.hold && flagOn("resolution") && !Object.values(c.store.world.holds ?? {}).some((h) => h.caseId === c.caseId)) {
+      const id = c.store.nextId("hold");
+      const hold = fees.hold;
+      c.store.mutate((w) => {
+        w.holds ??= {};
+        w.holds[id] = { id, caseId: c.caseId, institutionId: c.inst.id, label: hold.label, condition: hold.condition, status: "on", placedAt: w.now };
+      });
+      c.store.log({ actor: "university", type: "hold.placed", caseId: c.caseId, narration: `${c.inst.name}: ${hold.label}, until the first payment is credited to the student account`, data: { holdId: id } });
+    }
     const scholarshipNote =
       c.enrolled.awards?.length && intentsOf(c).has("correction")
         ? " Scholarship awards are added to the fee account once the Scholarships Office has confirmed them to us. If an award is missing from your statement, please send us a copy of the award letter and we will correct the statement."
@@ -406,6 +415,8 @@ interface StudentFees {
   extraText: string;
   /** published instalment plans: shares of the statement total and due dates; the first instalment carries the fee */
   plans?: { title: string; shares: number[]; dueAt: string[]; fee: number }[];
+  /** resolution flag: a hold the university keeps on the registration until the first payment is credited */
+  hold?: { label: string; condition: string };
 }
 
 const STUDENT_FEES: Record<string, StudentFees> = {
@@ -429,6 +440,10 @@ const STUDENT_FEES: Record<string, StudentFees> = {
       { title: "Two-instalment plan", shares: [0.5, 0.5], dueAt: ["2026-12-01T12:00:00.000Z", "2027-03-01T12:00:00.000Z"], fee: 0 },
       { title: "Three-instalment plan", shares: [0.4, 0.3, 0.3], dueAt: ["2026-12-01T12:00:00.000Z", "2027-02-01T12:00:00.000Z", "2027-04-01T12:00:00.000Z"], fee: 150 },
     ],
+    hold: {
+      label: "Financial hold on registration for 2026/27",
+      condition: "Lifted when the first payment (the amount requested now, or the first instalment of a confirmed plan) has been credited to the student account.",
+    },
   },
 };
 
@@ -692,8 +707,9 @@ function allocateHeld(c: ReplyCtx): Answer | null {
     for (const p of held) w.payments[p.id].allocation = { status: "allocated", at: w.now, account, note: "Allocated after the remittance advice" };
   });
   c.store.log({ actor: "university", type: "payment.allocated", caseId: c.caseId, narration: `${c.inst.name} credited ${held.map((p) => money(p.currency, p.amount)).join(" and ")} to the student's account`, data: { paymentIds: held.map((p) => p.id), account } });
+  const lifted = liftHolds(c.store, c.caseId);
   return {
-    text: `Thank you for the remittance advice. ${held.map((p) => money(p.currency, p.amount)).join(" and ")} ${held.length > 1 ? "have" : "has"} now been credited to student account ${account}, and the official receipt is attached.`,
-    attachments: receipts.map((r) => r.id),
+    text: `Thank you for the remittance advice. ${held.map((p) => money(p.currency, p.amount)).join(" and ")} ${held.length > 1 ? "have" : "has"} now been credited to student account ${account}, and the official receipt is attached.${lifted?.sentence ?? ""}`,
+    attachments: [...receipts.map((r) => r.id), ...(lifted ? [lifted.docId] : [])],
   };
 }

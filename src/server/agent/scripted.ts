@@ -427,10 +427,16 @@ const UKYEAR: ScriptedRun[] = [
     steps: [
       (w) => {
         const ob = nextInstalment(w)!;
+        // resolution flag: the university's own confirmation that the registration hold is lifted
+        const lifted = Object.values(w.holds ?? {}).some((h) => h.caseId === YR && h.status === "cleared");
         return step("message_family", {
           ...toBoth(
-            `Kingsgate has received the first instalment. The next one, ${gbp(ob.amount)}, is due on ${dayOf(ob.dueAt)}; I'll prepare it a week before.`,
-            `学校已收到第一期款项。下一期 ${gbp(ob.amount)} 将于${dayZh(ob.dueAt)}到期，我会提前一周准备好。`, // TODO zh
+            lifted
+              ? `Kingsgate has credited the first instalment to Yutong's student account and lifted the financial hold, so she can now complete her registration (their confirmation is in Documents). The next instalment, ${gbp(ob.amount)}, is due on ${dayOf(ob.dueAt)}; I'll prepare it a week before.`
+              : `Kingsgate has received the first instalment. The next one, ${gbp(ob.amount)}, is due on ${dayOf(ob.dueAt)}; I'll prepare it a week before.`,
+            lifted
+              ? `学校已把第一期款项记入雨桐的学生账户，并解除了注册的财务限制，她现在可以完成注册了（学校的确认函在“文件”里）。下一期 ${gbp(ob.amount)} 将于${dayZh(ob.dueAt)}到期，我会提前一周准备好。` // TODO zh
+              : `学校已收到第一期款项。下一期 ${gbp(ob.amount)} 将于${dayZh(ob.dueAt)}到期，我会提前一周准备好。`, // TODO zh
           ),
           importance: "good_news",
           narration: "Confirming the first instalment arrived",

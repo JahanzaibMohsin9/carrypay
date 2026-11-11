@@ -128,8 +128,15 @@ export function caseSnapshot(w: World, caseId: string) {
       return_reason: p.returnReason,
       cost_to_family: `${p.cost.sourceCurrency} ${r0(p.cost.totalSource).toLocaleString()}`,
       ...(p.allocation
-        ? { credited_to_account: p.allocation.status === "allocated" ? p.allocation.account ?? true : false, ...(p.allocation.status === "unallocated" ? { not_credited_yet: p.allocation.note } : {}) }
-        : {}),
+        ? {
+            credited_to_account: p.allocation.status === "allocated" ? p.allocation.account ?? true : false,
+            ...(p.allocation.status === "unallocated"
+              ? { not_credited_yet: p.allocation.note, waiting_on: inst.name, next_step: "the university needs the remittance advice (payer, amount, date sent, reference, Student ID) from its verified address" }
+              : {}),
+          }
+        : flagOn("resolution") && p.status === "completed" && inst.kind === "university"
+          ? { credited_to_account: false, not_credited_yet: "In the university's bank; it posts payments to the student account on its next working day" }
+          : {}),
     })),
     pending_approvals: Object.values(w.approvals)
       .filter((a) => a.caseId === caseId && !a.decision)
@@ -174,6 +181,13 @@ export function caseSnapshot(w: World, caseId: string) {
       .map((d) => ({ id: d.id, kind: d.kind, title: d.title, origin: d.origin })),
     recent_family_messages: w.messages.filter((m) => m.caseId === caseId).slice(-6).map((m) => ({ from: m.from, text: m.text, at: m.at })),
     ...(flagOn("plan") ? { plan: planSection(w, caseId) } : {}),
+    ...(flagOn("resolution") && Object.values(w.holds ?? {}).some((h) => h.caseId === caseId)
+      ? {
+          institution_requirements: Object.values(w.holds!)
+            .filter((h) => h.caseId === caseId)
+            .map((h) => ({ id: h.id, what: h.label, lifted_when: h.condition, status: h.status === "on" ? "in place" : "lifted by the institution", lifted_at: h.clearedAt, confirmation_document: h.confirmationDocId })),
+        }
+      : {}),
     fx_sandbox_rates_per_usd: Object.fromEntries([...new Set(["PKR", "THB", "GBP", "CNY", inst.bank.currency] as const)].map((k) => [k, Math.round(ratePerUSD(k, w.now, w.fxShocks) * 1000) / 1000])),
   };
 }

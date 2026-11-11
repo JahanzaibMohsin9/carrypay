@@ -347,7 +347,8 @@ export interface World {
   agent: AgentState;
   autoReply: boolean;
   /** director's chaos mode: faults injected into the outside world, each consumed when it fires */
-  chaos?: { bankOutage?: boolean; cardDecline?: boolean; silentUntil?: string; unallocated?: boolean };
+  /** unallocated: the next transfer to a university arrives unmatched; "reference_dropped": because an intermediary bank dropped the reference (the uk-year story) */
+  chaos?: { bankOutage?: boolean; cardDecline?: boolean; silentUntil?: string; unallocated?: boolean | "reference_dropped" };
   /** director: advance the clock automatically whenever the agent is idle */
   autoplay: boolean;
   counters: Record<string, number>;
@@ -356,6 +357,8 @@ export interface World {
   /** plan workflow (src/domain/plan): the family's own figures by case, the institution's payment terms, bill adjustments, plan mandates */
   funding?: Record<string, FundingProfile>;
   arrangements?: Record<string, Arrangement>;
+  /** what the institution itself requires before the student can register (resolution flag): met only on its own confirmation */
+  holds?: Record<string, InstitutionHold>;
   adjustments?: Record<string, Adjustment>;
   mandates?: Record<string, PlanMandate>;
   /** sandbox rate overrides (Director stress test): from `from` on, `currency` costs `pct` more in every other currency */
@@ -403,4 +406,23 @@ export interface LedgerEntry {
   data: Record<string, unknown>;
   prevHash: string;
   hash: string;
+}
+
+/**
+ * A requirement the institution itself enforces, such as a financial hold on the student's registration. The
+ * bank delivering the money doesn't meet it, and nor does CarryPay: only the institution's confirmation does.
+ */
+export interface InstitutionHold {
+  id: string;
+  caseId: string;
+  institutionId: string;
+  /** e.g. "Financial hold on registration for 2026/27" */
+  label: string;
+  /** what lifts it, in the institution's words */
+  condition: string;
+  status: "on" | "cleared";
+  placedAt: string;
+  clearedAt?: string;
+  /** the institution's confirmation that it was lifted */
+  confirmationDocId?: string;
 }

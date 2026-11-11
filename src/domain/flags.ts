@@ -15,6 +15,8 @@ export const FLAG_NAMES = [
   "allocation",
   /** family roles: each person on a case reads the agent's messages in their own language */
   "family",
+  /** institution-confirmed resolution: posting on the next working day, the registration hold, and the uk-year transfer that arrives without its reference */
+  "resolution",
 ] as const;
 
 export type Flag = (typeof FLAG_NAMES)[number];

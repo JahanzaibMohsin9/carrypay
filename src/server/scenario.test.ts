@@ -228,6 +228,18 @@ describe("A year in London (scripted agent, plan workflow)", () => {
       const ev = evaluateRun(w(), store.ledger);
       expect(ev.checks.filter((c) => !c.pass)).toEqual([]);
       expect(ev.checks.map((c) => c.id)).toEqual(expect.arrayContaining(["scholarship_corrected", "engine_pick_recommended", "reserve_kept", "instalments_only", "fake_extension_ignored", "paid_under_mandate", "mandate_paused_on_change", "year_paid"]));
+      // resolution: the first transfer arrived without its reference, was matched after the remittance advice,
+      // and only then did Kingsgate lift the registration hold; each later one was posted the next working day
+      const first = done.sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      expect(first.allocation).toMatchObject({ status: "allocated", note: "Allocated after the remittance advice" });
+      expect(store.ledger.some((e) => e.type === "payment.unallocated" && e.data.paymentId === first.id)).toBe(true);
+      const hold = Object.values(w().holds!)[0];
+      expect(hold).toMatchObject({ status: "cleared" });
+      expect(hold.clearedAt! >= first.allocation!.at).toBe(true);
+      expect(w().docs[hold.confirmationDocId!].origin).toBe("institution");
+      for (const p of done) expect(Date.parse(p.allocation!.at)).toBeGreaterThan(Date.parse(p.completedAt!));
+      expect(ev.checks.map((c) => c.id)).toEqual(expect.arrayContaining(["requirement_met", "no_early_all_clear", "not_paid_twice", "credited_to_student"]));
+      expect(ev.metrics.hoursBankToCredited).toBeGreaterThan(0);
       // Yutong reads every message in English, her father in Chinese: one message, two versions, no mixed text
       const agentMsgs = w().messages.filter((m) => m.caseId === "case_yr" && m.from === "agent");
       expect(agentMsgs.length).toBeGreaterThan(8);
@@ -251,7 +263,8 @@ describe("A year in London: a transfer the university can't match (scripted agen
     const { compareSchedules } = await import("@/domain/plan/cashflow");
     const { decideArrangement, signMandate } = await import("./plan");
     const { injectChaos } = await import("./sim/engine");
-    setFlagsForTest(parseFlags("all"));
+    // the Director's fault on its own: without the resolution story (which drops the first reference itself)
+    setFlagsForTest(parseFlags("all,-resolution"));
     try {
       const { store, next, approveAll, settle } = await boot("uk-year");
       const w = () => store.world;

@@ -56,6 +56,8 @@ function runScheduled(store: Store, item: ScheduledItem) {
       return institutionReply(store, p.mailId);
     case "bank.settle":
       return settlePayment(store, p.paymentId);
+    case "institution.post":
+      return creditAtInstitution(store, p.paymentId);
     case "bank.return":
       return returnPayment(store, p.paymentId, p.reason);
     case "refund.credit":
@@ -141,6 +143,8 @@ export function runBeat(store: Store, beat: string) {
     case "upload.open": {
       const c = Object.values(w.cases)[0];
       store.log({ actor: "family", type: "case.opened", caseId: c.id, narration: `Case opened: ${c.title}`, data: { brief: c.brief } });
+      // the year's real-world snag (resolution flag): an intermediary bank will drop the first transfer's reference
+      if (beat === "yr.open" && flagOn("allocation") && flagOn("resolution")) store.mutate((x) => (x.chaos = { ...x.chaos, unallocated: "reference_dropped" }));
       familySays(store, c.id, c.brief);
       return;
     }
@@ -604,14 +608,39 @@ function settlePayment(store: Store, paymentId: string) {
     store.trigger({ caseId: p.caseId, reason: "payment_completed", detail: `${p.id} received; confirmation ${conf.id}` });
     return;
   }
+  // resolution flag: the bank has the money, but the university posts it to the student account only on
+  // its next working day; until then the payment is delivered, not credited
+  if (flagOn("allocation") && flagOn("resolution") && inst.kind === "university") {
+    const at = nextWorkingMorning(store.world.now);
+    store.log({ actor: "bank", type: "payment.bank_credited", caseId: p.caseId, narration: `${inst.name}'s bank has the money; the university posts it to the student account on its next working day`, data: { paymentId, postsAt: at } });
+    schedule(store, { at, kind: "institution.post", payload: { paymentId }, label: `${inst.name} posts the payment to the student account` });
+    return;
+  }
+  creditAtInstitution(store, paymentId);
+}
+
+/** Next working day (Mon-Fri) at 10:00 UTC, about when a UK finance office posts the previous day's receipts. */
+export function nextWorkingMorning(iso: string): string {
+  const d = new Date(iso);
+  d.setUTCDate(d.getUTCDate() + 1);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
+  d.setUTCHours(10, 0, 0, 0);
+  return d.toISOString();
+}
+
+/** The institution's side once the money is in its bank: credit the student's account (or fail to match it), then the receipt. */
+function creditAtInstitution(store: Store, paymentId: string) {
+  const p = store.world.payments[paymentId];
+  const inst = store.world.institutions[p.institutionId];
   // the university credits the student's account (allocation flag); with the chaos fault it can't match the transfer
   if (flagOn("allocation") && inst.kind === "university") {
+    const dropped = store.world.chaos?.unallocated === "reference_dropped";
     const unmatched = !!store.world.chaos?.unallocated;
     const account = studentAccountOf(store, p.caseId);
     store.mutate((w) => {
       if (unmatched) w.chaos!.unallocated = false;
       w.payments[p.id].allocation = unmatched
-        ? { status: "unallocated", at: w.now, note: "Received by the university's bank but not matched to a student account" }
+        ? { status: "unallocated", at: w.now, note: dropped ? "Arrived without its payment reference (dropped by an intermediary bank), so not matched to a student account" : "Received by the university's bank but not matched to a student account" }
         : { status: "allocated", at: w.now, account };
     });
     if (unmatched) {
@@ -623,7 +652,9 @@ function settlePayment(store: Store, paymentId: string) {
         fromName: "Kingsgate Student Finance",
         to: "cases@carrypay.app",
         subject: `Payment received but not yet allocated: ${p.currency} ${p.amount.toLocaleString()}`,
-        body: `Dear CarryPay team,\n\nOur bank has received ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} (reference "${p.reference}"), but our finance system could not match it to a student account, so it is held unallocated and the student's fees still show as outstanding. Please send us the remittance advice (payer name, amount, date sent and the Student ID) and we will allocate it.\n\nKind regards,\nStudent Finance Office\nKingsgate University`,
+        body: dropped
+          ? `Dear CarryPay team,\n\nOur bank has received ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} from ZHOU JIANHUA, but it reached us without a payment reference (an intermediary bank appears to have dropped it), so our finance system could not match it to a student account. It is held unallocated and the student's fees still show as outstanding${openHold(store, p.caseId) ? ", so the financial hold on the registration stays in place" : ""}. Please send us the remittance advice (payer name, amount, date sent and the Student ID) and we will allocate it.\n\nKind regards,\nStudent Finance Office\nKingsgate University`
+          : `Dear CarryPay team,\n\nOur bank has received ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} (reference "${p.reference}"), but our finance system could not match it to a student account, so it is held unallocated and the student's fees still show as outstanding. Please send us the remittance advice (payer name, amount, date sent and the Student ID) and we will allocate it.\n\nKind regards,\nStudent Finance Office\nKingsgate University`,
         attachments: [],
         topics: ["allocation"],
       });
@@ -632,6 +663,9 @@ function settlePayment(store: Store, paymentId: string) {
     }
   }
   const allocated = store.world.payments[p.id].allocation?.status === "allocated" ? store.world.payments[p.id].allocation!.account : undefined;
+  const lifted = allocated ? liftHolds(store, p.caseId) : undefined;
+  const cleared = lifted?.sentence ?? "";
+  const clearance = lifted?.docId;
   const receipt = addDoc(store, {
     caseId: p.caseId,
     kind: "receipt",
@@ -647,10 +681,54 @@ function settlePayment(store: Store, paymentId: string) {
     fromName: inst.kind === "hospital" ? "SRH International Patient Services" : "Kingsgate Student Finance",
     to: "cases@carrypay.app",
     subject: `Payment received: ${p.currency} ${p.amount.toLocaleString()}`,
-    body: `Dear CarryPay team,\n\nWe confirm receipt of ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} (reference ${p.reference})${allocated ? `, credited to student account ${allocated}` : ""}. The official receipt is attached.\n\nKind regards,\n${inst.name}`,
-    attachments: [receipt.id],
+    body: `Dear CarryPay team,\n\nWe confirm receipt of ${p.currency} ${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} (reference ${p.reference})${allocated ? `, credited to student account ${allocated}` : ""}. The official receipt is attached.${cleared}\n\nKind regards,\n${inst.name}`,
+    attachments: [receipt.id, ...(clearance ? [clearance] : [])],
   });
   store.trigger({ caseId: p.caseId, reason: "payment_completed", detail: `${p.id} received; mail ${m.id}` });
+}
+
+function openHold(store: Store, caseId: string) {
+  return Object.values(store.world.holds ?? {}).find((h) => h.caseId === caseId && h.status === "on");
+}
+
+/**
+ * The university lifts a hold once its own condition is met: the first payment credited to the student account
+ * (the amount requested now, or the first instalment of the confirmed plan). Returns its confirmation, if lifted now.
+ */
+export function liftHolds(store: Store, caseId: string): { sentence: string; docId: string } | undefined {
+  const hold = openHold(store, caseId);
+  if (!hold) return undefined;
+  const w = store.world;
+  const credited = (invoiceId: string) =>
+    Object.values(w.payments)
+      .filter((p) => p.invoiceId === invoiceId && p.status === "completed" && p.allocation?.status === "allocated")
+      .reduce((s, p) => s + p.amount, 0);
+  const met = Object.values(w.invoices).some((inv) => {
+    if (inv.caseId !== caseId || inv.institutionId !== hold.institutionId || inv.status === "superseded") return false;
+    const plan = Object.values(w.arrangements ?? {}).find((a) => a.invoiceId === inv.id && a.status === "accepted" && a.confirmationDocId);
+    const first = plan ? plan.instalments[0].amount + (plan.fee ?? 0) : inv.amountDue;
+    return credited(inv.id) >= first - 0.5;
+  });
+  if (!met) return undefined;
+  const inst = w.institutions[hold.institutionId];
+  const student = w.cases[caseId].people.find((x) => x.role === "student");
+  const account = studentAccountOf(store, caseId);
+  const doc = addDoc(store, {
+    caseId,
+    kind: "receipt",
+    title: `Registration cleared: ${hold.label.toLowerCase()} lifted`,
+    text: `${inst.name.toUpperCase()} · STUDENT FINANCE OFFICE\nCONFIRMATION OF FINANCIAL CLEARANCE\nStudent: ${student?.name ?? ""}${account ? `   Student ID: ${account}` : ""}\nThe ${hold.label.toLowerCase()} has been lifted: the first payment has been credited to the student account. The student can now complete registration.\nLater instalments remain due on the dates of the confirmed plan.`,
+    fields: { holdId: hold.id, cleared: "yes" },
+    origin: "institution",
+  });
+  store.mutate((x) => {
+    const h = x.holds![hold.id];
+    h.status = "cleared";
+    h.clearedAt = x.now;
+    h.confirmationDocId = doc.id;
+  });
+  store.log({ actor: "university", type: "hold.cleared", caseId, narration: `${inst.name} lifted the ${hold.label.toLowerCase()}: the student can register`, data: { holdId: hold.id, documentId: doc.id } });
+  return { sentence: ` The ${hold.label.toLowerCase()} has been lifted, so the student can now complete registration; the confirmation is attached.`, docId: doc.id };
 }
 
 /** The student's account at the university: the enrolled student on the case. */
