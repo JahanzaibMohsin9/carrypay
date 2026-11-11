@@ -64,6 +64,12 @@ The plan workflow fits a bank better than it fits a stand-alone app:
 - **It is not lending.** CarryPay never lends or holds money. It arranges the institution's own published plans; if a bank wants to offer credit as well, that is the bank's product under its own rules, and CarryPay would show it as one more option, priced by the same engine.
 - **What a bank must decide:** whether a mandate may run without an officer's review of each instalment, the reserve test it wants, and how mandate payments appear in the customer's statement.
 
+### 2.2 Approvals, verification and "done" inside a bank
+
+- **An approval is a decision on terms, not just a payment.** CarryPay's approval covers the bill version, a cost limit in the customer's currency and a quote validity. In a bank the quote is the bank's own FX quote and its hold period; when it expires or the bill changes, only that approval is withdrawn, and the customer sees what changed.
+- **Verification is the bank's work, made explicit.** For an institution the bank doesn't know, its reviewer answers three separate questions (genuine institution, account ownership, authentic bill), each on named evidence. In production the account check would use the receiving bank's account-name check or a pre-validation service; what each service actually checks differs and must be stated per check, not as one badge.
+- **Done means the institution says so.** A bank's payment status ends at delivery. CarryPay keeps the case open until the institution confirms it credited the student or patient account and lifted any hold, and measures the time from delivery to credit. In production that confirmation needs a response channel the institution agrees to (email from a verified address today, an institution portal or API later). CarryPay can commit to its own checks and follow-ups; it can't guarantee an institution's answer, an admission or a treatment.
+
 ## 3. Who operates it: a bank, not CarryPay
 
 CarryPay never holds or moves money itself. It is software that a licensed bank deploys for its customers: the bank does the KYC, holds the accounts, executes the transfers and stays responsible to its regulator. This is how it can be legal in both countries without CarryPay becoming a payment company.
