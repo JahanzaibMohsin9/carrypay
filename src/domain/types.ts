@@ -172,7 +172,8 @@ export interface Approval {
   requestedAt: string;
   decidedAt?: string;
   decision?: "approved" | "declined";
-  method?: "passkey" | "hold";
+  /** mandate: paid under the plan mandate the payer signed, without a new approval */
+  method?: "passkey" | "hold" | "mandate";
   summary: string;
 }
 

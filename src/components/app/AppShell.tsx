@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { Activity, FileText, Fingerprint, House, ShieldCheck, Wallet } from "lucide-react";
+import { Activity, CalendarRange, FileText, Fingerprint, House, ShieldCheck, Wallet } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useCarry } from "@/lib/client";
 import { useT } from "@/lib/i18n";
@@ -24,6 +24,7 @@ const TABS = [
   { href: "/app/money", key: "money", icon: Wallet },
   { href: "/app/docs", key: "documents", icon: FileText },
 ] as const;
+const PLAN_TAB = { href: "/app/plan", key: "plan", icon: CalendarRange } as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { state } = useCarry();
@@ -43,6 +44,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pending = useMemo(() => (state && c ? pendingApprovals(state.world, c.id) : []), [state, c]);
   const viewer = useViewer(c);
   const threats = state ? threatCount(state.world) : 0;
+  // the plan tab only for cases that have a plan to show (feature flag on)
+  const showPlan = !!state?.flags?.plan && !!c && (!!state.world.funding?.[c.id] || Object.values(state.world.arrangements ?? {}).some((a) => a.caseId === c.id));
+  const tabs = showPlan ? [...TABS.slice(0, 3), PLAN_TAB, TABS[3]] : TABS;
 
   // follow the case language when a scenario loads
   useEffect(() => {
@@ -170,8 +174,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Bottom tabs */}
       <nav className="z-20 shrink-0 border-t border-line/70 bg-bg/90 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur-md">
-        <ul className="grid grid-cols-4">
-          {TABS.map(({ href, key, icon: Icon }) => {
+        <ul className={cn("grid", tabs.length === 5 ? "grid-cols-5" : "grid-cols-4")}>
+          {tabs.map(({ href, key, icon: Icon }) => {
             const active = pathname === href;
             return (
               <li key={href}>

@@ -173,6 +173,7 @@ const en = {
   voiceLabel: "Voice note",
   listen: "Listen",
   stopListening: "Stop",
+  plan: "Plan",
 };
 
 type Dict = typeof en;
@@ -430,6 +431,7 @@ const zh: Dict = {
   voiceLabel: "语音消息",
   listen: "朗读",
   stopListening: "停止",
+  plan: "计划", // TODO zh
 };
 
 export const DICTS: Record<Lang, Partial<Dict>> = { en, ur, zh };

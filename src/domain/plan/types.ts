@@ -95,7 +95,7 @@ export interface PlanMandate {
   /** all payments together at most this much (invoice currency) */
   totalCap: number;
   /** a payment may only be made inside one of these windows */
-  windows: { from: string; to: string; instalment: number }[];
+  windows: { from: string; to: string; instalment: number; /** exactly this amount (invoice currency) */ amount: number }[];
   /** home currency: no payment may take the projected balance below this */
   reserveFloor: number;
   status: "awaiting_approval" | "active" | "paused" | "revoked" | "completed";
