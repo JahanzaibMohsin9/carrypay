@@ -1,3 +1,4 @@
+import { approvalTerms } from "@/domain/approval-terms";
 import { z } from "zod";
 import type { DocumentKind, Lang, Mail, Payment, Route, SecurityEvent, World } from "@/domain/types";
 import { INSTITUTIONS } from "@/domain/institutions";
@@ -888,6 +889,7 @@ export const TOOLS = [
           paymentId,
           requestedAt: ww.now,
           summary: `${ROUTE_SHORT[payment.route]}: ${inv.currency} ${i.amount.toLocaleString()} to ${w.institutions[inv.institutionId].name}`,
+          terms: approvalTerms(w, payment),
         };
       });
       // 5. Plan mandate: an instalment the payer approved in advance goes ahead without asking again, but only

@@ -3,7 +3,8 @@ import path from "node:path";
 import { DATA_DIR, Store } from "./store";
 import { AgentRunner, hasApiCredentials, MODEL } from "./agent/runner";
 import { SCENARIOS, seedScenario, seedUpload } from "./scenarios";
-import { advanceTo, advanceToNext, injectChaos, injectStress, nextScheduled, runBeat, setPaymentStatus, submitPayment, verifyInstitution, type ChaosKind } from "./sim/engine";
+import { advanceTo, advanceToNext, injectChaos, injectStress, nextScheduled, runBeat, setPaymentStatus, submitPayment, verifyInstitution, withdrawApproval, type ChaosKind } from "./sim/engine";
+import { checkTerms } from "@/domain/approval-terms";
 import { hoursFrom } from "./sim/factory";
 import { verifyChain } from "./hash";
 import { listPasskeys } from "./passkey";
@@ -216,6 +217,25 @@ export function decideApprovalIn(store: Store, approvalId: string, decision: "ap
   if (!a || a.decision) throw new Error("This approval is no longer pending.");
   checkApprover(store, approvalId, decision, actingPersonId);
   const p = store.world.payments[a.paymentId];
+  if (decision === "approved" && a.terms) {
+    // what the family approves is the payment on these terms: if any changed since it was put to them, this
+    // approval is withdrawn (only this one) and they are asked again with the new facts
+    const t = checkTerms(store.world, p, a.terms);
+    if (t.changes.length) {
+      withdrawApproval(store, approvalId, t.changes);
+      throw new Error(`This approval was withdrawn because something changed: ${t.changes.map((c) => c.message).join(" ")} CarryPay will ask you again with the new figures.`);
+    }
+    if (t.requoted) {
+      store.mutate((w) => (w.payments[p.id].cost = t.cost));
+      store.log({
+        actor: "gateway",
+        type: "approval.requoted",
+        caseId: a.caseId,
+        narration: `The quote had expired: priced again at ${t.cost.sourceCurrency} ${Math.ceil(t.cost.totalSource).toLocaleString()}, within the ${a.terms.maxCost.currency} ${a.terms.maxCost.amount.toLocaleString()} approved`,
+        data: { approvalId, paymentId: p.id, cost: Math.round(t.cost.totalSource * 100) / 100, maxCost: a.terms.maxCost.amount },
+      });
+    }
+  }
   store.mutate((w) => {
     w.approvals[approvalId].decision = decision;
     w.approvals[approvalId].decidedAt = w.now;

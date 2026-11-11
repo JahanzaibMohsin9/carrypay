@@ -106,6 +106,8 @@ function paymentDigest(w: World, approvalId: string, nonce: string) {
     payer: p.payerId,
     beneficiary: [p.beneficiary.accountName, p.beneficiary.accountNumber, p.beneficiary.swift],
     reference: p.reference,
+    // the commercial terms approved with it: bill version, cost ceiling, quote validity
+    terms: a.terms ? [a.terms.invoice.id, a.terms.invoice.amountDue, a.terms.instalment?.number ?? null, a.terms.maxCost.currency, a.terms.maxCost.amount, a.terms.quoteHeldUntil] : null,
     nonce,
   });
   return b64u(sha256(canonical));

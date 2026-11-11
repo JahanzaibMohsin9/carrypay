@@ -212,9 +212,10 @@ export function FeedLine({ item, tz, compact = false }: { item: FeedItem; tz: st
 
   if (item.kind === "approval") {
     const approved = e.type === "approval.approved";
+    const withdrawn = e.type === "approval.withdrawn";
     return (
       <div className="flex justify-center">
-        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold", approved ? "bg-success-soft text-success" : "bg-surface-3 text-ink-2")}>
+        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold", approved ? "bg-success-soft text-success" : withdrawn ? "rounded-2xl bg-amber-soft text-amber-strong" : "bg-surface-3 text-ink-2")}>
           <Fingerprint size={13} /> {e.narration}
         </span>
       </div>

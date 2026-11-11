@@ -7,6 +7,7 @@ import { addDoc, hoursFrom, issueInvoice, sendMail } from "./factory";
 import { institutionReply } from "./institution";
 import { DEFAULT_STRESSES, incomeArrives, nextIncomeDue, obligationsFor, projectCashflow, type Projection } from "@/domain/plan/cashflow";
 import { flagOn } from "../flags";
+import { checkTerms, type TermsChange } from "@/domain/approval-terms";
 
 // ---------------------------------------------------------------------------
 // Clock
@@ -34,8 +35,10 @@ export function advanceTo(store: Store, target: string) {
       if (next.at > w.now) w.now = next.at;
     });
     runScheduled(store, next);
+    sweepApprovals(store);
   }
   if (target > store.world.now) store.mutate((w) => (w.now = target));
+  sweepApprovals(store);
 }
 
 export function advanceToNext(store: Store): ScheduledItem | undefined {
@@ -497,6 +500,43 @@ export function setPaymentStatus(store: Store, paymentId: string, status: Paymen
     if (status === "completed") p.completedAt = w.now;
     if (status === "returned") p.returnReason = note;
   });
+}
+
+/**
+ * One pending approval's terms changed before the family decided (the bill was replaced or revised, the plan
+ * instalment changed, the account changed, or the new quote is above what they approved). Only this approval
+ * is withdrawn and its payment cancelled; documents, checks and the rest of the case stay as they are.
+ */
+export function withdrawApproval(store: Store, approvalId: string, changes: TermsChange[]) {
+  const a = store.world.approvals[approvalId];
+  if (!a || a.decision) return;
+  const p = store.world.payments[a.paymentId];
+  store.mutate((w) => {
+    const x = w.approvals[approvalId];
+    x.decision = "withdrawn";
+    x.decidedAt = w.now;
+    x.withdrawn = { at: w.now, changes: changes.map((c) => ({ id: c.id, message: c.message })) };
+  });
+  setPaymentStatus(store, p.id, "cancelled", `Approval withdrawn: ${changes.map((c) => c.message).join(" ")}`);
+  store.log({
+    actor: "gateway",
+    type: "approval.withdrawn",
+    caseId: a.caseId,
+    narration: `Approval request withdrawn before anyone approved it: ${changes.map((c) => c.message).join(" ")}`,
+    data: { approvalId, paymentId: p.id, changes: changes.map((c) => c.id), messages: changes.map((c) => c.message) },
+  });
+  store.trigger({ caseId: a.caseId, reason: "approval_withdrawn", detail: `${a.summary}: ${changes.map((c) => c.message).join(" ")}` });
+}
+
+/** Re-checks every pending approval and withdraws the ones whose terms no longer hold. */
+export function sweepApprovals(store: Store) {
+  for (const a of Object.values(store.world.approvals)) {
+    if (a.decision || !a.terms) continue;
+    const p = store.world.payments[a.paymentId];
+    if (!p || p.status !== "awaiting_approval") continue;
+    const { changes } = checkTerms(store.world, p, a.terms);
+    if (changes.length) withdrawApproval(store, a.id, changes);
+  }
 }
 
 /** The family approved: send the money on its rail. */

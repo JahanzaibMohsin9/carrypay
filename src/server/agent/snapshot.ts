@@ -131,7 +131,18 @@ export function caseSnapshot(w: World, caseId: string) {
         ? { credited_to_account: p.allocation.status === "allocated" ? p.allocation.account ?? true : false, ...(p.allocation.status === "unallocated" ? { not_credited_yet: p.allocation.note } : {}) }
         : {}),
     })),
-    pending_approvals: Object.values(w.approvals).filter((a) => a.caseId === caseId && !a.decision).map((a) => ({ id: a.id, payment_id: a.paymentId, summary: a.summary })),
+    pending_approvals: Object.values(w.approvals)
+      .filter((a) => a.caseId === caseId && !a.decision)
+      .map((a) => ({
+        id: a.id,
+        payment_id: a.paymentId,
+        summary: a.summary,
+        ...(a.terms ? { approves_up_to: `${a.terms.maxCost.currency} ${a.terms.maxCost.amount.toLocaleString()}`, quote_held_until: a.terms.quoteHeldUntil } : {}),
+      })),
+    withdrawn_approvals: Object.values(w.approvals)
+      .filter((a) => a.caseId === caseId && a.decision === "withdrawn")
+      .slice(-3)
+      .map((a) => ({ id: a.id, payment_id: a.paymentId, summary: a.summary, at: a.withdrawn?.at, what_changed: a.withdrawn?.changes.map((c) => c.message) })),
     limits_used: {
       medical_bank_remittance_this_case_usd:
         c.type === "medical" && corridor.packId === "pk-sbp"

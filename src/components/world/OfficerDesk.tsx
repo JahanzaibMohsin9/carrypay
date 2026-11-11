@@ -8,7 +8,7 @@ import { corridorOf } from "@/domain/corridors";
 import { evaluateRoute, findRule } from "@/domain/rules/engine";
 import { instalmentOf, instalmentProgress, projectCashflow } from "@/domain/plan/cashflow";
 import type { Arrangement } from "@/domain/plan/types";
-import type { LedgerEntry, Payment, World } from "@/domain/types";
+import type { ApprovalTerms, Currency, LedgerEntry, Payment, World } from "@/domain/types";
 import { RuleChip } from "../RuleChip";
 import { OfficerStress } from "./OfficerStress";
 
@@ -86,6 +86,7 @@ function Package({ w, p, ledger, tz, city }: { w: World; p: Payment; ledger: Led
   const bankLetter = docs.find((d) => d.kind === "bank_letter" && d.origin === "institution");
   const approval = ledger.find((e) => e.type === "approval.approved" && e.data.paymentId === p.id);
   const passkey = approval?.data.passkey as { device?: string; challenge?: string } | undefined;
+  const apr = p.approvalId ? w.approvals[p.approvalId] : undefined;
   // paid under a plan mandate: no approval of its own, the gateway checked every term of the signed mandate
   const underMandate = ledger.find((e) => e.type === "approval.mandate" && e.data.paymentId === p.id);
   const approved = !!approval || !!underMandate;
@@ -163,6 +164,7 @@ function Package({ w, p, ledger, tz, city }: { w: World; p: Payment; ledger: Led
                 </span>
               </div>
               {passkey?.challenge && <Row k="Signed payment digest" v={`${passkey.challenge.slice(0, 16)}…`} mono />}
+              {apr?.terms && <ApprovedTerms terms={apr.terms} currency={p.currency} requoted={ledger.some((e) => e.type === "approval.requoted" && e.data.paymentId === p.id)} tz={tz} />}
             </>
           ) : (
             <p className="text-[12px] text-[#fbbf6b]">Not yet approved by the family.</p>
@@ -188,6 +190,19 @@ function Package({ w, p, ledger, tz, city }: { w: World; p: Payment; ledger: Led
         <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8193a8]">Draft SWIFT MT103 (for the officer to check; not sent from here)</p>
         <pre className="scroll-thin overflow-x-auto rounded-lg bg-[#0b1016] p-3 font-mono text-[11.5px] leading-relaxed text-[#b9c6d4]">{mt103(w, p, payer?.name ?? "", city)}</pre>
       </div>
+    </div>
+  );
+}
+
+/** The commercial terms the customer approved with the payment, re-checked by the gateway when they approved. */
+function ApprovedTerms({ terms, currency, requoted, tz }: { terms: ApprovalTerms; currency: Currency; requoted: boolean; tz: string }) {
+  return (
+    <div className="mt-1 space-y-1">
+      <Row k="Bill version approved" v={`${terms.invoice.number} · ${money(terms.invoice.amountDue, currency)} requested`} />
+      {terms.instalment && <Row k="Plan instalment" v={`No. ${terms.instalment.number}, due ${dateTime(terms.instalment.dueAt, tz)}`} />}
+      <Row k="Cost limit approved" v={money(terms.maxCost.amount, terms.maxCost.currency)} />
+      <Row k="Quote held until" v={dateTime(terms.quoteHeldUntil, tz)} />
+      <Check ok text={requoted ? "Quote had expired: priced again within the approved limit" : "Bill, account and quote unchanged when approved"} />
     </div>
   );
 }

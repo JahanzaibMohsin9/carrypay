@@ -175,10 +175,27 @@ export interface Approval {
   paymentId: string;
   requestedAt: string;
   decidedAt?: string;
-  decision?: "approved" | "declined";
+  decision?: "approved" | "declined" | "withdrawn";
   /** mandate: paid under the plan mandate the payer signed, without a new approval */
   method?: "passkey" | "hold" | "mandate";
   summary: string;
+  /** what the family approves besides the payment itself; checked again when they decide (domain/approval-terms) */
+  terms?: ApprovalTerms;
+  /** set when the approval was withdrawn because one of its terms changed before the family decided */
+  withdrawn?: { at: string; changes: { id: string; message: string }[] };
+}
+
+export interface ApprovalTerms {
+  /** the version of the bill this payment pays */
+  invoice: { id: string; number: string; total: number; amountDue: number; dueAt?: string };
+  /** when it pays an instalment of a confirmed plan: that instalment as confirmed */
+  instalment?: { arrangementId: string; number: number; amount: number; dueAt: string };
+  /** the most the payment may cost the family, in their own currency */
+  maxCost: { currency: Currency; amount: number };
+  quotedAt: string;
+  /** the quote holds until then; after that it is priced again and must stay within maxCost */
+  quoteHeldUntil: string;
+  beneficiary: { accountName: string; accountNumber: string; swift: string };
 }
 
 export interface Mail {

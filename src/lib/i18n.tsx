@@ -177,6 +177,8 @@ const en = {
   alsoSentIn: "Also sent in {lang}",
   hideOtherLang: "Hide {lang}",
   waitingOn: "Waiting for {name} to approve",
+  upToLimit: "You approve up to {amount}",
+  priceHeldUntil: "Price held until {time}; after that it is priced again and must stay within your limit",
 };
 
 type Dict = typeof en;
@@ -438,6 +440,8 @@ const zh: Dict = {
   alsoSentIn: "另有 {lang} 版", // TODO zh
   hideOtherLang: "收起 {lang} 版", // TODO zh
   waitingOn: "等待{name}批准", // TODO zh
+  upToLimit: "您批准的上限为 {amount}", // TODO zh
+  priceHeldUntil: "报价保留至 {time}；之后将重新报价，且不得超过您批准的上限", // TODO zh
 };
 
 export const DICTS: Record<Lang, Partial<Dict>> = { en, ur, zh };
