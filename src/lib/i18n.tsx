@@ -173,6 +173,20 @@ const en = {
   voiceLabel: "Voice note",
   listen: "Listen",
   stopListening: "Stop",
+  plan: "Plan",
+  alsoSentIn: "Also sent in {lang}",
+  hideOtherLang: "Hide {lang}",
+  waitingOn: "Waiting for {name} to approve",
+  upToLimit: "You approve up to {amount}",
+  priceHeldUntil: "Price held until {time}; after that it is priced again and must stay within your limit",
+  bankChecks: "The bank's checks",
+  vcInstitution: "The institution is genuine",
+  vcAccount: "The bank account is its own",
+  vcInvoice: "The bill is authentic",
+  vsOpen: "Checking",
+  vsRequested: "Needs a document from you",
+  vsConfirmed: "Confirmed",
+  vsRejected: "Not confirmed",
 };
 
 type Dict = typeof en;
@@ -430,6 +444,20 @@ const zh: Dict = {
   voiceLabel: "语音消息",
   listen: "朗读",
   stopListening: "停止",
+  plan: "计划", // TODO zh
+  alsoSentIn: "另有 {lang} 版", // TODO zh
+  hideOtherLang: "收起 {lang} 版", // TODO zh
+  waitingOn: "等待{name}批准", // TODO zh
+  upToLimit: "您批准的上限为 {amount}", // TODO zh
+  priceHeldUntil: "报价保留至 {time}；之后将重新报价，且不得超过您批准的上限", // TODO zh
+  bankChecks: "银行审核", // TODO zh
+  vcInstitution: "该机构真实存在", // TODO zh
+  vcAccount: "收款账户属于该机构", // TODO zh
+  vcInvoice: "账单真实有效", // TODO zh
+  vsOpen: "审核中", // TODO zh
+  vsRequested: "需要您补充材料", // TODO zh
+  vsConfirmed: "已确认", // TODO zh
+  vsRejected: "未通过", // TODO zh
 };
 
 export const DICTS: Record<Lang, Partial<Dict>> = { en, ur, zh };

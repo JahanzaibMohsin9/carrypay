@@ -8,11 +8,13 @@ import type { RecordedStep, ScriptedRun } from "./runner";
 import { compareRoutes, priceRoute } from "@/domain/rules/engine";
 import { ROUTE_LABEL } from "@/domain/corridors";
 import type { CorridorId, Route } from "@/domain/types";
+import { compareSchedules, obligationsFor, projectCashflow } from "@/domain/plan/cashflow";
+import { mandateReserve } from "@/domain/plan/mandate";
 
 /** Cost difference between two routes for the same amount, rounded to the nearest 1,000 (or 100 for CNY). */
 function diff(w: World, corridor: CorridorId, inst: string, amount: number, a: Route, b: Route) {
-  const pa = priceRoute({ corridor, route: a, deliverAmount: amount, institution: w.institutions[inst], simDate: w.now })!;
-  const pb = priceRoute({ corridor, route: b, deliverAmount: amount, institution: w.institutions[inst], simDate: w.now })!;
+  const pa = priceRoute({ corridor, route: a, deliverAmount: amount, institution: w.institutions[inst], simDate: w.now, fxShocks: w.fxShocks })!;
+  const pb = priceRoute({ corridor, route: b, deliverAmount: amount, institution: w.institutions[inst], simDate: w.now, fxShocks: w.fxShocks })!;
   const step = pa.sourceCurrency === "CNY" ? 100 : 1000;
   return `${pa.sourceCurrency} ${(Math.round(Math.abs(pb.totalSource - pa.totalSource) / step) * step).toLocaleString("en-US")}`;
 }
@@ -24,6 +26,11 @@ const lastInbound = (w: World, caseId: string, pred: (m: Mail) => boolean = () =
 const paysFor = (w: World, inv: Invoice | undefined) => (inv ? Object.values(w.payments).filter((p) => p.invoiceId === inv.id) : []);
 const ben = (instId: string) => {
   const b = INSTITUTIONS[instId].bank;
+  return { account_name: b.accountName, account_number: b.accountNumber, swift: b.swift, bank_name: b.bankName };
+};
+/** The institution's verified account as it is now in the world (it changes after a bank change the bank confirmed). */
+const benNow = (w: World, instId: string) => {
+  const b = w.institutions[instId].bank;
   return { account_name: b.accountName, account_number: b.accountNumber, swift: b.swift, bank_name: b.bankName };
 };
 const step = (tool: string, input: Record<string, unknown>): RecordedStep => ({ tool, input });
@@ -245,6 +252,327 @@ const UK: ScriptedRun[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// A year in London (uk-year): every amount in these messages is computed by the engine when the step runs.
+
+const YR = "case_yr";
+const yrStatement = (w: World) => invoicesOf(w, YR).find((i) => i.kind === "fee_statement" && i.status === "open");
+const yrAdjustment = (w: World) => Object.values(w.adjustments ?? {}).find((a) => a.caseId === YR);
+const yrArrangements = (w: World) => Object.values(w.arrangements ?? {}).filter((a) => a.caseId === YR);
+const yrOffers = (w: World) => yrArrangements(w).filter((a) => a.status === "offered" && (!a.expiresAt || a.expiresAt > w.now));
+const yrPlan = (w: World) => yrArrangements(w).find((a) => a.status === "accepted" && a.confirmationDocId);
+const cny = (n: number) => `CNY ${(Math.round(n / 100) * 100).toLocaleString("en-US")}`;
+const gbp = (n: number) => `GBP ${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+const dayOf = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "Asia/Shanghai" });
+const dayZh = (iso: string) => new Date(iso).toLocaleDateString("zh-CN", { day: "numeric", month: "long", timeZone: "Asia/Shanghai" });
+/** Yutong reads English, her father Chinese: each sees their own version (flag "family"; with it off the app shows both). */
+const toBoth = (en: string, zh: string) => ({ text: en, translations: { zh } });
+const nextInstalment = (w: World) => obligationsFor(w, YR).find((o) => o.source === "arrangement");
+
+/** Prepare the SAFE form and propose the next unpaid instalment of the confirmed plan. */
+const payNextInstalment: ScriptedRun["steps"] = [
+  (w) => {
+    const ob = nextInstalment(w);
+    return ob ? step("prepare_documents", { kinds: ["fx_purchase_application"], invoice_id: ob.invoiceId, payer_id: "p_jianhua", amount: ob.amount, narration: `Filling in the SAFE FX purchase application for ${ob.label}` }) : null;
+  },
+  (w) => {
+    const ob = nextInstalment(w);
+    if (!ob) return null;
+    return step("propose_payment", {
+      invoice_id: ob.invoiceId,
+      route: "bank_transfer",
+      amount: ob.amount,
+      payer_id: "p_jianhua",
+      reference: "KG2611392 Zhou Yutong",
+      beneficiary: benNow(w, "kgu"),
+      rationale: `${ob.label} of the plan Kingsgate confirmed${ob.fee ? ` (includes the ${gbp(ob.fee)} administration fee)` : ""}, due ${dayOf(ob.dueAt)}. A bank transfer straight to the university's verified account is the cheapest legal route.`,
+      narration: `Asking Dad to approve ${ob.label}`,
+    });
+  },
+];
+
+const UKYEAR: ScriptedRun[] = [
+  {
+    // a genuine change of bank (Director): from the verified address, but nothing changes until the bank verifies it
+    when: (t, w) => has(t, "mail_received") && w.institutions.kgu.pendingBank?.status === "review",
+    steps: [
+      (w) => step("read_document", { document_id: w.institutions.kgu.pendingBank!.noticeDocId, narration: "Reading Kingsgate's notice of new bank details" }),
+      (w) => {
+        const p = w.institutions.kgu.pendingBank!;
+        return step("verify_beneficiary", {
+          account_name: p.bank.accountName,
+          account_number: p.bank.accountNumber,
+          swift: p.bank.swift,
+          bank_name: p.bank.bankName,
+          source_document_id: p.noticeDocId,
+          narration: "Checking the new details: they stay unpaid until the bank has verified them",
+        });
+      },
+      (w) =>
+        step("message_family", {
+          ...toBoth(
+            `Kingsgate has written from its verified address to say it is moving to a new bank from ${dayOf(w.institutions.kgu.pendingBank!.effectiveFrom)}. Nothing changes for you yet: I only pay the account on record until your dad's bank has verified the new one.`,
+            `学校从其已核实的邮箱通知，将于${dayZh(w.institutions.kgu.pendingBank!.effectiveFrom)}起更换收款银行。目前您无需做任何事：在您的银行核实新账户之前，我只会付款到原有的已核实账户。`, // TODO zh
+          ),
+          importance: "info",
+          narration: "Telling you about Kingsgate's bank change",
+        }),
+    ],
+  },
+  {
+    when: (t) => has(t, "institution_account_changed"),
+    steps: [
+      () =>
+        step("message_family", {
+          ...toBoth(
+            "The bank has verified Kingsgate's new account, so the next instalment goes there. Because the account changed, your dad will be asked to approve that payment himself: his signed approval covered the old account.",
+            "银行已核实学校的新账户，下一期款项将付到新账户。由于收款账户变了，这笔付款需要您本人重新批准：您之前签署的授权只适用于原账户。", // TODO zh
+          ),
+          importance: "action",
+          narration: "Telling you the new account is verified",
+        }),
+    ],
+  },
+  {
+    when: (t, w) => has(t, "family_message") && !Object.values(w.mail).some((m) => m.caseId === YR),
+    steps: [
+      () => step("get_case_overview", { narration: "Reading your message, the offer letter and the scholarship letter" }),
+      () =>
+        step("send_email", {
+          to: "student.finance@kingsgate.ac.uk",
+          subject: "Zhou Yutong (KG2611392): admission, fee statement and bank details",
+          body:
+            "Dear Student Finance Office,\n\nCarryPay is arranging fee payment on behalf of the family of Zhou Yutong (Student ID KG2611392, MSc Finance, January 2027 start).\n\nCould you please:\n1. Confirm her admission.\n2. Send the fee statement for 2026/27 with the due date.\n3. Send your bank details for international transfers on letterhead.\n\nShe holds the Kingsgate Global Excellence Scholarship; please make sure it is applied to her tuition.\n\nKind regards,\nCarryPay, on behalf of the family",
+          narration: "Asking Kingsgate to confirm the admission and send the fee statement and bank details",
+        }),
+      () =>
+        step("message_family", {
+          ...toBoth(
+            "Hi Yutong! I've written to Kingsgate's Student Finance Office to confirm your place and get the fee statement and their bank details. When it arrives I'll check it against your scholarship letter, then work out with your dad's figures how he can pay without touching the family's safety net.",
+            "您好！雨桐请 CarryPay 帮忙办理学费。我已写信给 Kingsgate 大学学生财务处，请他们确认录取，并发来学费单和收款账户。收到后我会先对照奖学金信核对，再根据您填写的收支情况，算出怎样付款才不会动用您的应急储备。", // TODO zh
+          ),
+          importance: "info",
+          narration: "Telling you what I've started",
+        }),
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && !!yrStatement(w) && !yrAdjustment(w),
+    steps: [
+      (w) => step("read_document", { document_id: yrStatement(w)!.documentId, narration: "Reading Kingsgate's fee statement" }),
+      () => step("review_entitlements", { narration: "Checking the statement against your scholarship letter" }),
+      (w) => {
+        const adj = yrAdjustment(w);
+        return adj
+          ? step("request_bill_correction", {
+              adjustment_id: adj.id,
+              subject: `Scholarship missing from fee statement ${yrStatement(w)?.number} (KG2611392)`,
+              body: `Dear Student Finance Office,\n\nThank you for the fee statement for Zhou Yutong (Student ID KG2611392). It charges the full tuition fee, but she holds the Kingsgate Global Excellence Scholarship for 2026/27 (${gbp(adj.amount)} off tuition). The award letter and the statement are attached.\n\nCould you please issue a corrected statement?\n\nKind regards,\nCarryPay, on behalf of the family`,
+              narration: "Sending Kingsgate the award letter and asking for a corrected statement",
+            })
+          : null;
+      },
+      (w) => {
+        const adj = yrAdjustment(w);
+        return adj
+          ? step("message_family", {
+              ...toBoth(
+                `Kingsgate's fee statement charges the full tuition: your ${gbp(adj.amount)} scholarship isn't on it yet. I've sent them your award letter and asked for a corrected statement. Until they confirm, it's only a possible reduction, so I'm not counting it as saved.`,
+                `学校的学费单按全额收取学费，雨桐的 ${gbp(adj.amount)} 奖学金还没有扣除。我已把奖学金信发给学校，请他们出具更正后的学费单。学校确认之前，这只是可能的减免，我不会把它算作已经省下的钱。`, // TODO zh
+              ),
+              importance: "action",
+              narration: "Telling you the scholarship is missing from the statement",
+            })
+          : null;
+      },
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && yrAdjustment(w)?.status === "confirmed" && yrArrangements(w).length === 0,
+    steps: [
+      () => step("plan_affordability", { narration: "Checking whether Dad can pay the corrected statement and keep his reserve" }),
+      (w) =>
+        step("request_arrangement", {
+          invoice_id: yrStatement(w)!.id,
+          kind: "published_plan",
+          subject: `Instalment plans for statement ${yrStatement(w)!.number} (KG2611392)`,
+          body: `Dear Student Finance Office,\n\nThank you for the corrected statement ${yrStatement(w)!.number}. Could you please send us your published instalment plans for it?\n\nKind regards,\nCarryPay, on behalf of the family`,
+          narration: "Asking Kingsgate for its published instalment plans",
+        }),
+      (w) => {
+        const p = projectCashflow(w, YR, { schedule: "upfront" });
+        const fs = yrStatement(w)!;
+        return step("message_family", {
+          ...toBoth(
+            `Good news: Kingsgate has corrected the statement, so the year now costs ${gbp(fs.total)}. ${p?.firstBreach ? `Paying it all at once by ${dayOf(p.payments[0].payAt)} would take your dad ${cny(p.firstBreach.shortBy)} below the safety net he chose.` : ""} I've asked Kingsgate for its published instalment plans and will compare them when they arrive.`,
+            `好消息：学校已更正学费单，这一学年共 ${gbp(fs.total)}。${p?.firstBreach ? `如果在${dayZh(p.payments[0].payAt)}前一次付清，您的余额会比您设定的应急储备低 ${cny(p.firstBreach.shortBy)}。` : ""}我已向学校索取官方分期付款方案，收到后会帮您比较。`, // TODO zh
+          ),
+          importance: "good_news",
+          narration: "Telling you the statement is corrected and why I asked for a payment plan",
+        });
+      },
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && yrOffers(w).length > 0 && !yrPlan(w),
+    steps: [
+      () => step("plan_affordability", { narration: "Comparing paying in full with Kingsgate's plans under stress tests" }),
+      (w) => {
+        const offers = yrOffers(w);
+        const cmp = compareSchedules(w, YR, [{ id: "full", label: "Pay in full", schedule: "upfront" }, ...offers.map((a) => ({ id: a.id, label: a.title, schedule: a }))]);
+        const pick = offers.find((a) => a.id === cmp?.pickId);
+        const row = cmp?.rows.find((r) => r.id === cmp.pickId);
+        const others = cmp?.rows.filter((r) => r.id !== "full" && r.id !== cmp.pickId && !r.holdsAll) ?? [];
+        if (!pick || !row) return null;
+        return step("message_family", {
+          ...toBoth(
+            `Kingsgate has offered ${offers.length} instalment plans. I recommend the ${pick.title.toLowerCase()}: ${row.feesHomeCost > 0 ? `its fee costs about ${cny(row.feesHomeCost)}, but ` : ""}your dad keeps his safety net even if his salary is three weeks late or the pound gets 5% dearer.${others.length ? ` The ${others.map((r) => r.label.toLowerCase()).join(" and ")} would dip below it if his salary came late.` : ""} Your dad accepts it in the CarryPay app (Plan).`,
+            `学校提供了${offers.length}种分期方案。建议选择${pick.instalments.length}期付款方案：${row.feesHomeCost > 0 ? `手续费约 ${cny(row.feesHomeCost)}，但` : ""}即使工资晚到三周或英镑上涨5%，您的应急储备也不会受影响。请在 CarryPay 的“计划”页面确认。`, // TODO zh
+          ),
+          importance: "action",
+          narration: "Recommending the plan that keeps Dad's safety net",
+        });
+      },
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && !!yrPlan(w) && Object.values(w.payments).filter((p) => p.caseId === YR).length === 0,
+    steps: [(w) => step("read_document", { document_id: yrPlan(w)!.confirmationDocId!, narration: "Reading Kingsgate's confirmation of the plan" }), ...payNextInstalment],
+  },
+  { when: (t, w) => has(t, "instalment_due") && nextInstalment(w)?.instalment === 2, steps: payNextInstalment },
+  { when: (t, w) => has(t, "instalment_due") && nextInstalment(w)?.instalment === 3, steps: payNextInstalment },
+  {
+    // the bank delivered it, but the university couldn't match it: send the remittance advice
+    when: (t, w) => has(t, "payment_completed") && Object.values(w.payments).some((p) => p.caseId === YR && p.allocation?.status === "unallocated"),
+    steps: [
+      (w) => {
+        const p = Object.values(w.payments).find((x) => x.caseId === YR && x.allocation?.status === "unallocated")!;
+        return step("send_email", {
+          to: "student.finance@kingsgate.ac.uk",
+          subject: `Remittance advice: ${gbp(p.amount)} for Zhou Yutong (KG2611392)`,
+          body: `Dear Student Finance Office,\n\nRemittance advice for the payment you received but could not match:\n- Payer: Zhou Jianhua\n- Amount: ${gbp(p.amount)}\n- Sent: ${p.createdAt.slice(0, 10)} by international bank transfer\n- Payment reference: ${p.reference}\n- Student: Zhou Yutong, Student ID KG2611392\n\nPlease allocate it to her student account.\n\nKind regards,\nCarryPay, on behalf of the family`,
+          narration: "Sending Kingsgate the remittance advice so it can credit Yutong's account",
+        });
+      },
+      () =>
+        step("message_family", {
+          ...toBoth(
+            "The instalment has reached Kingsgate's bank, but their system hasn't matched it to Yutong's account yet, so her fees still show as unpaid there. I've sent them the remittance advice with her Student ID; nothing needs paying again.",
+            "这一期款项已到学校的银行，但学校系统还没有把它记到雨桐的学生账户上，所以学校那边暂时仍显示未付。我已把汇款凭证和学号发给学校，不需要重新付款。", // TODO zh
+          ),
+          importance: "info",
+          narration: "Telling you the money arrived but isn't credited yet",
+        }),
+    ],
+  },
+  {
+    when: (t, w) =>
+      (has(t, "payment_completed") || (has(t, "mail_received") && !!lastInbound(w, YR, (m) => /credited to student account/.test(m.body)))) &&
+      !!nextInstalment(w) &&
+      !Object.values(w.payments).some((p) => p.caseId === YR && p.allocation?.status === "unallocated"),
+    steps: [
+      (w) => {
+        const ob = nextInstalment(w)!;
+        // resolution flag: the university's own confirmation that the registration hold is lifted
+        const lifted = Object.values(w.holds ?? {}).some((h) => h.caseId === YR && h.status === "cleared");
+        return step("message_family", {
+          ...toBoth(
+            lifted
+              ? `Kingsgate has credited the first instalment to Yutong's student account and lifted the financial hold, so she can now complete her registration (their confirmation is in Documents). The next instalment, ${gbp(ob.amount)}, is due on ${dayOf(ob.dueAt)}; I'll prepare it a week before.`
+              : `Kingsgate has received the first instalment. The next one, ${gbp(ob.amount)}, is due on ${dayOf(ob.dueAt)}; I'll prepare it a week before.`,
+            lifted
+              ? `学校已把第一期款项记入雨桐的学生账户，并解除了注册的财务限制，她现在可以完成注册了（学校的确认函在“文件”里）。下一期 ${gbp(ob.amount)} 将于${dayZh(ob.dueAt)}到期，我会提前一周准备好。` // TODO zh
+              : `学校已收到第一期款项。下一期 ${gbp(ob.amount)} 将于${dayZh(ob.dueAt)}到期，我会提前一周准备好。`, // TODO zh
+          ),
+          importance: "good_news",
+          narration: "Confirming the first instalment arrived",
+        });
+      },
+      // with the mandate feature on: one signature for the rest of the plan
+      (w) => (yrPlan(w) && !Object.values(w.mandates ?? {}).some((m) => m.caseId === YR) ? step("propose_plan_mandate", { arrangement_id: yrPlan(w)!.id, narration: "Offering Dad one signature for the remaining instalments" }) : null),
+      (w) => {
+        const m = Object.values(w.mandates ?? {}).find((x) => x.caseId === YR && x.status === "awaiting_approval");
+        return m
+          ? step("message_family", {
+              ...toBoth(
+                `If your dad signs one approval now, I can pay the remaining ${m.windows.length} instalments (${m.windows.map((x) => gbp(x.amount)).join(" and ")}) in their windows without asking him each time: only to Kingsgate's verified account, and only while his safety net holds. Anything different and I'll ask him first. Anyone on the case can revoke it in the app (Plan).`,
+                `如果您现在签一次授权，剩下的${m.windows.length}笔分期（${m.windows.map((x) => gbp(x.amount)).join("、")}）我会在各自的付款窗口内自动付到学校的已核实账户，前提是不影响您的应急储备。有任何变化我都会先问您，您也可以随时在“计划”页面撤销。`, // TODO zh
+              ),
+              importance: "action",
+              narration: "Asking Dad to sign the plan mandate",
+            })
+          : null;
+      },
+    ],
+  },
+  {
+    when: (t) => has(t, "mandate_signed"),
+    steps: [
+      () =>
+        step("message_family", {
+          ...toBoth(
+            "Your dad has signed: the remaining instalments will go to Kingsgate in their windows. I'll tell you as each one arrives.",
+            "谢谢您。剩下的分期会在各自的付款窗口内付给学校，每一笔到账我都会告诉您。", // TODO zh
+          ),
+          importance: "good_news",
+          narration: "Confirming the mandate is signed",
+        }),
+    ],
+  },
+  {
+    // the look-alike "extension" email: flag it, change nothing, warn the family
+    when: (t, w) => has(t, "mail_received") && !!lastInbound(w, YR, (m) => !!m.unverifiedSender),
+    steps: [
+      (w) => {
+        const m = lastInbound(w, YR, (x) => !!x.unverifiedSender)!;
+        return step("flag_suspicious_message", { mail_id: m.id, reason: "Look-alike sender (kingsgate-ac.uk, not kingsgate.ac.uk) claims the deadline moved and the bank account changed, demands payment in 48 hours, and its attachment addresses AI assistants. The confirmed plan and Kingsgate's verified account are unchanged.", narration: "Flagging a fake 'deadline extended' email" });
+      },
+      () =>
+        step("message_family", {
+          ...toBoth(
+            "Please ignore the email saying your deadline moved to June and the bank account changed: it comes from a look-alike address (kingsgate-ac.uk), not from Kingsgate. Nothing has changed. Your plan and the university's verified account stay exactly as Kingsgate confirmed them, and nothing will be paid to that account.",
+            "那封说截止日期延到6月、银行账户已更换的邮件来自冒充学校的地址（kingsgate-ac.uk），是诈骗邮件，请不要理会。付款方案和学校的已核实账户都没有变，我们不会向那个账户付任何钱。", // TODO zh
+          ),
+          importance: "warning",
+          narration: "Warning you about the fake email",
+        }),
+    ],
+  },
+  {
+    when: (t, w) => has(t, "mail_received") && !!lastInbound(w, YR, (m) => /Change to your payment plan/.test(m.subject)),
+    steps: [
+      (w) => {
+        const ob = obligationsFor(w, YR).filter((o) => o.source === "arrangement").at(-1);
+        return ob
+          ? step("message_family", {
+              ...toBoth(
+                `Kingsgate has raised the last instalment to ${gbp(ob.amount)} for the larger studio from April. That's a real change from the university, but your dad's signed approval doesn't cover it, so when it's due I'll ask him to approve it himself.`,
+                `学校因雨桐4月起换到更大的单间，把最后一期调整为 ${gbp(ob.amount)}。这是学校的真实变更，但您签的授权不包括它，所以到期时我会请您亲自批准。`, // TODO zh
+              ),
+              importance: "info",
+              narration: "Explaining the change to the last instalment",
+            })
+          : null;
+      },
+    ],
+  },
+  {
+    when: (t, w) => has(t, "payment_completed") && !!yrPlan(w) && !nextInstalment(w),
+    steps: [
+      () =>
+        step("message_family", {
+          ...toBoth(
+            "All instalments have reached Kingsgate: Yutong's fees for the year are fully paid, the scholarship is applied, and your dad's safety net stayed in place throughout.",
+            "所有分期都已付到学校：雨桐这一学年的学费已全部付清，奖学金已扣除，您的应急储备始终没有动用。", // TODO zh
+          ),
+          importance: "good_news",
+          narration: "Telling you the year is paid",
+        }),
+      () => step("close_case", { summary: "Scholarship corrected, three-instalment plan confirmed by the university and paid in full within the payer's reserve.", narration: "Closing the case" }),
+    ],
+  },
+];
+
 const offerDoc = (w: World) => Object.values(w.docs).find((d) => d.caseId === "case_pk" && d.title.startsWith("Offer letter"));
 const uniSaidNo = (w: World) => !!lastInbound(w, "case_pk", (m) => /no applicant/i.test(m.body));
 
@@ -376,7 +704,42 @@ function upBest(w: World) {
 }
 const upMoney = (cur: string, n: number) => `${cur} ${Math.round(n).toLocaleString("en-US")}`;
 
+/** The bank reviewer's note on the check it is waiting on or rejected (verification flag). */
+const upBankNote = (w: World, status: "requested" | "rejected") => {
+  const v = w.institutions.upl.verification ?? {};
+  return Object.values(v).find((x) => x?.status === status)?.note ?? "";
+};
+
 const UP: ScriptedRun[] = [
+  {
+    // the bank reviewer needs a document from the family before it can verify the institution
+    when: (t) => has(t, "verification_evidence_requested"),
+    steps: [
+      (w) =>
+        step("message_family", {
+          text:
+            w.cases.case_up.lang === "zh"
+              ? `银行在核实这家机构之前，需要您补充一份材料。银行的说明：“${upBankNote(w, "requested")}” 请在“文件”中上传。银行核实之前，这张账单不会付款。` // TODO zh
+              : `Before the bank can verify the institution, it needs one more document from you. The bank's note: "${upBankNote(w, "requested")}" You can add it in Documents. Nothing will be paid on this bill until the bank has verified it.`,
+          importance: "action",
+          narration: w.cases.case_up.lang === "zh" ? "告诉您银行需要什么材料" : "Telling you what the bank needs",
+        }),
+    ],
+  },
+  {
+    when: (t) => has(t, "verification_rejected"),
+    steps: [
+      (w) =>
+        step("message_family", {
+          text:
+            w.cases.case_up.lang === "zh"
+              ? `银行没有通过对这张账单的核实：${upBankNote(w, "rejected")} 因此不能向账单上的账户付款。请先不要通过其他方式付款，直接联系医院或学校确认。` // TODO zh
+              : `The bank could not verify this bill: ${upBankNote(w, "rejected")} So nothing can be paid to the account on it. Please don't pay it another way; contact the institution directly to check.`,
+          importance: "warning",
+          narration: w.cases.case_up.lang === "zh" ? "告诉您银行的结论" : "Telling you what the bank decided",
+        }),
+    ],
+  },
   {
     when: (t, w) => has(t, "family_message") && !Object.values(w.payments).length && !w.institutions.upl.verifiedAt,
     steps: [
@@ -450,4 +813,58 @@ const UP: ScriptedRun[] = [
   },
 ];
 
-export const SCRIPTS: Record<string, ScriptedRun[]> = { "th-medical": TH, "uk-tuition": UK, "pk-admission": PK, "cn-admission": CN, upload: UP };
+// ---------------------------------------------------------------------------
+// A Director stress test outside Live mode: no recorded or scripted run covers it, so these fixed steps run
+// instead of consuming one (which would play a recorded step out of context). They are hand-written, not the
+// AI: they call the real plan_affordability and repeat the engine's numbers, nothing else.
+
+const fmtMoney = (n: number, cur: string) => `${cur} ${Math.round(n).toLocaleString("en-US")}`;
+const dayIn = (iso: string, corridor: string, lang: "en" | "zh" = "en") =>
+  new Date(iso).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-GB", { day: "numeric", month: "long", timeZone: corridor.startsWith("CN") ? "Asia/Shanghai" : "Asia/Karachi" });
+
+/** What the stress tests on a case did, from the engine: the family's message (English, plus Chinese for a Chinese payer). */
+export function stressMessage(w: World, caseId: string): { text: string; importance: "info" | "warning" } | null {
+  const c = w.cases[caseId];
+  const tests = (w.stressTests ?? []).filter((s) => s.caseId === caseId);
+  const p = projectCashflow(w, caseId);
+  if (!c || !tests.length || !p) return null;
+  const payer = c.people.find((x) => x.id === w.funding?.[caseId]?.ownerPersonId)?.name ?? "the payer";
+  const cur = p.currency;
+  const mandate = Object.values(w.mandates ?? {}).find((m) => m.caseId === caseId && m.status === "active");
+  const check = mandate ? mandateReserve(w, mandate) : p;
+  const breach = check?.firstBreach;
+  const pct = (t: (typeof tests)[number]) => Math.round((t.rate!.after / t.rate!.before - 1) * 100);
+  const what = tests.map((t) =>
+    t.kind === "salary_late"
+      ? t.moved!.map((m) => `${m.label.toLowerCase()} now arrives ${dayIn(m.to, c.corridor)} instead of ${dayIn(m.from, c.corridor)}`).join(", ")
+      : `${t.rate!.currency} is ${pct(t)}% dearer: 1 ${t.rate!.currency} now costs ${t.rate!.homeCurrency} ${t.rate!.after.toFixed(2)} instead of ${t.rate!.before.toFixed(2)}`,
+  );
+  const was = tests[0].before.lowestHeadroom;
+  const effect = breach
+    ? `That would take ${payer} ${fmtMoney(breach.shortBy, cur)} below the safety net of ${fmtMoney(p.reserveFloor, cur)} on ${dayIn(breach.at, c.corridor)}.`
+    : `The safety net of ${fmtMoney(p.reserveFloor, cur)} still holds: the lowest point is ${fmtMoney(p.lowest.balance, cur)} on ${dayIn(p.lowest.at, c.corridor)}, ${fmtMoney(p.lowest.headroom, cur)} above it (${fmtMoney(was, cur)} before).`;
+  const mandateLine = mandate ? (breach ? ` So the next instalment won't go ahead under the signed mandate: it will wait for ${payer}'s own approval.` : " The signed mandate can still pay the next instalment.") : "";
+  let text = `Stress test in the sandbox: ${what.join("; ")}. ${effect}${mandateLine}`;
+  if (c.corridor.startsWith("CN")) {
+    // TODO zh: MiMo review
+    const zhWhat = tests.map((t) =>
+      t.kind === "salary_late"
+        ? `工资晚到（下一笔改为${dayIn(t.moved![0].to, c.corridor, "zh")}到账，原定${dayIn(t.moved![0].from, c.corridor, "zh")}）`
+        : `${t.rate!.currency} 贵了 ${pct(t)}%（1 ${t.rate!.currency} = ${t.rate!.homeCurrency} ${t.rate!.after.toFixed(2)}）`,
+    );
+    const zhEffect = breach ? `这样在${dayIn(breach.at, c.corridor, "zh")}会低于应急储备 ${fmtMoney(breach.shortBy, cur)}。` : `应急储备仍然守得住，最低点比储备高 ${fmtMoney(p.lowest.headroom, cur)}。`;
+    const zhMandate = mandate ? (breach ? "下一期不会按授权自动支付，会先请您确认。" : "已签的授权仍可支付下一期。") : "";
+    text += `\n\n压力测试：${zhWhat.join("；")}。${zhEffect}${zhMandate}`;
+  }
+  return { text, importance: breach ? "warning" : "info" };
+}
+
+export const STRESS_STEPS: ScriptedRun["steps"] = [
+  () => step("plan_affordability", { narration: "Re-running the plan with the stress test applied (hand-written step, not the AI)" }),
+  (w, caseId) => {
+    const m = stressMessage(w, caseId);
+    return m ? step("message_family", { ...m, narration: "Telling you what the stress test changes, with the engine's numbers (hand-written step, not the AI)" }) : null;
+  },
+];
+
+export const SCRIPTS: Record<string, ScriptedRun[]> = { "th-medical": TH, "uk-tuition": UK, "pk-admission": PK, "cn-admission": CN, upload: UP, "uk-year": UKYEAR };

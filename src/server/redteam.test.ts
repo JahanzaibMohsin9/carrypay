@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { Store } from "./store";
 import { seedScenario } from "./scenarios";
 import { executeTool } from "./agent/tools";
-import { addDoc, issueInvoice } from "./sim/factory";
+import { addDoc, hoursFrom, issueInvoice } from "./sim/factory";
+import { advanceTo } from "./sim/engine";
+import { decideApprovalIn } from "./runtime";
 import { INSTITUTIONS } from "@/domain/institutions";
 
 const SRH = INSTITUTIONS.srh.bank;
@@ -187,6 +189,29 @@ describe("red team: integrity of the payment flow", () => {
 
   it("RT-17 tools cannot reach into another family's case", () => {
     expect(call("read_document", { document_id: store.world.invoices[invoiceId].documentId }, "case_other").error).toMatch(/No document/);
+  });
+
+  // found by the gateway fuzzer (src/server/gateway.fuzz.test.ts, INV-1)
+  it("RT-19 a payment carries the verified account itself, never the model's copy of it", () => {
+    addDocs();
+    // passes the formatting-insensitive check, but hides a zero-width space and names another bank
+    const r = propose({ beneficiary: { ...verified, account_name: verified.account_name.toUpperCase(), account_number: `${verified.account_number}​`, bank_name: "Krungsri Pattana Bank" } });
+    expect(r.status).toBe("awaiting_family_approval");
+    expect(store.world.payments[r.payment_id].beneficiary).toEqual({ accountName: SRH.accountName, accountNumber: SRH.accountNumber, swift: SRH.swift, bankName: SRH.bankName });
+  });
+
+  // found by the gateway fuzzer (INV-7): a returned transfer no longer counts, so the bill can be paid another way first
+  it("RT-20 a returned transfer is not resent once the bill has been paid another way", () => {
+    addDocs();
+    const transfer = propose({ reference: "Deposit" }); // no HN: the hospital's bank returns it
+    decideApprovalIn(store, transfer.approval_id, "approved", "hold");
+    advanceTo(store, hoursFrom(store.world.now, 21));
+    expect(store.world.payments[transfer.payment_id].status).toBe("returned");
+    const card = propose({ route: "card_payment" });
+    decideApprovalIn(store, card.approval_id, "approved", "hold");
+    expect(store.world.invoices[invoiceId].status).toBe("paid");
+    blocked(call("resubmit_payment", { payment_id: transfer.payment_id, corrected_reference: "HN 66-014382" }));
+    expect(store.world.payments[transfer.payment_id].status).toBe("returned");
   });
 });
 

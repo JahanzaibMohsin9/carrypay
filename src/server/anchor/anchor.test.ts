@@ -96,6 +96,35 @@ describe("on-chain anchoring", () => {
     expect(store.anchors).toHaveLength(0);
   });
 
+  it("dual-anchors to FISCO BCOS: both chains get the same head, and both must match", async () => {
+    const store = boot();
+    const conflux = fakeChain();
+    const fisco = fakeChain();
+    const svc = new AnchorService(store, conflux.chain, { debounceMs: 5, retryMs: 1 }, { ...fisco.chain, chainId: 20200 });
+    svc.milestone("case opened");
+    await new Promise((r) => setTimeout(r, 30));
+    expect(fisco.sent).toEqual(conflux.sent);
+    const a = store.anchors[0];
+    expect(a.fisco).toMatchObject({ status: "confirmed", chainId: 20200 });
+    expect(a.fisco?.explorerUrl).toBeUndefined(); // a consortium chain has no public explorer
+    const ok = await svc.check(a.id);
+    expect(ok.ok).toBe(true);
+    expect(ok.fisco).toMatchObject({ ok: true });
+    // if the second chain disagrees, the check fails and says so
+    const svc2 = new AnchorService(store, conflux.chain, {}, { ...fisco.chain, read: async () => ({ head: "00".repeat(32), seq: a.seq, label: "x", blockNumber: 1, contract: "0x" }) });
+    const bad = await svc2.check(a.id);
+    expect(bad.ok).toBe(false);
+    expect(bad.reason).toMatch(/FISCO BCOS holds a different hash/);
+  });
+
+  it("FISCO anchoring is on only with its RPC URL, key and contract", async () => {
+    const { fiscoConfig } = await import("./chain");
+    const key = "0x" + "1".repeat(64);
+    const contract = "0x" + "2".repeat(40);
+    expect(fiscoConfig({ FISCO_ANCHOR_PRIVATE_KEY: key, FISCO_ANCHOR_CONTRACT: contract })).toBeNull();
+    expect(fiscoConfig({ FISCO_RPC_URL: "http://172.18.0.1:8545", FISCO_ANCHOR_PRIVATE_KEY: key, FISCO_ANCHOR_CONTRACT: contract })).toMatchObject({ chainId: 20200 });
+  });
+
   it("is on only with a well-formed testnet key and contract", () => {
     const key = `0x${"ab".repeat(32)}`;
     const contract = "0x7cebbc3ac1a2ec61607025a589efa01b597c42cf";

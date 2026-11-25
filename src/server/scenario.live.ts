@@ -15,6 +15,29 @@ import { sampleDraft } from "./upload";
 import { advanceToNext, injectChaos, verifyInstitution, type ChaosKind } from "./sim/engine";
 import { evaluateRun } from "./evaluate";
 import { decideApprovalIn } from "./runtime";
+import { compareSchedules } from "@/domain/plan/cashflow";
+import { parseFlags } from "@/domain/flags";
+import { setFlagsForTest } from "./flags";
+import { decideArrangement, payerOf, signMandate } from "./plan";
+
+/** The payer signs a mandate the agent proposed. */
+function signPending(store: Store): boolean {
+  const m = Object.values(store.world.mandates ?? {}).find((x) => x.status === "awaiting_approval");
+  if (!m) return false;
+  signMandate(store, m.id, m.payerId, "hold");
+  return true;
+}
+
+/** The payer follows CarryPay's advice: accept the plan the engine picks among the open offers. */
+function acceptPick(store: Store): boolean {
+  const w = store.world;
+  const caseId = Object.keys(w.cases)[0];
+  const offered = Object.values(w.arrangements ?? {}).filter((a) => a.caseId === caseId && a.status === "offered" && (!a.expiresAt || a.expiresAt > w.now));
+  if (!offered.length || Object.values(w.arrangements ?? {}).some((a) => a.caseId === caseId && a.status === "accepted")) return false;
+  const cmp = compareSchedules(w, caseId, offered.map((a) => ({ id: a.id, label: a.title, schedule: a })));
+  decideArrangement(store, cmp?.pickId ?? offered[0].id, "accept", payerOf(store, caseId));
+  return true;
+}
 
 const SCENARIO = process.env.LIVE_SCENARIO ?? "pk-admission";
 const RUNS = Number(process.env.LIVE_RUNS ?? 1);
@@ -22,6 +45,8 @@ const CONCURRENCY = Number(process.env.LIVE_CONCURRENCY ?? 3);
 const CONFIG = process.env.EVAL_CONFIG ?? "v3.1 (China fake-agent scenario, explicit no-blame wording)";
 const RUNS_FILE = path.join(process.cwd(), "docs", "eval", "runs.jsonl");
 const MAX_STEPS = 45;
+// the plan workflow's scenario needs its features on (other scenarios run as the server is configured)
+if (SCENARIO === "uk-year") setFlagsForTest(parseFlags(process.env.CARRYPAY_FLAGS || "all"));
 
 async function playOnce(i: number) {
   const store = new Store();
@@ -40,7 +65,11 @@ async function playOnce(i: number) {
   for (let step = 0; step < MAX_STEPS; step++) {
     const pending = Object.values(store.world.approvals).filter((a) => !a.decision);
     if (pending.length) for (const a of pending) decideApprovalIn(store, a.id, "approved", "hold");
-    else if (store.world.schedule.length) advanceToNext(store);
+    else if (signPending(store)) {
+      // the payer signs the mandate the agent proposed (its terms come from the confirmed plan)
+    } else if (acceptPick(store)) {
+      // the acceptance goes to the university; its confirmation wakes the agent
+    } else if (store.world.schedule.length) advanceToNext(store);
     else if (store.world.institutions.upl && !store.world.institutions.upl.verifiedAt) verifyInstitution(store);
     else break;
     await idle();
@@ -79,6 +108,10 @@ describe.skipIf(!hasProviderKey())(`live: ${SCENARIO} ×${RUNS}`, () => {
     if (RUNS === 1) {
       const { store, ev } = results[0];
       console.log(JSON.stringify({ success: ev.success, failed: ev.checks.filter((c) => !c.pass), metrics: ev.metrics }, null, 1));
+      // vitest can swallow console output: keep the summary next to the recordings too
+      const dir = process.env.CARRYPAY_DATA_DIR ?? path.join(process.cwd(), ".data-live");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "last-run.json"), JSON.stringify({ scenario: SCENARIO, success: ev.success, checks: ev.checks, metrics: ev.metrics, money: ev.money, messages: store.world.messages.filter((x) => x.from === "agent").map((x) => `[${x.importance}] ${x.text}`) }, null, 1));
       for (const m of store.world.messages.filter((x) => x.from === "agent")) console.log(`[${m.importance}] ${m.text}`);
     }
     expect(results.filter((r) => !r.ev.success).map((r) => r.ev.checks.filter((c) => !c.pass))).toEqual([]);

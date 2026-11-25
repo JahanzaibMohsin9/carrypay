@@ -26,6 +26,8 @@ export function issueInvoice(
     lineItems: Omit<LineItem, "id">[];
     amountDue?: number;
     dueInHours?: number;
+    /** a fixed due date (ISO); wins over dueInHours */
+    dueAt?: string;
     patientRef?: string;
     patientName: string;
     extraText?: string;
@@ -38,7 +40,7 @@ export function issueInvoice(
   const total = Math.round(lineItems.reduce((s, l) => s + l.amount, 0) * 100) / 100;
   const amountDue = opts.amountDue ?? total;
   const number = `${inst.kind === "hospital" ? "SRH" : "KGU"}-${opts.kind.toUpperCase().slice(0, 3)}-${String(store.world.counters.inv).padStart(4, "0")}`;
-  const dueAt = opts.dueInHours !== undefined ? hoursFrom(store.world.now, opts.dueInHours) : undefined;
+  const dueAt = opts.dueAt ?? (opts.dueInHours !== undefined ? hoursFrom(store.world.now, opts.dueInHours) : undefined);
   const text = renderInvoiceText(inst, {
     number,
     title: opts.title,
@@ -152,6 +154,10 @@ export function docKindLabel(kind: DocumentKind): string {
     fx_purchase_application: "FX purchase application",
     admission_letter: "Admission letter",
     receipt: "Receipt",
+    scholarship_award: "Scholarship award letter",
+    deposit_receipt: "Deposit receipt",
+    payment_plan_offer: "Payment plan offer",
+    credit_note: "Credit note",
     other: "Document",
   }[kind];
 }

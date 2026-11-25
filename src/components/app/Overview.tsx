@@ -8,6 +8,8 @@ import { ROUTE_KEY, useT } from "@/lib/i18n";
 import { activeCase, allowances, caseTz, feed, moneySummary, pendingApprovals, savingsVsCash } from "@/lib/selectors";
 import { cn, money, timeOf } from "@/lib/format";
 import { corridorOf } from "@/domain/corridors";
+import { checksOf } from "@/domain/verification";
+import type { Institution } from "@/domain/types";
 import { ratePerUSD } from "@/domain/market";
 import { Badge, Card, Meter, SectionTitle } from "../ui";
 import { FeedLine } from "./Activity";
@@ -88,10 +90,12 @@ export function Overview() {
               )}
             </>
           ) : inst.origin === "uploaded_bill" && !inst.verifiedAt ? (
-            <p className={cn("flex items-start gap-1.5 rounded-xl bg-info-soft px-3 py-2 text-[14px] font-semibold text-info", urdu && "urdu")}>
-              <ShieldCheck size={16} className="mt-[3px] shrink-0" />
-              {t("onHoldUnverified")}
-            </p>
+            <>
+              <p className={cn("flex items-start gap-1.5 rounded-xl bg-info-soft px-3 py-2 text-[14px] font-semibold text-info", urdu && "urdu")}>
+                <ShieldCheck size={16} className="mt-[3px] shrink-0" />
+                {t("onHoldUnverified")}
+              </p>
+            </>
           ) : state.world.security.some((s) => s.caseId === c.id && s.kind === "suspicious_message") ? (
             // nothing to pay and a fraud warning on file: say so instead of "waiting for the bill"
             <p className={cn("flex items-start gap-1.5 rounded-xl bg-amber-soft px-3 py-2 text-[14px] font-semibold text-amber-strong", urdu && "urdu")}>
@@ -104,6 +108,7 @@ export function Overview() {
               {c.status === "closed" ? t("caseClosed") : c.type === "medical" ? t("waitingEstimate") : t("waitingFees")}
             </p>
           )}
+          {state.flags?.verification && inst.origin === "uploaded_bill" && !inst.verifiedAt && <BankChecks inst={inst} />}
         </div>
       </Card>
 
@@ -208,7 +213,7 @@ export function RouteCard() {
   const corridor = corridorOf(c.corridor);
   const inFlight = Object.values(w.payments).filter((p) => p.caseId === c.id && ["submitted", "processing"].includes(p.status));
   const dest = w.institutions[c.institutionId].bank.currency;
-  const rate = ratePerUSD(corridor.sourceCurrency, w.now) / ratePerUSD(dest, w.now);
+  const rate = ratePerUSD(corridor.sourceCurrency, w.now, w.fxShocks) / ratePerUSD(dest, w.now, w.fxShocks);
   const path = "M 28 64 C 110 -6, 250 -6, 332 64";
 
   return (
@@ -265,5 +270,31 @@ export function RouteCard() {
         </div>
       </div>
     </Card>
+  );
+}
+
+const CHECK_KEY = { institution: "vcInstitution", account: "vcAccount", invoice: "vcInvoice" } as const;
+const STATUS_KEY = { open: "vsOpen", requested: "vsRequested", confirmed: "vsConfirmed", rejected: "vsRejected" } as const;
+
+/** The bank's three checks on an uploaded bill, each with its own status (flag "verification"). */
+function BankChecks({ inst }: { inst: Institution }) {
+  const { t } = useT();
+  return (
+    <div className="mt-2.5">
+      <p className="mb-1 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-ink-3">{t("bankChecks")}</p>
+      <ul className="space-y-1">
+        {checksOf(inst).map(({ spec, state }) => (
+          <li key={spec.id} className="flex items-start justify-between gap-3 text-[13px]">
+            <span className="text-ink-2">{t(CHECK_KEY[spec.id])}</span>
+            <span className={cn("shrink-0 text-[12px] font-semibold", state.status === "confirmed" ? "text-success" : state.status === "open" ? "text-ink-3" : state.status === "rejected" ? "text-danger" : "text-amber-strong")}>
+              {t(STATUS_KEY[state.status])}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {checksOf(inst).find((c) => c.state.note && c.state.status !== "confirmed")?.state.note && (
+        <p className="mt-1.5 rounded-lg bg-surface-3 px-2.5 py-1.5 text-[12px] text-ink-2">{checksOf(inst).find((c) => c.state.note && c.state.status !== "confirmed")!.state.note}</p>
+      )}
+    </div>
   );
 }

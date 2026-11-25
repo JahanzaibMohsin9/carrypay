@@ -2,8 +2,44 @@ import type { World } from "@/domain/types";
 import { corridorOf } from "@/domain/corridors";
 import { computeUsage, findRule } from "@/domain/rules/engine";
 import { ratePerUSD } from "@/domain/market";
+import { flagOn } from "../flags";
+import { checksOf } from "@/domain/verification";
 
 const r0 = (n: number) => Math.round(n);
+
+/** The plan workflow's state. Numbers about affordability come only from plan_affordability, never from here. */
+function planSection(w: World, caseId: string) {
+  const funding = w.funding?.[caseId];
+  const adjustments = Object.values(w.adjustments ?? {}).filter((a) => a.caseId === caseId);
+  const arrangements = Object.values(w.arrangements ?? {}).filter((a) => a.caseId === caseId);
+  const awards = Object.values(w.docs).filter((d) => d.caseId === caseId && d.kind === "scholarship_award");
+  if (!funding && !adjustments.length && !arrangements.length && !awards.length && !Object.values(w.docs).some((d) => d.caseId === caseId && d.kind === "deposit_receipt")) return undefined;
+  return {
+    payer_figures_entered: !!funding,
+    payer_id: funding?.ownerPersonId,
+    award_letters: awards.map((d) => ({ id: d.id, title: d.title, origin: d.origin })),
+    ...(() => {
+      const receipts = Object.values(w.docs).filter((d) => d.caseId === caseId && d.kind === "deposit_receipt");
+      return receipts.length ? { deposit_receipts: receipts.map((d) => ({ id: d.id, title: d.title, origin: d.origin })) } : {};
+    })(),
+    adjustments: adjustments.map((a) => ({ id: a.id, status: a.status, amount: `${a.currency} ${a.amount}`, statement_id: a.invoiceId, evidence_document: a.basisDocId })),
+    payment_plans: arrangements.map((a) => ({
+      id: a.id,
+      title: a.title,
+      kind: a.kind,
+      status: a.status,
+      statement_id: a.invoiceId,
+      instalments: a.instalments.map((x, k) => ({ amount: `${a.currency} ${x.amount + (k === 0 ? a.fee ?? 0 : 0)}`, due_at: x.dueAt })),
+      admin_fee: a.fee ? `${a.currency} ${a.fee}` : undefined,
+      offer_expires_at: a.status === "offered" ? a.expiresAt : undefined,
+      confirmed_by_institution: !!a.confirmationDocId,
+    })),
+    plan_mandates: Object.values(w.mandates ?? {})
+      .filter((m) => m.caseId === caseId)
+      .map((m) => ({ id: m.id, plan_id: m.arrangementId, status: m.status, covers: m.windows.map((x) => ({ instalment: x.instalment, amount: `${m.currency} ${x.amount}`, until: x.to })), paused_because: m.pausedReason })),
+    note: "Run plan_affordability for any number about whether the family can carry the payments.",
+  };
+}
 
 /** Compact, model-facing view of one case. Everything the agent needs to decide its next step. */
 export function caseSnapshot(w: World, caseId: string) {
@@ -32,6 +68,10 @@ export function caseSnapshot(w: World, caseId: string) {
         in_flight: inFlight,
         document_id: i.documentId,
         reference_on_document: i.patientRef,
+        ...(() => {
+          const plan = Object.values(w.arrangements ?? {}).find((a) => a.invoiceId === i.id && a.status === "accepted" && a.confirmationDocId);
+          return plan ? { paid_by_confirmed_plan: { id: plan.id, title: plan.title, note: "The plan's instalment due dates (in plan.payment_plans) replace due_at." } } : {};
+        })(),
       };
     });
   const caseMail = Object.values(w.mail).filter((m) => m.caseId === caseId);
@@ -55,6 +95,7 @@ export function caseSnapshot(w: World, caseId: string) {
       id: p.id,
       name: p.name,
       role: p.role,
+      ...(flagOn("family") && p.lang && p.lang !== c.lang ? { reads: p.lang } : {}),
       already_abroad: p.abroad,
       card: cards.find((k) => k.personId === p.id)?.label,
       card_spend_this_year_usd: r0(usage.cardYearUSD[p.id] ?? 0),
@@ -71,6 +112,25 @@ export function caseSnapshot(w: World, caseId: string) {
             verification_note: inst.verifiedAt
               ? "The bank has verified this institution and the account on the uploaded bill. It is outside the sandbox: it does not answer CarryPay's email automatically."
               : "Not verified yet. Read and price the bill and explain it to the family, but nothing can be paid and no email can be sent until the bank has verified it. You will be woken when that happens.",
+            ...(flagOn("verification")
+              ? {
+                  bank_checks: checksOf(inst).map(({ spec, state }) => ({
+                    question: spec.question,
+                    status: state.status === "requested" ? "the bank needs more evidence from the family" : state.status,
+                    ...(state.note ? { bank_note: state.note } : {}),
+                  })),
+                }
+              : {}),
+          }
+        : {}),
+      ...(inst.pendingBank
+        ? {
+            account_change: {
+              announced_by_institution_at: inst.pendingBank.announcedAt,
+              old_account_accepted_until: inst.pendingBank.effectiveFrom,
+              status: inst.pendingBank.status === "review" ? "with the bank for review: not payable yet" : `rejected by the bank: ${inst.pendingBank.note ?? ""}`,
+              notice_document: inst.pendingBank.noticeDocId,
+            },
           }
         : {}),
       accepts_cards: inst.acceptsCards,
@@ -91,8 +151,29 @@ export function caseSnapshot(w: World, caseId: string) {
       attempts: p.attempts,
       return_reason: p.returnReason,
       cost_to_family: `${p.cost.sourceCurrency} ${r0(p.cost.totalSource).toLocaleString()}`,
+      ...(p.allocation
+        ? {
+            credited_to_account: p.allocation.status === "allocated" ? p.allocation.account ?? true : false,
+            ...(p.allocation.status === "unallocated"
+              ? { not_credited_yet: p.allocation.note, waiting_on: inst.name, next_step: "the university needs the remittance advice (payer, amount, date sent, reference, Student ID) from its verified address" }
+              : {}),
+          }
+        : flagOn("resolution") && p.status === "completed" && inst.kind === "university"
+          ? { credited_to_account: false, not_credited_yet: "In the university's bank; it posts payments to the student account on its next working day" }
+          : {}),
     })),
-    pending_approvals: Object.values(w.approvals).filter((a) => a.caseId === caseId && !a.decision).map((a) => ({ id: a.id, payment_id: a.paymentId, summary: a.summary })),
+    pending_approvals: Object.values(w.approvals)
+      .filter((a) => a.caseId === caseId && !a.decision)
+      .map((a) => ({
+        id: a.id,
+        payment_id: a.paymentId,
+        summary: a.summary,
+        ...(a.terms ? { approves_up_to: `${a.terms.maxCost.currency} ${a.terms.maxCost.amount.toLocaleString()}`, quote_held_until: a.terms.quoteHeldUntil } : {}),
+      })),
+    withdrawn_approvals: Object.values(w.approvals)
+      .filter((a) => a.caseId === caseId && a.decision === "withdrawn")
+      .slice(-3)
+      .map((a) => ({ id: a.id, payment_id: a.paymentId, summary: a.summary, at: a.withdrawn?.at, what_changed: a.withdrawn?.changes.map((c) => c.message) })),
     limits_used: {
       medical_bank_remittance_this_case_usd:
         c.type === "medical" && corridor.packId === "pk-sbp"
@@ -123,6 +204,14 @@ export function caseSnapshot(w: World, caseId: string) {
       .filter((d) => d.caseId === caseId)
       .map((d) => ({ id: d.id, kind: d.kind, title: d.title, origin: d.origin })),
     recent_family_messages: w.messages.filter((m) => m.caseId === caseId).slice(-6).map((m) => ({ from: m.from, text: m.text, at: m.at })),
-    fx_sandbox_rates_per_usd: Object.fromEntries([...new Set(["PKR", "THB", "GBP", "CNY", inst.bank.currency] as const)].map((k) => [k, Math.round(ratePerUSD(k, w.now) * 1000) / 1000])),
+    ...(flagOn("plan") ? { plan: planSection(w, caseId) } : {}),
+    ...(flagOn("resolution") && Object.values(w.holds ?? {}).some((h) => h.caseId === caseId)
+      ? {
+          institution_requirements: Object.values(w.holds!)
+            .filter((h) => h.caseId === caseId)
+            .map((h) => ({ id: h.id, what: h.label, lifted_when: h.condition, status: h.status === "on" ? "in place" : "lifted by the institution", lifted_at: h.clearedAt, confirmation_document: h.confirmationDocId })),
+        }
+      : {}),
+    fx_sandbox_rates_per_usd: Object.fromEntries([...new Set(["PKR", "THB", "GBP", "CNY", inst.bank.currency] as const)].map((k) => [k, Math.round(ratePerUSD(k, w.now, w.fxShocks) * 1000) / 1000])),
   };
 }

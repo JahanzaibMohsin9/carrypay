@@ -4,10 +4,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import type { World } from "@/domain/types";
 import type { Store, Trigger } from "../store";
-import { SYSTEM_PROMPT, wakeMessage } from "./prompt";
+import { systemPrompt, wakeMessage } from "./prompt";
 import { caseSnapshot } from "./snapshot";
 import { anthropicToolDefs, executeTool } from "./tools";
-import { SCRIPTS } from "./scripted";
+import { SCRIPTS, STRESS_STEPS } from "./scripted";
 import { fallbackConfig, hasProviderKey, providerConfig, type ProviderConfig } from "./llm";
 import { buildVault, type Vault } from "./privacy";
 
@@ -52,10 +52,10 @@ export class AgentRunner {
 
   private onTrigger = (t: Trigger) => this.enqueue(t);
 
-  /** systemPrompt is only overridden by the red-team ablation (a naive agent without CarryPay's safety rules) */
+  /** the prompt is only overridden by the red-team ablation (a naive agent without CarryPay's safety rules) */
   constructor(
     private store: Store,
-    private systemPrompt: string = SYSTEM_PROMPT,
+    private promptOverride?: string,
   ) {
     store.on("trigger", this.onTrigger);
   }
@@ -123,16 +123,22 @@ export class AgentRunner {
       w.agent.lastError = undefined;
       w.agent.runs += 1;
     });
+    // A Director stress test outside Live mode: no recorded or scripted run covers it. It gets fixed,
+    // hand-written steps (STRESS_STEPS) rather than consuming a run, which would play it out of context.
+    const stress = mode !== "live" && triggers.some((t) => t.reason === "stress_test");
+    const rest = mode === "live" ? triggers : triggers.filter((t) => t.reason !== "stress_test");
     this.store.log({
       actor: "system",
       type: "agent.wake",
       caseId,
-      data: { mode, triggers: triggers.map((t) => ({ reason: t.reason, detail: t.detail })) },
+      data: { mode, triggers: triggers.map((t) => ({ reason: t.reason, detail: t.detail })), ...(stress ? { handwritten: "stress_test" } : {}) },
     });
     try {
       if (mode === "live") await this.runLive(caseId, triggers);
-      else if (mode === "replay") await this.runReplay(caseId, triggers);
-      else await this.runScripted(caseId, triggers);
+      else {
+        if (rest.length) await (mode === "replay" ? this.runReplay(caseId, rest) : this.runScripted(caseId, rest));
+        if (stress) await this.runSteps(caseId, STRESS_STEPS);
+      }
     } catch (err) {
       const msg = describeError(err);
       this.store.mutate((w) => (w.agent.lastError = msg));
@@ -165,7 +171,10 @@ export class AgentRunner {
 
   /** DeepSeek and OpenAI via the Chat Completions API with function calling. */
   private async runLiveOpenAICompatible(caseId: string, triggers: Trigger[], cfg: ProviderConfig) {
-    const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL, timeout: 180_000, maxRetries: 2 });
+    // A thinking-mode step on a long case can take minutes at the provider's peak hours; CARRYPAY_LLM_TIMEOUT_MS
+    // raises the per-request limit for long recordings (default 3 minutes, as before).
+    const timeout = Number(process.env.CARRYPAY_LLM_TIMEOUT_MS) || 180_000;
+    const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL, timeout, maxRetries: 2 });
     const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = anthropicToolDefs().map((t) => ({
       type: "function",
       function: { name: t.name, description: t.description, parameters: t.input_schema as Record<string, unknown> },
@@ -175,7 +184,7 @@ export class AgentRunner {
     // DeepSeek needs reasoning_content sent back on every request when tools are used,
     // so assistant messages keep it as an extra field.
     const messages: (OpenAI.Chat.Completions.ChatCompletionMessageParam & { reasoning_content?: string })[] = [
-      { role: "system", content: this.systemPrompt },
+      { role: "system", content: this.promptOverride ?? systemPrompt() },
       { role: "user", content: vault.prompt },
     ];
 
@@ -274,7 +283,7 @@ export class AgentRunner {
         fallbacks: "default",
         thinking: { type: "adaptive", display: "summarized" },
         output_config: { effort: cfg.effort as "low" | "medium" | "high" | "xhigh" | "max" },
-        system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: this.promptOverride ?? systemPrompt(), cache_control: { type: "ephemeral" } }],
         tools,
         messages,
       });
@@ -381,7 +390,11 @@ export class AgentRunner {
     const idx = script.findIndex((s, i) => !this.scriptedCursor.has(i) && s.when(triggers, this.store.world));
     if (idx < 0) return;
     this.scriptedCursor.add(idx);
-    for (const make of script[idx].steps) {
+    await this.runSteps(caseId, script[idx].steps);
+  }
+
+  private async runSteps(caseId: string, steps: ScriptedRun["steps"]) {
+    for (const make of steps) {
       if (this.store.world.agent.killSwitch) break;
       const step = make(this.store.world, caseId);
       if (!step) continue;

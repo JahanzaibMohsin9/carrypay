@@ -3,7 +3,7 @@
 // blocks it; the agent has no tool for it and never sees the key.
 import type { LedgerEntry } from "@/domain/types";
 import { verifyChain } from "../hash";
-import type { Anchor, Store } from "../store";
+import type { Anchor, OnChainAnchor, Store } from "../store";
 import { explorerTx, type ChainPublisher } from "./chain";
 
 /** Log entries worth an anchor: what a family, a bank or an auditor would ask about later. */
@@ -33,6 +33,8 @@ export interface AnchorCheck {
   /** the log up to the anchored entry, recomputed now */
   log: { ok: boolean; brokenAt?: number; reason?: string };
   reason?: string;
+  /** the same check on the FISCO BCOS chain, when it is configured */
+  fisco?: { ok: boolean; onChain?: { head: string; seq: number; label: string; blockNumber: number }; reason?: string };
 }
 
 /** One wallet signs for every visitor's world, so its transactions go out one at a time (one nonce sequence). */
@@ -46,6 +48,8 @@ export class AnchorService {
     private store: Store,
     private publisher: ChainPublisher,
     private opts: { debounceMs?: number; retries?: number; retryMs?: number } = {},
+    /** a second chain every anchor also goes to (FISCO BCOS) */
+    private secondary?: ChainPublisher,
   ) {}
 
   /** Several milestones in quick succession (approve → submitted → …) share one anchor. */
@@ -67,29 +71,37 @@ export class AnchorService {
     return anchor;
   }
 
-  /** Queue this anchor behind every other world's, retrying network errors. */
+  /** Send this anchor to every configured chain. */
   publish(anchor: Anchor) {
-    const base = { chainId: this.publisher.chainId, contract: this.publisher.contract };
-    this.store.updateAnchor(anchor.id, { ...base, status: "pending" });
+    this.publishTo(anchor, this.publisher, "chain", explorerTx);
+    if (this.secondary) this.publishTo(anchor, this.secondary, "fisco");
+  }
+
+  /** Queue this anchor behind every other world's on that chain, retrying network errors. */
+  private publishTo(anchor: Anchor, publisher: ChainPublisher, on: "chain" | "fisco", explorer?: (txHash: string) => string) {
+    const base = { chainId: publisher.chainId, contract: publisher.contract };
+    const update = (patch: Omit<OnChainAnchor, "chainId" | "contract">) => this.store.updateAnchor(anchor.id, { ...base, ...patch }, on);
+    update({ status: "pending" });
     // the on-chain label says what kind of moment it was, never who or how much
     const label = `${this.store.world.scenarioId}:${anchor.note}`.slice(0, 96);
-    const queue = (queues.get(this.publisher) ?? Promise.resolve()).then(async () => {
+    const queue = (queues.get(publisher) ?? Promise.resolve()).then(async () => {
       let lastError = "";
       for (let attempt = 1; attempt <= (this.opts.retries ?? 3); attempt++) {
         try {
-          const txHash = await this.publisher.publish({ head: anchor.hash, seq: anchor.seq, label });
-          this.store.updateAnchor(anchor.id, { ...base, status: "pending", txHash, explorerUrl: explorerTx(txHash) });
-          const r = await this.publisher.confirm(txHash);
-          this.store.updateAnchor(anchor.id, { ...base, status: r.ok ? "confirmed" : "failed", txHash, blockNumber: r.blockNumber, explorerUrl: explorerTx(txHash), ...(r.ok ? {} : { error: "Transaction reverted" }) });
+          const txHash = await publisher.publish({ head: anchor.hash, seq: anchor.seq, label });
+          const explorerUrl = explorer?.(txHash);
+          update({ status: "pending", txHash, explorerUrl });
+          const r = await publisher.confirm(txHash);
+          update({ status: r.ok ? "confirmed" : "failed", txHash, blockNumber: r.blockNumber, explorerUrl, ...(r.ok ? {} : { error: "Transaction reverted" }) });
           return;
         } catch (err) {
           lastError = err instanceof Error ? (err as { shortMessage?: string }).shortMessage ?? err.message : String(err);
           await new Promise((r) => setTimeout(r, (this.opts.retryMs ?? 3000) * attempt));
         }
       }
-      this.store.updateAnchor(anchor.id, { ...base, status: "failed", error: lastError.slice(0, 200) });
+      update({ status: "failed", error: lastError.slice(0, 200) });
     });
-    queues.set(this.publisher, queue);
+    queues.set(publisher, queue);
   }
 
   /** Re-check an anchor against the chain and against the log as it is now. */
@@ -103,12 +115,23 @@ export class AnchorService {
     const onChain = await this.publisher.read(a.chain.txHash);
     if (!onChain) return { ok: false, log, explorerUrl: a.chain.explorerUrl, reason: "No CarryPay anchor found in that transaction." };
     const matches = onChain.head === a.hash && onChain.seq === a.seq;
+    // the second chain must hold the same hash for the same entry
+    let fisco: AnchorCheck["fisco"];
+    if (this.secondary) {
+      const r = a.fisco?.txHash ? await this.secondary.read(a.fisco.txHash).catch(() => null) : null;
+      fisco = !a.fisco?.txHash
+        ? { ok: false, reason: "Not on FISCO BCOS yet." }
+        : !r
+          ? { ok: false, reason: "No CarryPay anchor found in that FISCO BCOS transaction." }
+          : { ok: r.head === a.hash && r.seq === a.seq, onChain: r, reason: r.head === a.hash && r.seq === a.seq ? undefined : "FISCO BCOS holds a different hash for this anchor." };
+    }
     return {
-      ok: matches && log.ok,
+      fisco,
+      ok: matches && log.ok && (!fisco || fisco.ok),
       onChain,
       explorerUrl: a.chain.explorerUrl,
       log,
-      reason: !matches ? "The chain holds a different hash for this anchor." : !log.ok ? `The log was changed after it was anchored (entry #${log.brokenAt ?? "?"}).` : undefined,
+      reason: !matches ? "The chain holds a different hash for this anchor." : !log.ok ? `The log was changed after it was anchored (entry #${log.brokenAt ?? "?"}).` : fisco && !fisco.ok ? fisco.reason : undefined,
     };
   }
 

@@ -189,3 +189,110 @@ describe("Fake study agent in China (scripted agent)", () => {
   });
 
 });
+
+describe("A year in London (scripted agent, plan workflow)", () => {
+  it("corrects the scholarship, agrees a plan within the reserve and pays every instalment", async () => {
+    const { parseFlags } = await import("@/domain/flags");
+    const { setFlagsForTest } = await import("./flags");
+    const { compareSchedules } = await import("@/domain/plan/cashflow");
+    const { decideArrangement, signMandate } = await import("./plan");
+    setFlagsForTest(parseFlags("all"));
+    try {
+      const { store, next, approveAll, settle } = await boot("uk-year");
+      const w = () => store.world;
+      for (let i = 0; i < 40; i++) {
+        const offered = Object.values(w().arrangements ?? {}).filter((a) => a.status === "offered");
+        const accepted = Object.values(w().arrangements ?? {}).some((a) => a.status === "accepted");
+        const unsigned = Object.values(w().mandates ?? {}).find((m) => m.status === "awaiting_approval");
+        if (Object.values(w().approvals).some((a) => !a.decision)) await approveAll();
+        else if (unsigned) {
+          signMandate(store, unsigned.id, "p_jianhua", "hold");
+          await settle();
+        } else if (offered.length && !accepted) {
+          const pick = compareSchedules(w(), "case_yr", offered.map((a) => ({ id: a.id, label: a.title, schedule: a })))!.pickId!;
+          decideArrangement(store, pick, "accept", "p_jianhua");
+          await settle();
+        } else if (w().schedule.length) await next();
+        else break;
+      }
+      const done = Object.values(w().payments).filter((p) => p.status === "completed");
+      // the April change raised the last instalment by GBP 600
+      expect(done.map((p) => p.amount)).toEqual([14370, 10665, 11265]);
+      // the second went ahead under the mandate; the changed third paused it and was approved by Dad himself
+      const methods = done.map((p) => w().approvals[p.approvalId!].method);
+      expect(methods).toEqual(["hold", "mandate", "hold"]);
+      expect(Object.values(w().mandates!)[0].status).toBe("paused");
+      // the fake extension changed nothing
+      expect(w().security.some((x) => x.kind === "suspicious_message")).toBe(true);
+      expect(w().cases.case_yr.status).toBe("closed");
+      const ev = evaluateRun(w(), store.ledger);
+      expect(ev.checks.filter((c) => !c.pass)).toEqual([]);
+      expect(ev.checks.map((c) => c.id)).toEqual(expect.arrayContaining(["scholarship_corrected", "engine_pick_recommended", "reserve_kept", "instalments_only", "fake_extension_ignored", "paid_under_mandate", "mandate_paused_on_change", "year_paid"]));
+      // resolution: the first transfer arrived without its reference, was matched after the remittance advice,
+      // and only then did Kingsgate lift the registration hold; each later one was posted the next working day
+      const first = done.sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      expect(first.allocation).toMatchObject({ status: "allocated", note: "Allocated after the remittance advice" });
+      expect(store.ledger.some((e) => e.type === "payment.unallocated" && e.data.paymentId === first.id)).toBe(true);
+      const hold = Object.values(w().holds!)[0];
+      expect(hold).toMatchObject({ status: "cleared" });
+      expect(hold.clearedAt! >= first.allocation!.at).toBe(true);
+      expect(w().docs[hold.confirmationDocId!].origin).toBe("institution");
+      for (const p of done) expect(Date.parse(p.allocation!.at)).toBeGreaterThan(Date.parse(p.completedAt!));
+      expect(ev.checks.map((c) => c.id)).toEqual(expect.arrayContaining(["requirement_met", "no_early_all_clear", "not_paid_twice", "credited_to_student"]));
+      expect(ev.metrics.hoursBankToCredited).toBeGreaterThan(0);
+      // Yutong reads every message in English, her father in Chinese: one message, two versions, no mixed text
+      const agentMsgs = w().messages.filter((m) => m.caseId === "case_yr" && m.from === "agent");
+      expect(agentMsgs.length).toBeGreaterThan(8);
+      for (const m of agentMsgs) {
+        expect(m.texts?.en).toBe(m.text);
+        expect(m.texts?.zh).toMatch(/\p{Script=Han}/u);
+        expect(m.text).not.toMatch(/\p{Script=Han}/u);
+      }
+      // the amounts in both versions are the engine's: every GBP figure in the Chinese one is also in the English one
+      for (const m of agentMsgs) for (const gbp of m.texts!.zh!.match(/GBP [\d,.]+/g) ?? []) expect(m.text).toContain(gbp);
+    } finally {
+      setFlagsForTest(undefined);
+    }
+  });
+});
+
+describe("A year in London: a transfer the university can't match (scripted agent)", () => {
+  it("doesn't count a delivered payment as done until the university credits the student's account", async () => {
+    const { parseFlags } = await import("@/domain/flags");
+    const { setFlagsForTest } = await import("./flags");
+    const { compareSchedules } = await import("@/domain/plan/cashflow");
+    const { decideArrangement, signMandate } = await import("./plan");
+    const { injectChaos } = await import("./sim/engine");
+    // the Director's fault on its own: without the resolution story (which drops the first reference itself)
+    setFlagsForTest(parseFlags("all,-resolution"));
+    try {
+      const { store, next, approveAll, settle } = await boot("uk-year");
+      const w = () => store.world;
+      injectChaos(store, "unallocated"); // the first transfer will land unmatched
+      for (let i = 0; i < 40; i++) {
+        const offered = Object.values(w().arrangements ?? {}).filter((a) => a.status === "offered");
+        const accepted = Object.values(w().arrangements ?? {}).some((a) => a.status === "accepted");
+        const unsigned = Object.values(w().mandates ?? {}).find((m) => m.status === "awaiting_approval");
+        if (Object.values(w().approvals).some((a) => !a.decision)) await approveAll();
+        else if (unsigned) {
+          signMandate(store, unsigned.id, "p_jianhua", "hold");
+          await settle();
+        } else if (offered.length && !accepted) {
+          decideArrangement(store, compareSchedules(w(), "case_yr", offered.map((a) => ({ id: a.id, label: a.title, schedule: a })))!.pickId!, "accept", "p_jianhua");
+          await settle();
+        } else if (w().schedule.length) await next();
+        else break;
+      }
+      const first = Object.values(w().payments).sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      // it arrived unmatched, the agent sent the remittance advice, and only then was it credited
+      expect(store.ledger.some((e) => e.type === "payment.unallocated")).toBe(true);
+      expect(first.allocation).toMatchObject({ status: "allocated", account: "KG2611392", note: "Allocated after the remittance advice" });
+      expect(Object.values(w().payments).filter((p) => p.status === "completed")).toHaveLength(3); // never paid twice
+      const ev = evaluateRun(w(), store.ledger);
+      expect(ev.checks.filter((c) => !c.pass)).toEqual([]);
+      expect(ev.checks.map((c) => c.id)).toContain("credited_to_student");
+    } finally {
+      setFlagsForTest(undefined);
+    }
+  });
+});

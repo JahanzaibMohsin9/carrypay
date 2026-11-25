@@ -27,6 +27,8 @@ import { cn, dayKey, dayLabel, dayNumber, shortHash, timeOf } from "@/lib/format
 import { Logo } from "../ui";
 import { RuleChip } from "../RuleChip";
 import { ListenButton, VoiceButton } from "./Voice";
+import type { FamilyMessage, Lang } from "@/domain/types";
+import { LANG_NAME, useMessageView } from "@/lib/message-view";
 
 export function ActivityFeed() {
   const { state } = useCarry();
@@ -126,68 +128,94 @@ function Composer({ caseId }: { caseId: string }) {
 const TIER_ICON = { read: Eye, communicate: PenLine, money: Banknote } as const;
 const TIER_LABEL = { read: "Read", communicate: "Write", money: "Money" } as const;
 
-export function FeedLine({ item, tz, compact = false }: { item: FeedItem; tz: string; compact?: boolean }) {
-  const [open, setOpen] = useState(false);
-  const { t, lang } = useT();
-  const e = item.entry;
-  const time = <span className="num shrink-0 text-[11px] text-ink-3">{timeOf(e.simAt, tz)}</span>;
-
-  if (item.kind === "message") {
-    const m = item.message;
-    const mine = m.from === "family";
-    if (compact) {
-      return (
-        <div className="flex items-start gap-2.5">
-          <Logo mark className="mt-0.5 text-[13px]" />
-          <p className="line-clamp-2 flex-1 text-[13.5px] leading-snug">{m.text}</p>
-          {time}
-        </div>
-      );
-    }
+/** A message, in this reader's language; the versions sent to the rest of the family are one tap away. */
+function MessageLine({ m, tz, compact, time }: { m: FamilyMessage; tz: string; compact: boolean; time: React.ReactNode }) {
+  const { t } = useT();
+  const view = useMessageView(m);
+  const [shownLang, setShownLang] = useState<Lang | null>(null);
+  const mine = m.from === "family";
+  if (compact) {
     return (
-      <div className={cn("flex items-end gap-2", mine && "flex-row-reverse")}>
-        {mine ? (
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink text-bg">
-            <User size={14} />
-          </span>
-        ) : (
-          <Logo mark className="mb-0.5 text-[14px]" />
-        )}
-        <div
-          className={cn(
-            "max-w-[82%] rounded-[20px] px-3.5 py-2.5 text-[14px] leading-relaxed",
-            mine ? "rounded-br-md bg-ink text-bg" : "rounded-bl-md border bg-surface shadow-card",
-            !mine && m.importance === "warning" && "border-amber/50 bg-amber-soft",
-            !mine && m.importance === "good_news" && "border-success/30 bg-success-soft",
-            !mine && m.importance === "action" && "border-brand/30",
-            !mine && (!m.importance || m.importance === "info") && "border-line",
-          )}
-        >
-          {!mine && m.importance === "warning" && (
-            <p className="mb-1 flex items-center gap-1 text-[11.5px] font-semibold text-amber-strong">
-              <ShieldAlert size={13} /> Security warning
-            </p>
-          )}
-          {mine && m.voice && (
-            <p className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold text-bg/70">
-              <Mic size={11} /> {t("voiceLabel")}
-            </p>
-          )}
-          <p className="whitespace-pre-wrap">{m.text}</p>
-          <div className={cn("mt-1 flex items-center justify-end gap-1.5 text-[10.5px]", mine ? "text-bg/60" : "text-ink-3")}>
-            {!mine && <ListenButton text={m.text} lang={lang} labels={{ listen: t("listen"), stop: t("stopListening") }} className="-ml-1.5 mr-auto" />}
-            {timeOf(m.at, tz)}
-          </div>
-        </div>
+      <div className="flex items-start gap-2.5">
+        <Logo mark className="mt-0.5 text-[13px]" />
+        <p lang={view.lang} className="line-clamp-2 flex-1 text-[13.5px] leading-snug">
+          {view.text}
+        </p>
+        {time}
       </div>
     );
   }
+  const other = view.others.find((o) => o.lang === shownLang);
+  return (
+    <div className={cn("flex items-end gap-2", mine && "flex-row-reverse")}>
+      {mine ? (
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink text-bg">
+          <User size={14} />
+        </span>
+      ) : (
+        <Logo mark className="mb-0.5 text-[14px]" />
+      )}
+      <div
+        className={cn(
+          "max-w-[82%] rounded-[20px] px-3.5 py-2.5 text-[14px] leading-relaxed",
+          mine ? "rounded-br-md bg-ink text-bg" : "rounded-bl-md border bg-surface shadow-card",
+          !mine && m.importance === "warning" && "border-amber/50 bg-amber-soft",
+          !mine && m.importance === "good_news" && "border-success/30 bg-success-soft",
+          !mine && m.importance === "action" && "border-brand/30",
+          !mine && (!m.importance || m.importance === "info") && "border-line",
+        )}
+      >
+        {!mine && m.importance === "warning" && (
+          <p className="mb-1 flex items-center gap-1 text-[11.5px] font-semibold text-amber-strong">
+            <ShieldAlert size={13} /> Security warning
+          </p>
+        )}
+        {mine && m.voice && (
+          <p className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold text-bg/70">
+            <Mic size={11} /> {t("voiceLabel")}
+          </p>
+        )}
+        <p lang={view.lang} className="whitespace-pre-wrap">
+          {view.text}
+        </p>
+        {other && (
+          <p lang={other.lang} dir="ltr" className="mt-2 whitespace-pre-wrap border-t border-line/70 pt-2 text-[13px] text-ink-2">
+            {other.text}
+          </p>
+        )}
+        <div className={cn("mt-1 flex flex-wrap items-center justify-end gap-x-1.5 text-[10.5px]", mine ? "text-bg/60" : "text-ink-3")}>
+          {!mine && <ListenButton text={view.text} lang={view.lang} labels={{ listen: t("listen"), stop: t("stopListening") }} className="-ml-1.5" />}
+          {view.others.map((o) => (
+            <button
+              key={o.lang}
+              type="button"
+              aria-expanded={shownLang === o.lang}
+              onClick={() => setShownLang((l) => (l === o.lang ? null : o.lang))}
+              className="rounded-full px-1.5 py-0.5 font-semibold text-brand hover:bg-brand-soft"
+            >
+              {t(shownLang === o.lang ? "hideOtherLang" : "alsoSentIn").replaceAll("{lang}", LANG_NAME[o.lang])}
+            </button>
+          ))}
+          <span className="ml-auto">{timeOf(m.at, tz)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function FeedLine({ item, tz, compact = false }: { item: FeedItem; tz: string; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const e = item.entry;
+  const time = <span className="num shrink-0 text-[11px] text-ink-3">{timeOf(e.simAt, tz)}</span>;
+
+  if (item.kind === "message") return <MessageLine m={item.message} tz={tz} compact={compact} time={time} />;
 
   if (item.kind === "approval") {
     const approved = e.type === "approval.approved";
+    const withdrawn = e.type === "approval.withdrawn";
     return (
       <div className="flex justify-center">
-        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold", approved ? "bg-success-soft text-success" : "bg-surface-3 text-ink-2")}>
+        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold", approved ? "bg-success-soft text-success" : withdrawn ? "rounded-2xl bg-amber-soft text-amber-strong" : "bg-surface-3 text-ink-2")}>
           <Fingerprint size={13} /> {e.narration}
         </span>
       </div>

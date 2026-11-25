@@ -1,4 +1,5 @@
 // Core domain types shared by the server (agent, mock world) and the UI.
+import type { Adjustment, Arrangement, FundingProfile, PlanMandate } from "./plan/types";
 
 export type Currency = "USD" | "PKR" | "THB" | "GBP" | "CNY" | "EUR" | "SGD" | "MYR" | "AED" | "SAR" | "TRY" | "HKD" | "AUD" | "CAD";
 export type Lang = "en" | "ur" | "zh";
@@ -22,6 +23,8 @@ export interface Person {
   priorFxYearUSD?: number;
   /** identity document number for regulatory forms (sandbox values); never shown to the LLM */
   passport?: string;
+  /** the language this person reads, when it differs from the case language (flag "family") */
+  lang?: Lang;
 }
 
 export interface Institution {
@@ -29,7 +32,16 @@ export interface Institution {
   kind: "hospital" | "university";
   name: string; // trading name shown to people
   /** universities: applicants with a genuine offer (the sandbox stand-in for the admissions system) */
-  students?: { id: string; name: string; programme: string; start: string }[];
+  students?: {
+    id: string;
+    name: string;
+    programme: string;
+    start: string;
+    /** awards the university has granted this student (the sandbox stand-in for its scholarships system) */
+    awards?: { name: string; amount: number; appliesTo: "tuition" }[];
+    /** deposits the university has received from this student (its own finance records) */
+    deposits?: { amount: number; paidAt: string; reference: string }[];
+  }[];
   legalName: string; // name on the bank account
   country: string;
   city: string;
@@ -50,6 +62,33 @@ export interface Institution {
   origin?: "registry" | "uploaded_bill";
   /** when the bank verified an uploaded institution and its account (in the sandbox: the Director's button) */
   verifiedAt?: string;
+  /** the bank's separate checks on an uploaded institution (flag "verification", domain/verification.ts) */
+  verification?: Partial<Record<VerificationCheckId, VerificationCheck>>;
+  /**
+   * A change of bank account the institution announced from its verified address (flag "verification").
+   * The account on record stays the only one paid until the bank's reviewer confirms the new one.
+   */
+  pendingBank?: {
+    bank: Institution["bank"];
+    announcedAt: string;
+    /** from this date the old account is no longer used, by the institution's own notice */
+    effectiveFrom: string;
+    noticeDocId: string;
+    status: "review" | "rejected";
+    note?: string;
+  };
+}
+
+export type VerificationCheckId = "institution" | "account" | "invoice";
+
+export interface VerificationCheck {
+  /** requested: the reviewer asked the family for more evidence */
+  status: "open" | "requested" | "confirmed" | "rejected";
+  at?: string;
+  /** the evidence it was confirmed on (VERIFICATION_CHECKS methods) */
+  method?: string;
+  /** what was asked for, or why it was rejected */
+  note?: string;
 }
 
 /** A bill the family uploaded, as read from the file and confirmed by them. Kept on the world so a reset can replay it. */
@@ -155,6 +194,8 @@ export interface Payment {
   completedAt?: string;
   returnReason?: string;
   attempts: number;
+  /** the institution's own confirmation that it credited the student's or patient's account (allocation flag) */
+  allocation?: { status: "allocated" | "unallocated"; at: string; account?: string; note?: string };
 }
 
 export interface Approval {
@@ -163,9 +204,27 @@ export interface Approval {
   paymentId: string;
   requestedAt: string;
   decidedAt?: string;
-  decision?: "approved" | "declined";
-  method?: "passkey" | "hold";
+  decision?: "approved" | "declined" | "withdrawn";
+  /** mandate: paid under the plan mandate the payer signed, without a new approval */
+  method?: "passkey" | "hold" | "mandate";
   summary: string;
+  /** what the family approves besides the payment itself; checked again when they decide (domain/approval-terms) */
+  terms?: ApprovalTerms;
+  /** set when the approval was withdrawn because one of its terms changed before the family decided */
+  withdrawn?: { at: string; changes: { id: string; message: string }[] };
+}
+
+export interface ApprovalTerms {
+  /** the version of the bill this payment pays */
+  invoice: { id: string; number: string; total: number; amountDue: number; dueAt?: string };
+  /** when it pays an instalment of a confirmed plan: that instalment as confirmed */
+  instalment?: { arrangementId: string; number: number; amount: number; dueAt: string };
+  /** the most the payment may cost the family, in their own currency */
+  maxCost: { currency: Currency; amount: number };
+  quotedAt: string;
+  /** the quote holds until then; after that it is priced again and must stay within maxCost */
+  quoteHeldUntil: string;
+  beneficiary: { accountName: string; accountNumber: string; swift: string };
 }
 
 export interface Mail {
@@ -185,6 +244,8 @@ export interface Mail {
   /** for institution replies: the email this answers, and the topics it answered */
   inReplyTo?: string;
   topics?: string[];
+  /** set by CarryPay's own structured requests, so the institution's reply can be tied to them */
+  request?: { kind: "correction"; adjustmentId: string } | { kind: "arrangement"; arrangementKind: "published_plan" | "extension" | "deposit_reduction"; invoiceId: string } | { kind: "accept_arrangement"; arrangementId: string };
 }
 
 export type DocumentKind =
@@ -195,6 +256,11 @@ export type DocumentKind =
   | "fx_purchase_application"
   | "admission_letter"
   | "receipt"
+  | "scholarship_award"
+  /** a receipt for a deposit already paid to the institution (for example the acceptance deposit) */
+  | "deposit_receipt"
+  | "payment_plan_offer"
+  | "credit_note"
   | "other";
 
 export interface Doc {
@@ -213,7 +279,10 @@ export interface FamilyMessage {
   id: string;
   caseId: string;
   from: "family" | "agent";
+  /** in the case language */
   text: string;
+  /** the same message in each language someone on the case reads, including the case language; absent on older messages */
+  texts?: Partial<Record<Lang, string>>;
   at: string;
   importance?: "info" | "action" | "good_news" | "warning";
   /** the family spoke it (a voice note, transcribed) */
@@ -309,12 +378,50 @@ export interface World {
   agent: AgentState;
   autoReply: boolean;
   /** director's chaos mode: faults injected into the outside world, each consumed when it fires */
-  chaos?: { bankOutage?: boolean; cardDecline?: boolean; silentUntil?: string };
+  /** unallocated: the next transfer to a university arrives unmatched; "reference_dropped": because an intermediary bank dropped the reference (the uk-year story) */
+  chaos?: { bankOutage?: boolean; cardDecline?: boolean; silentUntil?: string; unallocated?: boolean | "reference_dropped" };
   /** director: advance the clock automatically whenever the agent is idle */
   autoplay: boolean;
   counters: Record<string, number>;
   /** scenario "upload": the family's own bill */
   upload?: UploadedBill;
+  /** plan workflow (src/domain/plan): the family's own figures by case, the institution's payment terms, bill adjustments, plan mandates */
+  funding?: Record<string, FundingProfile>;
+  arrangements?: Record<string, Arrangement>;
+  /** what the institution itself requires before the student can register (resolution flag): met only on its own confirmation */
+  holds?: Record<string, InstitutionHold>;
+  adjustments?: Record<string, Adjustment>;
+  mandates?: Record<string, PlanMandate>;
+  /** sandbox rate overrides (Director stress test): from `from` on, `currency` costs `pct` more in every other currency */
+  fxShocks?: FxShock[];
+  /** Director stress tests applied to this world, with the engine's before/after figures */
+  stressTests?: AppliedStress[];
+}
+
+/** A sandbox rate override: from `from` on, one unit of `currency` costs `pct` more (0.05 = 5%) in every other currency. */
+export interface FxShock {
+  currency: Currency;
+  pct: number;
+  from: string;
+}
+
+/** Director stress tests that change the sandbox world itself (not just a what-if in the planner). */
+export type StressKind = "salary_late" | "fx_up";
+
+export interface AppliedStress {
+  id: string;
+  kind: StressKind;
+  caseId: string;
+  at: string;
+  /** e.g. "Salary 3 weeks late", "GBP 5% dearer" */
+  label: string;
+  /** the engine's projection for the case just before and just after (home currency) */
+  before: { lowestHeadroom: number; firstBreachAt?: string; shortBy?: number };
+  after: { lowestHeadroom: number; firstBreachAt?: string; shortBy?: number };
+  /** salary_late: each income's next date, before and after */
+  moved?: { label: string; from: string; to: string }[];
+  /** fx_up: the sandbox mid rate (home currency per unit of `currency`), before and after */
+  rate?: { currency: Currency; homeCurrency: Currency; before: number; after: number };
 }
 
 /** One hash-chained entry in the tamper-evident activity log. */
@@ -330,4 +437,23 @@ export interface LedgerEntry {
   data: Record<string, unknown>;
   prevHash: string;
   hash: string;
+}
+
+/**
+ * A requirement the institution itself enforces, such as a financial hold on the student's registration. The
+ * bank delivering the money doesn't meet it, and nor does CarryPay: only the institution's confirmation does.
+ */
+export interface InstitutionHold {
+  id: string;
+  caseId: string;
+  institutionId: string;
+  /** e.g. "Financial hold on registration for 2026/27" */
+  label: string;
+  /** what lifts it, in the institution's words */
+  condition: string;
+  status: "on" | "cleared";
+  placedAt: string;
+  clearedAt?: string;
+  /** the institution's confirmation that it was lifted */
+  confirmationDocId?: string;
 }

@@ -50,6 +50,11 @@ const EXPLAIN: Record<string, Explainer> = {
     en: "CarryPay never splits one bill across family members to get around a per-person limit. Banks treat that as structuring; it can get accounts frozen.",
     zh: "CarryPay 绝不会把一张账单拆到多位家人名下来规避个人额度。银行会把这视为分拆交易，可能导致账户被冻结。",
   }),
+  "CARRYPAY.NO_STRUCTURING": () => ({
+    en: "CarryPay pays a university bill in parts only when the university itself has offered and confirmed the instalment plan. It never cuts a bill into smaller payments of its own, for example to stay under a yearly limit.",
+    // TODO zh: MiMo review
+    zh: "只有在学校本身提供并确认了分期付款方案时，CarryPay 才会分期支付学校账单。CarryPay 绝不会自行把账单拆成小额付款，例如为了不超过年度额度。",
+  }),
   "CARRYPAY.VERIFIED_BENEFICIARY": () => ({
     en: "Money only goes to an institution's bank account that CarryPay has verified independently, never to details from an email or a document alone. This stops 'our bank details have changed' scams.",
     zh: "资金只会汇入经 CarryPay 独立核实的机构账户，绝不凭邮件或文件中的账户信息付款。这能防范“银行账户已变更”这类诈骗。",

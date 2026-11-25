@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { World } from "@/domain/types";
+import { mandateCanonical } from "@/domain/plan/mandate";
 
 // Passkey (WebAuthn) approvals without a third-party library: the browser's
 // authenticator signs a challenge that is derived from the exact payment being
@@ -105,6 +106,8 @@ function paymentDigest(w: World, approvalId: string, nonce: string) {
     payer: p.payerId,
     beneficiary: [p.beneficiary.accountName, p.beneficiary.accountNumber, p.beneficiary.swift],
     reference: p.reference,
+    // the commercial terms approved with it: bill version, cost ceiling, quote validity
+    terms: a.terms ? [a.terms.invoice.id, a.terms.invoice.amountDue, a.terms.instalment?.number ?? null, a.terms.maxCost.currency, a.terms.maxCost.amount, a.terms.quoteHeldUntil] : null,
     nonce,
   });
   return b64u(sha256(canonical));
@@ -130,10 +133,38 @@ export function verifyApproval(w: World, approvalId: string, as: Assertion, orig
   challenges.delete(`${scope}:approval:${approvalId}`);
   if (!issued || issued.expires < Date.now()) throw new Error("The approval request expired. Try again.");
   // recomputed from the payment as it is now: if anything changed since the challenge, this fails
-  const expected = paymentDigest(w, approvalId, issued.nonce!);
+  return verifyAssertion(issued, paymentDigest(w, approvalId, issued.nonce!), as, origin, "The signed approval doesn't match this payment.");
+}
+
+// ---------------------------------------------------------------------------
+// Plan mandate: the challenge commits to the mandate's exact terms
+
+function mandateDigest(w: World, mandateId: string, nonce: string) {
+  const m = w.mandates?.[mandateId];
+  if (!m) throw new Error("No such mandate.");
+  const terms = { caseId: m.caseId, arrangementId: m.arrangementId, payerId: m.payerId, institutionId: m.institutionId, beneficiary: m.beneficiary, currency: m.currency, perInstalmentCap: m.perInstalmentCap, totalCap: m.totalCap, windows: m.windows, reserveFloor: m.reserveFloor };
+  return b64u(sha256(`${mandateCanonical(terms)}|${mandateId}|${nonce}`));
+}
+
+export function mandateChallenge(w: World, mandateId: string, scope = "default") {
+  const nonce = b64u(crypto.randomBytes(16));
+  const value = mandateDigest(w, mandateId, nonce);
+  challenges.set(`${scope}:mandate:${mandateId}`, { value, nonce, expires: Date.now() + CHALLENGE_TTL_MS });
+  return { challenge: value, allowCredentials: listPasskeys().map((k) => k.id) };
+}
+
+export function verifyMandate(w: World, mandateId: string, as: Assertion, origin: string, scope = "default") {
+  const issued = challenges.get(`${scope}:mandate:${mandateId}`);
+  challenges.delete(`${scope}:mandate:${mandateId}`);
+  if (!issued || issued.expires < Date.now()) throw new Error("The signing request expired. Try again.");
+  return verifyAssertion(issued, mandateDigest(w, mandateId, issued.nonce!), as, origin, "The signature doesn't match these mandate terms.");
+}
+
+/** One WebAuthn assertion check for payments and mandates: challenge, origin, RP ID, user verification, signature. */
+function verifyAssertion(issued: { value: string }, expected: string, as: Assertion, origin: string, mismatch: string) {
   const cd = readClientData(as.clientDataJSON);
   if (cd.type !== "webauthn.get") throw new Error("Not a passkey assertion.");
-  if (cd.challenge !== issued.value || cd.challenge !== expected) throw new Error("The signed approval doesn't match this payment.");
+  if (cd.challenge !== issued.value || cd.challenge !== expected) throw new Error(mismatch);
   if (cd.origin !== origin) throw new Error("Passkey used from a different site.");
   const key = listPasskeys().find((k) => k.id === as.credentialId);
   if (!key) throw new Error("Unknown passkey.");

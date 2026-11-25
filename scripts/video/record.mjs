@@ -418,6 +418,57 @@ const SCENES = {
   },
 };
 
+// Backup take for a remote presentation (not part of the submitted video): the whole "A year in London"
+// case on the demo stage in Replay, the family's taps made through the API between beats, then the bank
+// officer's view. Silent; the presenter narrates over it. Run it only by name: `record.mjs yr`.
+// The server must run with CARRYPAY_FLAGS=all.
+SCENES.yr = async function yr() {
+  await api("/api/director", { action: "reset", scenarioId: "uk-year", mode: "replay" });
+  await take("yr", async (t) => {
+    await t.page.goto(BASE + "/stage");
+    await t.page.getByRole("button", { name: "Hide controls" }).click();
+    await t.start();
+    await t.hold(3000);
+    t.mark("start");
+    for (let i = 0; i < 60; i++) {
+      const s = await api("/api/state");
+      const w = s.world;
+      const pending = Object.values(w.approvals).filter((a) => !a.decision);
+      const offered = Object.values(w.arrangements ?? {}).filter((a) => a.status === "offered");
+      const accepted = Object.values(w.arrangements ?? {}).some((a) => a.status === "accepted");
+      const unsigned = Object.values(w.mandates ?? {}).find((m) => m.status === "awaiting_approval");
+      if (pending.length) {
+        // the approval sheet stays on the phone for a moment before the family approves
+        await t.hold(3500);
+        for (const a of pending) await api(`/api/approvals/${a.id}`, { decision: "approved", method: "hold" });
+        t.mark(`approved_${i}`);
+      } else if (unsigned) {
+        await t.hold(3500);
+        await api("/api/plan", { action: "sign_mandate", mandateId: unsigned.id, personId: unsigned.payerId, method: "hold" });
+        t.mark("mandate_signed");
+      } else if (offered.length && !accepted) {
+        await t.hold(3500);
+        const pick = offered.find((a) => a.instalments.length === 3) ?? offered.at(-1);
+        // the payer is the owner of the funding profile on the case
+        await api("/api/plan", { action: "decide", arrangementId: pick.id, decision: "accept", personId: w.funding?.[pick.caseId]?.ownerPersonId });
+        t.mark("plan_accepted");
+      } else if (s.nextEvent) {
+        t.mark(`next_${i}`);
+        await api("/api/director", { action: "next" });
+      } else break;
+      await idle();
+      await t.hold(4500);
+    }
+    t.mark("story_done");
+    await t.page.goto(BASE + "/bank/officer");
+    await t.hold(2500);
+    const auth = t.page.getByText(/under plan mandate/).first();
+    await auth.scrollIntoViewIfNeeded().catch(() => {});
+    await t.hold(9000);
+    t.mark("officer");
+  });
+};
+
 const order = ["s1", "s2", "s3", "s7", "s4", "s5", "s5b", "s6", "s8"];
 const want = process.argv.slice(2);
-for (const s of order.filter((x) => !want.length || want.includes(x))) await SCENES[s]();
+for (const s of [...order, "yr"].filter((x) => (!want.length && x !== "yr") || want.includes(x))) await SCENES[s]();

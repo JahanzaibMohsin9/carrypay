@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { Activity, FileText, Fingerprint, House, ShieldCheck, Wallet } from "lucide-react";
+import { Activity, CalendarRange, FileText, Fingerprint, House, ShieldCheck, Wallet } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useCarry } from "@/lib/client";
 import { useT } from "@/lib/i18n";
@@ -24,6 +24,7 @@ const TABS = [
   { href: "/app/money", key: "money", icon: Wallet },
   { href: "/app/docs", key: "documents", icon: FileText },
 ] as const;
+const PLAN_TAB = { href: "/app/plan", key: "plan", icon: CalendarRange } as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { state } = useCarry();
@@ -43,15 +44,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pending = useMemo(() => (state && c ? pendingApprovals(state.world, c.id) : []), [state, c]);
   const viewer = useViewer(c);
   const threats = state ? threatCount(state.world) : 0;
+  // the plan tab only for cases that have a plan to show (feature flag on)
+  const showPlan = !!state?.flags?.plan && !!c && (!!state.world.funding?.[c.id] || Object.values(state.world.arrangements ?? {}).some((a) => a.caseId === c.id));
+  const tabs = showPlan ? [...TABS.slice(0, 3), PLAN_TAB, TABS[3]] : TABS;
 
-  // follow the case language when a scenario loads
+  // per-person language (flag "family"): the phone reads in its user's language
+  const perPerson = !!state?.flags?.family;
+  const viewerLang = (perPerson && c?.people.find((p) => p.id === viewer)?.lang) || c?.lang;
+
+  // follow the case language (or the viewer's own) when a scenario loads
   useEffect(() => {
     if (!state || !c) return;
     if (lastScenario.current !== state.world.scenarioId) {
-      if (lastScenario.current !== null) setLang(c.lang);
+      if (lastScenario.current !== null) setLang(viewerLang ?? c.lang);
       lastScenario.current = state.world.scenarioId;
     }
-  }, [state, c, setLang]);
+  }, [state, c, setLang, viewerLang]);
+
+  // and when someone else picks up the phone
+  const lastViewer = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (lastViewer.current !== undefined && viewer !== lastViewer.current && perPerson && viewerLang) setLang(viewerLang);
+    lastViewer.current = viewer;
+  }, [viewer, viewerLang, perPerson, setLang]);
 
   // pop the approval sheet when a new approval arrives
   useEffect(() => {
@@ -74,6 +89,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const corridor = corridorOf(c.corridor);
   const agent = state.world.agent;
+  // waiting on whom: only the payer can approve, so anyone else on the case sees who it's waiting for
+  const payer = pending[0] ? c.people.find((p) => p.id === state.world.payments[pending[0].paymentId]?.payerId) : undefined;
+  const waitingOn = perPerson && payer && payer.id !== viewer ? nameIn(payer.name, lang) : undefined;
   const working = state.agentBusy;
   const urdu = lang === "ur";
 
@@ -156,7 +174,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Fingerprint size={22} />
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-semibold opacity-90">{t("needsYou")}</span>
+              <span className="block text-[13px] font-semibold opacity-90">{waitingOn ? t("waitingOn").replaceAll("{name}", waitingOn) : t("needsYou")}</span>
               <span className="block truncate text-[14px] font-semibold">
                 <ApprovalSummary id={pending[0].id} />
               </span>
@@ -170,8 +188,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Bottom tabs */}
       <nav className="z-20 shrink-0 border-t border-line/70 bg-bg/90 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur-md">
-        <ul className="grid grid-cols-4">
-          {TABS.map(({ href, key, icon: Icon }) => {
+        <ul className={cn("grid", tabs.length === 5 ? "grid-cols-5" : "grid-cols-4")}>
+          {tabs.map(({ href, key, icon: Icon }) => {
             const active = pathname === href;
             return (
               <li key={href}>
@@ -193,6 +211,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <ApprovalSheet key={approvalId ?? "none"} approvalId={approvalId} onClose={() => setApprovalId(null)} />
     </div>
   );
+}
+
+/** "周建华 Zhou Jianhua" reads as 周建华 in Chinese and Zhou Jianhua otherwise. */
+function nameIn(name: string, lang: Lang) {
+  const parts = name.split(/\s+/);
+  const han = parts.filter((p) => /^\p{Script=Han}+$/u.test(p));
+  const chosen = lang === "zh" ? han : parts.filter((p) => !han.includes(p));
+  return chosen.length ? chosen.join(" ") : name;
 }
 
 const LANGS: { l: Lang; label: string; name: string }[] = [

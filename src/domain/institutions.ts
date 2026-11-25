@@ -42,7 +42,10 @@ export const INSTITUTIONS: Record<string, Institution> = {
       currency: "GBP",
     },
     referenceRule: { label: "Student ID", pattern: "KG\\d{7}" },
-    students: [{ id: "KG2601847", name: "Lin Yuxuan", programme: "MSc Data Science", start: "18 January 2027" }],
+    students: [
+      { id: "KG2601847", name: "Lin Yuxuan", programme: "MSc Data Science", start: "18 January 2027" },
+      { id: "KG2611392", name: "Zhou Yutong", programme: "MSc Finance", start: "18 January 2027", awards: [{ name: "Kingsgate Global Excellence Scholarship", amount: 4000, appliesTo: "tuition" }] },
+    ],
     acceptsCards: true,
     cardSurchargePct: 0.025,
   },

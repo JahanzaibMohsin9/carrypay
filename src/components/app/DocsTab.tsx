@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileCheck2, FileSignature, FileText, FileWarning, GraduationCap, Landmark, ReceiptText } from "lucide-react";
+import { Award, CalendarClock, Download, FileCheck2, FileSignature, FileText, FileWarning, GraduationCap, Landmark, ReceiptText } from "lucide-react";
 import { useState } from "react";
 import { useCarry } from "@/lib/client";
 import { useT } from "@/lib/i18n";
@@ -17,6 +17,10 @@ const ICONS: Record<Doc["kind"], React.ComponentType<{ size?: number }>> = {
   fx_purchase_application: FileSignature,
   admission_letter: GraduationCap,
   receipt: FileCheck2,
+  scholarship_award: Award,
+  deposit_receipt: ReceiptText,
+  payment_plan_offer: CalendarClock,
+  credit_note: ReceiptText,
   other: FileText,
 };
 

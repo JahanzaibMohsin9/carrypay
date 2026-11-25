@@ -42,6 +42,12 @@ export function AnchorList({ state }: { state: PublicState }) {
             <a href={chain.contractUrl} target="_blank" rel="noreferrer" className="font-semibold text-brand underline-offset-2 hover:underline">
               {t("anchorContract")} {shortHash(chain.contract)}
             </a>
+            {chain.second && (
+              <>
+                {" · "}
+                {chain.second.chain} {shortHash(chain.second.contract)}
+              </>
+            )}
           </p>
         )}
       </div>
@@ -59,6 +65,10 @@ export function AnchorList({ state }: { state: PublicState }) {
                 {status === "confirmed" && <Badge tone="success" icon={<CircleCheck size={11} />}>{t("anchorConfirmed")}</Badge>}
                 {status === "pending" && <Badge tone="info" icon={<Loader2 size={11} className="animate-spin" />}>{t("anchorPending")}</Badge>}
                 {status === "failed" && <Badge tone="amber">{t("anchorFailed")}</Badge>}
+                {/* the second chain: WeBank's FISCO BCOS */}
+                {a.fisco?.status === "confirmed" && <Badge tone="success" icon={<CircleCheck size={11} />}>FISCO BCOS</Badge>}
+                {a.fisco?.status === "pending" && <Badge tone="info" icon={<Loader2 size={11} className="animate-spin" />}>FISCO BCOS</Badge>}
+                {a.fisco?.status === "failed" && <Badge tone="amber">FISCO BCOS ✕</Badge>}
               </div>
               {a.chain?.txHash && (
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -82,11 +92,12 @@ export function AnchorList({ state }: { state: PublicState }) {
                   ) : r.ok ? (
                     <>
                       <CircleCheck size={13} className="mt-px shrink-0" /> {t("anchorCheckOk")} {r.onChain ? `(block ${r.onChain.blockNumber})` : ""}
+                      {r.fisco?.ok && r.fisco.onChain ? ` · FISCO BCOS block ${r.fisco.onChain.blockNumber}` : ""}
                     </>
                   ) : (
                     <>
                       <ShieldX size={13} className="mt-px shrink-0" /> {t("anchorCheckBad")}{" "}
-                      {!r.onChain ? r.reason : r.onChain.head !== a.hash ? t("anchorHashDiffers") : `${t("anchorLogChanged")} #${r.log.brokenAt ?? "?"}`}
+                      {!r.onChain ? r.reason : r.onChain.head !== a.hash ? t("anchorHashDiffers") : !r.log.ok ? `${t("anchorLogChanged")} #${r.log.brokenAt ?? "?"}` : r.reason}
                     </>
                   )}
                 </p>

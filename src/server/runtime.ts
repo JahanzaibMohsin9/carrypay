@@ -3,15 +3,19 @@ import path from "node:path";
 import { DATA_DIR, Store } from "./store";
 import { AgentRunner, hasApiCredentials, MODEL } from "./agent/runner";
 import { SCENARIOS, seedScenario, seedUpload } from "./scenarios";
-import { advanceTo, advanceToNext, injectChaos, nextScheduled, runBeat, setPaymentStatus, submitPayment, verifyInstitution, type ChaosKind } from "./sim/engine";
+import { advanceTo, advanceToNext, injectChaos, injectStress, nextScheduled, runBeat, setPaymentStatus, submitPayment, verifyInstitution, withdrawApproval, type ChaosKind } from "./sim/engine";
+import { checkTerms } from "@/domain/approval-terms";
+import { announceBankChange, verifyAllForSandbox } from "./verification";
+import { flagOn } from "./flags";
 import { hoursFrom } from "./sim/factory";
 import { verifyChain } from "./hash";
 import { listPasskeys } from "./passkey";
-import type { AgentMode, UploadedBill } from "@/domain/types";
+import type { AgentMode, StressKind, UploadedBill } from "@/domain/types";
 import { AnchorService, milestoneOf } from "./anchor/service";
-import { ANCHOR_CHAIN, anchorConfig, explorerAddress, viemPublisher, type ChainPublisher } from "./anchor/chain";
+import { ANCHOR_CHAIN, anchorConfig, explorerAddress, FISCO_NAME, fiscoConfig, fiscoPublisher, viemPublisher, type ChainPublisher } from "./anchor/chain";
 import { DEFAULT_SESSION } from "./session";
 import { answerFamily } from "./agent/answer";
+import { serverFlags } from "./flags";
 
 interface Runtime {
   id: string;
@@ -30,6 +34,7 @@ const g = globalThis as unknown as {
   __carrypay?: Runtime;
   __carrypaySessions?: Map<string, Runtime>;
   __carrypayPublisher?: ChainPublisher | null;
+  __carrypayFisco?: ChainPublisher | null;
   __carrypaySweep?: NodeJS.Timeout;
 };
 const sessions = (g.__carrypaySessions ??= new Map());
@@ -43,6 +48,15 @@ function publisher(): ChainPublisher | null {
     g.__carrypayPublisher = cfg ? viemPublisher(cfg) : null;
   }
   return g.__carrypayPublisher;
+}
+
+/** The second chain (FISCO BCOS), when configured: every anchor goes to both. */
+function secondPublisher(): ChainPublisher | null {
+  if (g.__carrypayFisco === undefined) {
+    const cfg = fiscoConfig();
+    g.__carrypayFisco = cfg ? fiscoPublisher(cfg) : null;
+  }
+  return g.__carrypayFisco;
 }
 
 function create(id: string): Runtime {
@@ -60,7 +74,7 @@ function create(id: string): Runtime {
   const rt: Runtime = { id, store, runner, runnerClass: AgentRunner, autoplayTimer: setInterval(() => autoplayTick(rt.store, rt.runner), 1500) };
   const pub = publisher();
   if (pub) {
-    const anchors = new AnchorService(store, pub);
+    const anchors = new AnchorService(store, pub, {}, secondPublisher() ?? undefined);
     store.on("logged", (e) => {
       const m = milestoneOf(e);
       if (m) anchors.milestone(m);
@@ -143,7 +157,13 @@ export function publicState(sid?: string) {
     ledger: store.ledger,
     anchors: store.anchors,
     anchoring: anchorConfig()
-      ? { chain: ANCHOR_CHAIN.name, chainId: ANCHOR_CHAIN.id, contract: anchorConfig()!.contract, contractUrl: explorerAddress(anchorConfig()!.contract) }
+      ? {
+          chain: ANCHOR_CHAIN.name,
+          chainId: ANCHOR_CHAIN.id,
+          contract: anchorConfig()!.contract,
+          contractUrl: explorerAddress(anchorConfig()!.contract),
+          ...(fiscoConfig() ? { second: { chain: FISCO_NAME, chainId: fiscoConfig()!.chainId, contract: fiscoConfig()!.contract } } : {}),
+        }
       : null,
     chain: verifyChain(store.ledger),
     agentBusy: runner.isBusy || store.world.agent.status === "working",
@@ -151,7 +171,8 @@ export function publicState(sid?: string) {
     hasKey: hasApiCredentials(),
     passkeys: listPasskeys().map((k) => ({ id: k.id.slice(0, 12), label: k.label, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt })),
     model: MODEL,
-    scenarios: SCENARIOS,
+    scenarios: SCENARIOS.filter((s) => !s.flag || serverFlags()[s.flag]),
+    flags: serverFlags(),
   };
 }
 export type PublicState = ReturnType<typeof publicState>;
@@ -198,6 +219,25 @@ export function decideApprovalIn(store: Store, approvalId: string, decision: "ap
   if (!a || a.decision) throw new Error("This approval is no longer pending.");
   checkApprover(store, approvalId, decision, actingPersonId);
   const p = store.world.payments[a.paymentId];
+  if (decision === "approved" && a.terms) {
+    // what the family approves is the payment on these terms: if any changed since it was put to them, this
+    // approval is withdrawn (only this one) and they are asked again with the new facts
+    const t = checkTerms(store.world, p, a.terms);
+    if (t.changes.length) {
+      withdrawApproval(store, approvalId, t.changes);
+      throw new Error(`This approval was withdrawn because something changed: ${t.changes.map((c) => c.message).join(" ")} CarryPay will ask you again with the new figures.`);
+    }
+    if (t.requoted) {
+      store.mutate((w) => (w.payments[p.id].cost = t.cost));
+      store.log({
+        actor: "gateway",
+        type: "approval.requoted",
+        caseId: a.caseId,
+        narration: `The quote had expired: priced again at ${t.cost.sourceCurrency} ${Math.ceil(t.cost.totalSource).toLocaleString()}, within the ${a.terms.maxCost.currency} ${a.terms.maxCost.amount.toLocaleString()} approved`,
+        data: { approvalId, paymentId: p.id, cost: Math.round(t.cost.totalSource * 100) / 100, maxCost: a.terms.maxCost.amount },
+      });
+    }
+  }
   store.mutate((w) => {
     w.approvals[approvalId].decision = decision;
     w.approvals[approvalId].decidedAt = w.now;
@@ -292,6 +332,9 @@ export function directorAction(body: Record<string, unknown>, sid?: string) {
       // the family's own bill can be replayed from the start; there is no seed for it without one
       const upload = id === "upload" ? store.world.upload : undefined;
       if (id === "upload" && !upload) throw new Error("No uploaded bill to restart from. Upload one in the app.");
+      // a scenario behind a feature flag doesn't exist while its flag is off (not even by name)
+      const listed = SCENARIOS.find((s) => s.id === id);
+      if (id !== "upload" && (!listed || (listed.flag && !serverFlags()[listed.flag]))) throw new Error(`Unknown scenario ${id}`);
       store.reset(upload ? seedUpload(upload) : seedScenario(id));
       store.mutate((w) => (w.agent.mode = mode));
       store.log({ actor: "director", type: "scenario.loaded", data: { scenarioId: id, mode } });
@@ -325,12 +368,28 @@ export function directorAction(body: Record<string, unknown>, sid?: string) {
       store.trigger({ caseId: String(body.caseId), reason: "nudge" });
       return;
     case "chaos":
-      if (!["bank_outage", "card_decline", "silent"].includes(String(body.kind))) throw new Error("chaos kind must be bank_outage, card_decline or silent");
+      if (!["bank_outage", "card_decline", "silent", "unallocated"].includes(String(body.kind))) throw new Error("chaos kind must be bank_outage, card_decline, silent or unallocated");
       injectChaos(store, body.kind as ChaosKind);
       return;
-    case "verify_institution":
-      verifyInstitution(store);
+    case "stress":
+      if (!["salary_late", "fx_up"].includes(String(body.kind))) throw new Error("stress kind must be salary_late or fx_up");
+      injectStress(store, body.kind as StressKind, body.caseId ? String(body.caseId) : undefined);
       return;
+    case "bank_change": {
+      // a genuine change of bank account by the case's institution, announced from its verified address
+      if (!flagOn("verification")) throw new Error("The verification workbench is switched off.");
+      const c0 = Object.values(store.world.cases)[0];
+      if (!c0) throw new Error("No case loaded.");
+      announceBankChange(store, c0.institutionId);
+      return;
+    }
+    case "verify_institution": {
+      // with the workbench on, the shortcut confirms each of the bank's checks (logged as the Director's)
+      const inst = Object.values(store.world.cases)[0] && store.world.institutions[Object.values(store.world.cases)[0].institutionId];
+      if (flagOn("verification") && inst?.origin === "uploaded_bill") verifyAllForSandbox(store, inst.id);
+      else verifyInstitution(store);
+      return;
+    }
     case "anchor": {
       const note = String(body.note ?? "Manual anchor").slice(0, 60);
       if (anchors) anchors.flush(note);

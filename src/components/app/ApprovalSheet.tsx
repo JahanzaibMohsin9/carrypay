@@ -101,6 +101,12 @@ export function ApprovalSheet({ approvalId, onClose }: { approvalId: string | nu
           <p className="mt-1 text-[12px] text-ink-3" dir="ltr">
             {p.route === "bank_transfer" ? `${p.beneficiary.bankName} · ${p.beneficiary.accountNumber}` : `Card ${w.cards.find((k) => k.personId === p.payerId)?.label ?? ""}`} · Ref “{p.reference}”
           </p>
+          {a.terms && (
+            <p className="mt-2 text-[12px] text-ink-2">
+              <span className="font-semibold">{t("upToLimit").replace("{amount}", money(a.terms.maxCost.amount, a.terms.maxCost.currency))}</span>
+              <span className="block text-[11.5px] text-ink-3">{t("priceHeldUntil").replace("{time}", dateTime(a.terms.quoteHeldUntil, tz, lang))}</span>
+            </p>
+          )}
           <div className="mt-2.5 inline-flex items-center gap-2 rounded-2xl bg-surface px-3 py-1.5 text-left text-[12px]">
             <Clock size={14} className="shrink-0 text-ink-3" />
             <span>

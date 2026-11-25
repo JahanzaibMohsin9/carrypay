@@ -23,11 +23,11 @@ export function CurrencyCard({ w, c, payments }: { w: World; c: CaseFile; paymen
   const extraSource = moved.reduce((s, p) => s + (p.cost.totalSource - p.cost.deliverAmount * p.cost.midRate), 0);
   const delivered = moved.reduce((s, p) => s + p.amount, 0);
   const refund = c.expectedRefund;
-  const refundSource = refund ? refund.amount * midRate(src, dest, refund.receivedAt ?? w.now) : 0;
+  const refundSource = refund ? refund.amount * midRate(src, dest, refund.receivedAt ?? w.now, w.fxShocks) : 0;
   const net = paidSource - (refund?.receivedAt ? refundSource : 0);
   const netDelivered = delivered - (refund?.receivedAt ? refund.amount : 0);
   const allIn = netDelivered > 0 ? net / netDelivered : 0;
-  const mid = midRate(src, dest, w.now);
+  const mid = midRate(src, dest, w.now, w.fxShocks);
   const byRoute = Object.entries(
     moved.reduce<Record<string, { dest: number; src: number }>>((acc, p) => {
       const r = (acc[p.route] ??= { dest: 0, src: 0 });

@@ -70,3 +70,25 @@ export async function approveWithPasskey(approvalId: string, as?: string) {
     assertion: { credentialId: cred.id, clientDataJSON: toB64u(res.clientDataJSON), authenticatorData: toB64u(res.authenticatorData), signature: toB64u(res.signature) },
   });
 }
+
+/** Sign a plan mandate: the challenge commits to the mandate's exact terms, so the signature covers those only. */
+export async function signMandateWithPasskey(mandateId: string, personId?: string) {
+  const { challenge, allowCredentials } = (await post("/api/plan", { action: "mandate_challenge", mandateId, personId })) as { challenge: string; allowCredentials: string[] };
+  const cred = (await navigator.credentials.get({
+    publicKey: {
+      challenge: fromB64u(challenge),
+      allowCredentials: allowCredentials.map((id) => ({ type: "public-key", id: fromB64u(id) })),
+      userVerification: "required",
+      timeout: 60_000,
+    },
+  })) as PublicKeyCredential | null;
+  if (!cred) throw new Error("Signing was cancelled.");
+  const res = cred.response as AuthenticatorAssertionResponse;
+  return post("/api/plan", {
+    action: "sign_mandate",
+    mandateId,
+    personId,
+    method: "passkey",
+    assertion: { credentialId: cred.id, clientDataJSON: toB64u(res.clientDataJSON), authenticatorData: toB64u(res.authenticatorData), signature: toB64u(res.signature) },
+  });
+}

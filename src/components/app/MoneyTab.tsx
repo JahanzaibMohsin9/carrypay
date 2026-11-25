@@ -1,12 +1,12 @@
 "use client";
 
-import { Check, CircleDashed, CornerUpLeft, CreditCard, Landmark, Receipt, X } from "lucide-react";
+import { Check, CircleDashed, CornerUpLeft, CreditCard, Landmark, Lock, LockOpen, Receipt, X } from "lucide-react";
 import { useCarry } from "@/lib/client";
 import { useT } from "@/lib/i18n";
 import { activeCase, caseInvoices, casePayments, caseTz } from "@/lib/selectors";
 import { cn, dateTime, money } from "@/lib/format";
 import { ROUTE_SHORT } from "@/domain/corridors";
-import type { Invoice, Payment, PaymentStatus } from "@/domain/types";
+import type { InstitutionHold, Invoice, Payment, PaymentStatus } from "@/domain/types";
 import { Badge, Card, Empty, SectionTitle } from "../ui";
 import { CurrencyCard } from "./CurrencyCard";
 
@@ -29,9 +29,15 @@ export function MoneyTab() {
   const invoices = caseInvoices(w, c.id).reverse();
   const payments = casePayments(w, c.id).reverse();
   const urdu = lang === "ur";
+  // resolution flag: in the institution's bank, waiting for it to post the money to the student account
+  const posting = new Set(state.ledger.filter((e) => e.type === "payment.bank_credited").map((e) => String(e.data.paymentId)));
+  const holds = Object.values(w.holds ?? {}).filter((h) => h.caseId === c.id);
 
   return (
     <div className="space-y-6 px-4 pb-10 pt-4">
+      {holds.map((h) => (
+        <HoldCard key={h.id} hold={h} institution={w.institutions[h.institutionId]?.name ?? ""} tz={tz} lang={lang} />
+      ))}
       <CurrencyCard w={w} c={c} payments={payments} />
       <section>
         <SectionTitle>
@@ -44,7 +50,7 @@ export function MoneyTab() {
         ) : (
           <div className="space-y-3">
             {payments.map((p) => (
-              <PaymentCard key={p.id} p={p} tz={tz} lang={lang} />
+              <PaymentCard key={p.id} p={p} tz={tz} lang={lang} posting={posting.has(p.id) && !p.allocation} />
             ))}
           </div>
         )}
@@ -76,7 +82,27 @@ const STEPS: { status: PaymentStatus[]; label: string }[] = [
   { status: ["completed"], label: "Received" },
 ];
 
-function PaymentCard({ p, tz, lang }: { p: Payment; tz: string; lang: string }) {
+/** What the institution itself requires (a financial hold on the registration): only its own confirmation lifts it. */
+function HoldCard({ hold, institution, tz, lang }: { hold: InstitutionHold; institution: string; tz: string; lang: string }) {
+  const on = hold.status === "on";
+  return (
+    <Card className={cn("flex items-start gap-3 p-4", on ? "border-amber/40 bg-amber-soft" : "border-success/30 bg-success-soft")}>
+      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-2xl", on ? "bg-surface text-amber-strong" : "bg-surface text-success")}>
+        {on ? <Lock size={18} /> : <LockOpen size={18} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={cn("text-[14px] font-semibold", on ? "text-amber-strong" : "text-success")}>
+          {on ? hold.label : `Registration clear: ${institution} lifted the hold`}
+        </p>
+        <p className="mt-0.5 text-[12.5px] text-ink-2">
+          {on ? `${hold.condition} Only ${institution}'s confirmation lifts it.` : `Confirmed by ${institution} on ${dateTime(hold.clearedAt!, tz, lang)}. The confirmation is in Documents.`}
+        </p>
+      </div>
+    </Card>
+  );
+}
+
+function PaymentCard({ p, tz, lang, posting }: { p: Payment; tz: string; lang: string; posting: boolean }) {
   const order = ["awaiting_approval", "approved", "submitted", "processing", "completed"];
   const idx = order.indexOf(p.status);
   const terminalBad = p.status === "cancelled" || p.status === "rejected";
@@ -90,7 +116,7 @@ function PaymentCard({ p, tz, lang }: { p: Payment; tz: string; lang: string }) 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
             <p className="num text-[17px] font-bold">{money(p.amount, p.currency)}</p>
-            <StatusBadge status={p.status} attempts={p.attempts} />
+            <StatusBadge status={p.status} attempts={p.attempts} notCredited={posting || p.allocation?.status === "unallocated"} withdrawn={p.statusHistory.some((h) => h.note?.startsWith("Approval withdrawn"))} />
           </div>
           <p className="text-[12.5px] text-ink-3">
             {ROUTE_SHORT[p.route]} · cost to you <span className="num font-semibold text-ink-2">{money(p.cost.totalSource, p.cost.sourceCurrency)}</span>
@@ -99,7 +125,7 @@ function PaymentCard({ p, tz, lang }: { p: Payment; tz: string; lang: string }) 
         </div>
       </div>
       {!terminalBad && (
-        <ol className="mt-3 grid grid-cols-4 gap-1" aria-label="Payment progress">
+        <ol className={cn("mt-3 grid gap-1", p.allocation || posting ? "grid-cols-5" : "grid-cols-4")} aria-label="Payment progress">
           {STEPS.map((s, i) => {
             const stepIdx = order.indexOf(s.status[s.status.length - 1]);
             const doneStep = idx >= stepIdx || p.status === "completed";
@@ -112,7 +138,26 @@ function PaymentCard({ p, tz, lang }: { p: Payment; tz: string; lang: string }) 
               </li>
             );
           })}
+          {/* the institution's own confirmation: delivered is not the same as credited to the student's account */}
+          {(p.allocation || posting) && (
+            <li className="flex flex-col gap-1">
+              <span className={cn("h-1.5 rounded-full", p.allocation?.status === "allocated" ? "bg-brand" : p.allocation ? "bg-amber" : "bg-brand/50")} />
+              <span className="text-[10.5px] font-medium text-ink-2">Credited</span>
+            </li>
+          )}
         </ol>
+      )}
+      {posting && (
+        <div className="mt-3 flex items-start gap-2 rounded-xl bg-brand-softer px-3 py-2 text-[12px] text-ink-2">
+          <CircleDashed size={14} className="mt-0.5 shrink-0 text-brand" />
+          <span>{"In the university's bank. It posts payments to the student account on its next working day; CarryPay is watching for it."}</span>
+        </div>
+      )}
+      {p.allocation?.status === "unallocated" && (
+        <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-soft px-3 py-2 text-[12px] text-amber-strong">
+          <CircleDashed size={14} className="mt-0.5 shrink-0" />
+          <span>{"Arrived at the university's bank, but not yet credited to the student's account. CarryPay has sent them what they need to match it."}</span>
+        </div>
       )}
       {p.statusHistory.some((h) => h.status === "returned") && (
         <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-soft px-3 py-2 text-[12px] text-amber-strong">
@@ -138,7 +183,7 @@ function PaymentCard({ p, tz, lang }: { p: Payment; tz: string; lang: string }) 
   );
 }
 
-function StatusBadge({ status, attempts }: { status: PaymentStatus; attempts: number }) {
+function StatusBadge({ status, attempts, notCredited, withdrawn }: { status: PaymentStatus; attempts: number; notCredited?: boolean; withdrawn?: boolean }) {
   const map: Record<PaymentStatus, { tone: "brand" | "amber" | "success" | "danger" | "neutral"; label: string; icon: React.ReactNode }> = {
     awaiting_approval: { tone: "amber", label: "Needs you", icon: <CircleDashed size={11} /> },
     approved: { tone: "brand", label: "Approved", icon: <Check size={11} /> },
@@ -149,7 +194,8 @@ function StatusBadge({ status, attempts }: { status: PaymentStatus; attempts: nu
     rejected: { tone: "danger", label: "Rejected", icon: <X size={11} /> },
     cancelled: { tone: "neutral", label: "Declined", icon: <X size={11} /> },
   };
-  const m = map[status];
+  // delivered to the institution's bank is not yet credited; a withdrawn approval wasn't declined by anyone
+  const m = status === "completed" && notCredited ? { tone: "amber" as const, label: "Not credited yet", icon: <CircleDashed size={11} /> } : status === "cancelled" && withdrawn ? { ...map.cancelled, label: "Withdrawn" } : map[status];
   return (
     <Badge tone={m.tone} icon={m.icon}>
       {m.label}

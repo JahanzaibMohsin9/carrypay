@@ -1,12 +1,19 @@
+import { approvalTerms } from "@/domain/approval-terms";
 import { z } from "zod";
-import type { DocumentKind, Payment, Route, SecurityEvent, World } from "@/domain/types";
+import type { DocumentKind, Lang, Mail, Payment, Route, SecurityEvent, World } from "@/domain/types";
 import { INSTITUTIONS } from "@/domain/institutions";
 import { ROUTE_SHORT } from "@/domain/corridors";
 import { compareRoutes, evaluateRoute, priceRoute } from "@/domain/rules/engine";
 import type { Store } from "../store";
 import { addDoc, hoursFrom, sendMail } from "../sim/factory";
-import { onOutboundMail, schedule, SKIP_IF, submitPayment } from "../sim/engine";
+import { onOutboundMail, schedule, setPaymentStatus, SKIP_IF, submitPayment } from "../sim/engine";
 import { caseSnapshot } from "./snapshot";
+import type { Flag } from "@/domain/flags";
+import { flagOn } from "../flags";
+import { compareSchedules, DEFAULT_STRESSES, obligationsFor, projectCashflow, type Projection, type ScheduleOption } from "@/domain/plan/cashflow";
+import { adjustmentTotals, reviewEntitlements } from "@/domain/plan/entitlements";
+import type { Adjustment } from "@/domain/plan/types";
+import { mandateAllows, mandateTerms } from "@/domain/plan/mandate";
 
 export type Tier = "read" | "communicate" | "money";
 
@@ -32,6 +39,10 @@ interface ToolSpec<S extends z.ZodObject> {
   description: string;
   schema: S;
   run: (input: z.infer<S>, ctx: ToolCtx) => ToolOutcome;
+  /** offered to the model and runnable only when this feature flag is on */
+  flag?: Flag;
+  /** optional fields offered to the model only when their flag is on (always accepted, so recorded runs replay) */
+  flaggedFields?: Record<string, Flag>;
 }
 
 const narration = z.string().min(3).max(240).describe("One short, plain-language sentence for the family explaining what you are doing and why. Write it in the family's language.");
@@ -50,10 +61,14 @@ function security(ctx: ToolCtx, ev: Omit<SecurityEvent, "id" | "at" | "caseId">)
   return id;
 }
 
-function familyMessage(ctx: ToolCtx, text: string, importance: "info" | "action" | "good_news" | "warning" = "info") {
+function familyMessage(ctx: ToolCtx, text: string, importance: "info" | "action" | "good_news" | "warning" = "info", translations?: Partial<Record<Lang, string>>) {
   const id = ctx.store.nextId("msg");
-  ctx.store.mutate((w) => w.messages.push({ id, caseId: ctx.caseId, from: "agent", text, at: w.now, importance }));
-  return id;
+  const caseLang = ctx.store.world.cases[ctx.caseId].lang;
+  // the case-language version is always `text`; a "translation" into the case language would only contradict it
+  const extra = Object.fromEntries(Object.entries(translations ?? {}).filter(([l, t]) => l !== caseLang && t?.trim()));
+  const texts = Object.keys(extra).length ? { [caseLang]: text, ...extra } : undefined;
+  ctx.store.mutate((w) => w.messages.push({ id, caseId: ctx.caseId, from: "agent", text, ...(texts ? { texts } : {}), at: w.now, importance }));
+  return { id, languages: texts ? Object.keys(texts) : [caseLang] };
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -77,6 +92,51 @@ function outstanding(ctx: ToolCtx, invoiceId: string) {
   const paid = pays.filter((p) => p.status === "completed").reduce((s, p) => s + p.amount, 0);
   const inFlight = pays.filter((p) => ["awaiting_approval", "approved", "submitted", "processing"].includes(p.status)).reduce((s, p) => s + p.amount, 0);
   return { inv, paid, inFlight, remaining: Math.round((inv.amountDue - paid - inFlight) * 100) / 100 };
+}
+
+/**
+ * Structured requests (bill corrections, payment plans) go only to the institution's verified contact:
+ * these tools take no address at all, so a forged "write to us here instead" can't redirect them.
+ */
+function mailInstitution(ctx: ToolCtx, m: { subject: string; body: string; attachments: string[]; request: NonNullable<Mail["request"]> }) {
+  const w = ctx.store.world;
+  const c = w.cases[ctx.caseId];
+  const inst = w.institutions[c.institutionId];
+  if (inst.origin === "uploaded_bill" && (!inst.verifiedAt || !inst.email)) return undefined;
+  const mail = sendMail(ctx.store, { caseId: c.id, direction: "outbound", from: "cases@carrypay.app", fromName: "CarryPay for the family", to: inst.email, subject: m.subject, body: m.body, attachments: m.attachments, read: true, request: m.request });
+  onOutboundMail(ctx.store, mail);
+  return mail;
+}
+
+const awaitingReply = (w: World, pred: (m: Mail) => boolean) =>
+  Object.values(w.mail).find((m) => m.direction === "outbound" && pred(m) && !Object.values(w.mail).some((r) => r.inReplyTo === m.id));
+
+const r0 = (n: number) => Math.round(n);
+
+/** What the model sees of a projection: rounded, labelled, with the engine's own assumptions. */
+function projectionSummary(p: Projection) {
+  return {
+    currency: p.currency,
+    reserve_floor: r0(p.reserveFloor),
+    total_cost: r0(p.totalHomeCost),
+    lowest_balance: { at: p.lowest.at, balance: r0(p.lowest.balance), above_reserve_by: r0(p.lowest.headroom) },
+    first_time_below_reserve: p.firstBreach ? { at: p.firstBreach.at, balance: r0(p.firstBreach.balance), short_by: r0(p.firstBreach.shortBy), when_paying: p.firstBreach.cause } : null,
+    payments: p.payments.map((x) => ({
+      label: x.obligation.label,
+      due_at: x.obligation.dueAt,
+      pay_by: x.payAt,
+      on_time: x.onTime,
+      amount: `${x.obligation.currency} ${x.deliverAmount.toLocaleString("en-US")}`,
+      cost: r0(x.homeCost),
+      ...(x.obligation.fee ? { includes_admin_fee: `${x.obligation.currency} ${x.obligation.fee}` } : {}),
+      quota_year: x.quotaYear,
+      limits: x.evaluation.limits.map((l) => ({ rule: l.ruleId, used_usd: r0(l.usedUSD), after_usd: r0(l.afterUSD), cap_usd: l.capUSD })),
+      documents_needed: x.evaluation.requiredDocs.map((d) => d.label),
+      warnings: x.evaluation.warnings.map((d) => d.message),
+      blocked: x.evaluation.allowed ? undefined : x.evaluation.blockers.map((b) => b.message),
+    })),
+    assumptions: p.assumptions.map((a) => a.text),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +221,23 @@ export const TOOLS = [
           decision: "allowed",
           ruleIds: ["CARRYPAY.VERIFIED_INSTITUTION"],
           result: { verified: false, institution: r.inst.name, note: "This institution comes from a bill the family uploaded and the bank has not verified it yet, so there is no verified account to compare with. Nothing can be paid until it is verified; you will be woken when that happens." },
+        };
+      }
+      // the institution's own announced change, still with the bank's reviewer: not fraud, but not payable yet
+      const pending = r.inst.pendingBank;
+      if (!r.verified && pending && norm(i.account_number) === norm(pending.bank.accountNumber) && norm(i.swift) === norm(pending.bank.swift)) {
+        return {
+          decision: "allowed",
+          ruleIds: ["CARRYPAY.VERIFIED_BENEFICIARY"],
+          result: {
+            verified: false,
+            institution: r.inst.name,
+            account_change: pending.status === "review" ? "announced by the institution, waiting for the bank's review" : `rejected by the bank: ${pending.note ?? ""}`,
+            note:
+              pending.status === "review"
+                ? `These are the new details ${r.inst.name} announced from its verified address. They can't be paid until the bank has verified them; until then only the account on record is paid. You will be woken when the bank decides.`
+                : "The bank rejected this account change. Do not pay these details; pay only the account on record.",
+          },
         };
       }
       if (!r.verified) {
@@ -345,10 +422,19 @@ export const TOOLS = [
     name: "message_family",
     tier: "communicate",
     description: "Send the family a short update in their language. Use for anything they should know or decide. Keep it warm, clear and brief.",
-    schema: z.object({ text: z.string().min(3).max(800).describe("Up to 800 characters, a few short paragraphs at most. Longer messages are rejected."), importance: z.enum(["info", "action", "good_news", "warning"]), narration }),
+    schema: z.object({
+      text: z.string().min(3).max(800).describe("Up to 800 characters, a few short paragraphs at most. Longer messages are rejected."),
+      translations: z
+        .object({ en: z.string().min(3).max(800).optional(), zh: z.string().min(3).max(800).optional() })
+        .optional()
+        .describe("Only when someone in the snapshot's people reads a language other than family_language: the same message in that language (en = English, zh = Simplified Chinese), same facts and amounts, up to 800 characters. Each person sees the version in their own language."),
+      importance: z.enum(["info", "action", "good_news", "warning"]),
+      narration,
+    }),
+    flaggedFields: { translations: "family" },
     run: (i, ctx) => {
-      const id = familyMessage(ctx, i.text, i.importance);
-      return { decision: "allowed", result: { delivered: true, message_id: id } };
+      const { id, languages } = familyMessage(ctx, i.text, i.importance, i.translations);
+      return { decision: "allowed", result: { delivered: true, message_id: id, ...(languages.length > 1 ? { languages } : {}) } };
     },
   }),
 
@@ -477,6 +563,200 @@ export const TOOLS = [
   }),
 
   tool({
+    name: "review_entitlements",
+    tier: "read",
+    flag: "entitlements",
+    description:
+      "Check the current fee statement against the family's evidence (scholarship award letters, receipts for deposits already paid, and similar). Returns each award as missing, already applied or not applicable, with the document it rests on. Missing ones are recorded as POTENTIAL adjustments: they are not savings until the institution issues a corrected statement.",
+    schema: z.object({ narration }),
+    run: (_i, ctx) => {
+      const w = ctx.store.world;
+      const findings = reviewEntitlements(w, ctx.caseId);
+      const ids: Record<string, string> = {};
+      for (const f of findings.filter((x) => x.status === "missing")) {
+        const existing = Object.values(w.adjustments ?? {}).find((a) => a.caseId === ctx.caseId && a.invoiceId === f.invoiceId && a.basisDocId === f.basisDocId);
+        if (existing) {
+          ids[f.basisDocId + f.invoiceId] = existing.id;
+          continue;
+        }
+        const id = ctx.store.nextId("adj");
+        const adj: Adjustment = { id, caseId: ctx.caseId, invoiceId: f.invoiceId, amount: f.amount, currency: f.currency, basisDocId: f.basisDocId, reason: f.reason, status: "potential", history: [{ at: w.now, status: "potential" }] };
+        ctx.store.mutate((x) => {
+          x.adjustments ??= {};
+          x.adjustments[id] = adj;
+        });
+        ids[f.basisDocId + f.invoiceId] = id;
+      }
+      const totals = adjustmentTotals(ctx.store.world, ctx.caseId);
+      return {
+        decision: "allowed",
+        result: {
+          findings: findings.map((f) => ({
+            adjustment_id: ids[f.basisDocId + f.invoiceId],
+            status: f.status,
+            award: f.award,
+            amount: `${f.currency} ${f.amount.toLocaleString("en-US")}`,
+            statement: f.invoiceNumber,
+            evidence_document: f.basisDocId,
+            evidence_from: f.evidenceOrigin === "institution" ? "the institution" : "a copy the family provided; only the institution can confirm it",
+            reason: f.reason,
+          })),
+          totals_by_state: totals,
+          note: findings.length ? "Report potential, confirmed and credited amounts separately; never add them up as savings." : "No award letters or similar evidence on the case to check.",
+        },
+      };
+    },
+  }),
+
+  tool({
+    name: "request_bill_correction",
+    tier: "communicate",
+    flag: "entitlements",
+    description:
+      "Ask the institution to correct a statement for a potential adjustment found by review_entitlements. Goes to the institution's verified contact with the evidence and the statement attached automatically. The adjustment becomes 'requested'; only the institution's corrected statement confirms it.",
+    schema: z.object({
+      adjustment_id: z.string(),
+      subject: z.string().min(3).max(160),
+      body: z.string().min(10).max(3000).describe("Up to 3000 characters. Clear, professional English; quote the statement number and the student's reference."),
+      narration,
+    }),
+    run: (i, ctx) => {
+      const w = ctx.store.world;
+      const adj = w.adjustments?.[i.adjustment_id];
+      if (!adj || adj.caseId !== ctx.caseId) return { decision: "error", result: { error: `No adjustment ${i.adjustment_id} on this case. Run review_entitlements first.` } };
+      if (adj.status !== "potential") return { decision: "error", result: { error: `Adjustment ${adj.id} is already ${adj.status}.` } };
+      const inv = w.invoices[adj.invoiceId];
+      const waiting = awaitingReply(w, (m) => m.caseId === ctx.caseId && m.request?.kind === "correction" && m.request.adjustmentId === adj.id);
+      if (waiting) return { decision: "error", result: { error: `Already asked in ${waiting.id}; wait for the institution's reply.` } };
+      const mail = mailInstitution(ctx, { subject: i.subject, body: i.body, attachments: [adj.basisDocId, inv.documentId], request: { kind: "correction", adjustmentId: adj.id } });
+      if (!mail) return { decision: "blocked", ruleIds: ["CARRYPAY.VERIFIED_INSTITUTION"], result: { error: "Blocked: the institution has no verified contact address yet." } };
+      ctx.store.mutate((x) => {
+        const a = x.adjustments![adj.id];
+        a.status = "requested";
+        a.requestMailId = mail.id;
+        a.history.push({ at: x.now, status: "requested", note: mail.id });
+      });
+      return { decision: "allowed", result: { sent: true, mail_id: mail.id, attached: [adj.basisDocId, inv.documentId], adjustment_status: "requested" } };
+    },
+  }),
+
+  tool({
+    name: "plan_affordability",
+    tier: "read",
+    flag: "plan",
+    description:
+      "Can the payer carry everything owed without falling below the reserve they chose? Projects their balance (from the figures they entered) through every payment, priced by the rules engine at today's rate, with which year's FX quota each payment uses and the documents it needs. Compares paying in full with each payment plan the institution has offered, under stress tests (salary 3 weeks late, foreign currency 5% dearer), and returns the engine's pick. Use these numbers as they are.",
+    schema: z.object({ narration }),
+    run: (_i, ctx) => {
+      const w = ctx.store.world;
+      const profile = w.funding?.[ctx.caseId];
+      if (!profile) return { decision: "allowed", result: { funding_entered: false, note: "The payer hasn't entered their figures (money available, income, essentials, reserve) in the app yet. Ask them to, in one short message." } };
+      const accepted = Object.values(w.arrangements ?? {}).find((a) => a.caseId === ctx.caseId && a.status === "accepted" && a.confirmationDocId);
+      const offered = Object.values(w.arrangements ?? {}).filter((a) => a.caseId === ctx.caseId && a.status === "offered" && (!a.expiresAt || a.expiresAt > w.now));
+      const current = projectCashflow(w, ctx.caseId)!;
+      const options: ScheduleOption[] = accepted
+        ? []
+        : [{ id: "pay_in_full", label: "Pay the statement in full", schedule: "upfront" }, ...offered.map((a) => ({ id: a.id, label: `${a.title}${a.fee ? ` (fee ${a.currency} ${a.fee})` : ""}`, schedule: a }))];
+      const cmp = options.length > 1 ? compareSchedules(w, ctx.caseId, options, DEFAULT_STRESSES) : undefined;
+      return {
+        decision: "allowed",
+        result: {
+          funding_entered: true,
+          payer_id: profile.ownerPersonId,
+          figures: { available_now: r0(profile.balances.reduce((s, b) => s + b.amount, 0)), essentials_per_month: profile.essentialsMonthly, reserve_floor: profile.reserveFloor, entered_on: profile.updatedAt.slice(0, 10) },
+          plan_in_force: accepted ? { arrangement_id: accepted.id, title: accepted.title, confirmed_by_institution: true } : "the statement as issued (no payment plan accepted)",
+          projection: projectionSummary(current),
+          ...(cmp
+            ? {
+                comparison: {
+                  rows: cmp.rows.map((r) => ({
+                    option_id: r.id,
+                    option: r.label,
+                    total_cost: r0(r.totalHomeCost),
+                    admin_fees_cost: r0(r.feesHomeCost),
+                    first_payment: r.firstPaymentAt ? { pay_by: r.firstPaymentAt, cost: r0(r.firstPaymentHomeCost ?? 0) } : undefined,
+                    lowest_above_reserve: r0(r.lowestHeadroom),
+                    below_reserve: r.firstBreach ? { at: r.firstBreach.at, short_by: r0(r.firstBreach.shortBy) } : null,
+                    feasible: r.feasible,
+                    stress_tests: r.stress.map((s) => ({ test: s.label, keeps_reserve: s.holds, lowest_above_reserve: r0(s.lowestHeadroom) })),
+                    keeps_reserve_in_every_test: r.holdsAll,
+                  })),
+                  engine_pick: cmp.pickId,
+                  pick_reason: cmp.pickReason === "cheapest_that_holds" ? "the cheapest option that keeps the reserve in every stress test" : cmp.pickReason === "most_headroom" ? "no option keeps the reserve in every test; this one stays furthest above it" : undefined,
+                },
+              }
+            : offered.length === 0 && !accepted
+              ? { note: "No payment plan has been offered. If paying in full goes below the reserve, ask the institution for its published instalment plans with request_arrangement." }
+              : {}),
+          currency: profile.currency,
+        },
+      };
+    },
+  }),
+
+  tool({
+    name: "request_arrangement",
+    tier: "communicate",
+    flag: "arrangements",
+    description:
+      "Ask the institution, through its verified contact, for its published instalment plans, a deadline extension or a lower deposit for a statement. This only ASKS: nothing changes until the institution sends a written offer, the payer accepts it in the app, and the institution confirms it. Never tell the family a deadline has moved before that.",
+    schema: z.object({
+      invoice_id: z.string(),
+      kind: z.enum(["published_plan", "extension", "deposit_reduction"]),
+      subject: z.string().min(3).max(160),
+      body: z.string().min(10).max(3000).describe("Up to 3000 characters. Clear, professional English; quote the statement number and the student's reference."),
+      narration,
+    }),
+    run: (i, ctx) => {
+      const w = ctx.store.world;
+      const inv = w.invoices[i.invoice_id];
+      if (!inv || inv.caseId !== ctx.caseId) return { decision: "error", result: { error: `No invoice ${i.invoice_id} on this case` } };
+      if (inv.status !== "open") return { decision: "error", result: { error: `Invoice ${inv.number} is ${inv.status}; ask about the statement that replaced it.` } };
+      const open = Object.values(w.arrangements ?? {}).filter((a) => a.invoiceId === inv.id && (a.status === "offered" || a.status === "requested") && (!a.expiresAt || a.expiresAt > w.now));
+      if (open.length) return { decision: "error", result: { error: `Already ${open[0].status}: ${open.map((a) => `${a.title} (${a.id})`).join(", ")}. Compare them with plan_affordability.` } };
+      const waiting = awaitingReply(w, (m) => m.caseId === ctx.caseId && m.request?.kind === "arrangement" && m.request.invoiceId === inv.id);
+      if (waiting) return { decision: "error", result: { error: `Already asked in ${waiting.id}; wait for the institution's reply.` } };
+      const mail = mailInstitution(ctx, { subject: i.subject, body: i.body, attachments: [], request: { kind: "arrangement", arrangementKind: i.kind, invoiceId: inv.id } });
+      if (!mail) return { decision: "blocked", ruleIds: ["CARRYPAY.VERIFIED_INSTITUTION"], result: { error: "Blocked: the institution has no verified contact address yet." } };
+      return { decision: "allowed", result: { sent: true, mail_id: mail.id, note: "Deadlines and amounts are unchanged until the institution confirms an accepted plan in writing." } };
+    },
+  }),
+
+  tool({
+    name: "propose_plan_mandate",
+    tier: "money",
+    flag: "mandate",
+    description:
+      "Ask the payer to sign ONE approval for the remaining instalments of the plan the institution confirmed, so each can be paid in its window without asking again. CarryPay sets the terms from the confirmed plan itself: each instalment's exact amount and window, the institution's verified account, the payer's safety net. Any difference later (amount, account, date, a payment that would break the safety net) pauses it and asks the payer. The payer signs it in the app (Plan) and can revoke it at any time. It moves no money itself.",
+    schema: z.object({ arrangement_id: z.string(), narration }),
+    run: (i, ctx) => {
+      const w = ctx.store.world;
+      const arr = w.arrangements?.[i.arrangement_id];
+      if (!arr || arr.caseId !== ctx.caseId) return { decision: "error", result: { error: `No payment plan ${i.arrangement_id} on this case` } };
+      const existing = Object.values(w.mandates ?? {}).find((m) => m.arrangementId === arr.id && (m.status === "awaiting_approval" || m.status === "active"));
+      if (existing) return { decision: "error", result: { error: `Mandate ${existing.id} for this plan is already ${existing.status === "active" ? "signed" : "waiting for the payer's signature"}.` } };
+      const terms = mandateTerms(w, arr);
+      if (!terms) return { decision: "error", result: { error: "Only a plan the institution has confirmed in writing, with instalments still to pay and the payer's figures entered, can have a mandate." } };
+      const id = ctx.store.nextId("man");
+      ctx.store.mutate((x) => {
+        x.mandates ??= {};
+        x.mandates[id] = { ...terms, id, status: "awaiting_approval", history: [{ at: x.now, status: "awaiting_approval" }] };
+      });
+      return {
+        decision: "needs_approval",
+        result: {
+          status: "awaiting_payer_signature",
+          mandate_id: id,
+          covers: terms.windows.map((x) => ({ instalment: x.instalment, amount: `${terms.currency} ${x.amount}`, from: x.from, until: x.to })),
+          total_cap: `${terms.currency} ${terms.totalCap}`,
+          keeps_safety_net_of: terms.reserveFloor,
+          note: "Nothing is covered until the payer signs it in the app. You will be woken when they do.",
+        },
+      };
+    },
+  }),
+
+  tool({
     name: "propose_payment",
     tier: "money",
     description:
@@ -548,6 +828,32 @@ export const TOOLS = [
           result: { error: "BLOCKED by safety layer", blockers: ev.blockers },
         };
       }
+
+      // 3b. No self-made instalments: a part payment of a tuition bill must be an instalment of a plan the
+      //     institution has confirmed. Cutting a bill into pieces (for example to stay under a yearly quota) is structuring.
+      if (c.type === "tuition" && i.amount < o.remaining - 0.5) {
+        const agreed = obligationsFor(w, c.id, "current").filter((ob) => ob.invoiceId === inv.id && ob.source === "arrangement");
+        if (!agreed.some((ob) => Math.abs(ob.amount - i.amount) <= 0.5)) {
+          security(ctx, {
+            severity: "critical",
+            kind: "blocked_forbidden",
+            title: "A self-made part payment was blocked",
+            detail: `Proposed ${inv.currency} ${i.amount.toLocaleString()} of the ${inv.currency} ${o.remaining.toLocaleString()} outstanding on ${inv.number}. ${agreed.length ? `The confirmed plan's instalments are ${agreed.map((ob) => `${ob.currency} ${ob.amount.toLocaleString()}`).join(", ")}.` : "The university has not confirmed an instalment plan for this bill."}`,
+            ruleIds: ["CARRYPAY.NO_STRUCTURING"],
+          });
+          return {
+            decision: "blocked",
+            ruleIds: ["CARRYPAY.NO_STRUCTURING"],
+            narration: `Blocked a part payment of ${inv.number} that isn't an instalment the university agreed to`,
+            result: {
+              error: "BLOCKED by safety layer: a tuition bill is paid in full, or in instalments of a plan the university has confirmed. No payment was created.",
+              outstanding: o.remaining,
+              confirmed_instalments: agreed.map((ob) => ({ label: ob.label, amount: ob.amount, due_at: ob.dueAt })),
+            },
+          };
+        }
+      }
+
       const missing = ev.requiredDocs.filter((d) => !d.present && d.kind !== "invoice" && d.kind !== "admission_letter");
       const missingExternal = ev.requiredDocs.filter((d) => !d.present && (d.kind === "invoice" || d.kind === "admission_letter"));
       if (missing.length || missingExternal.length) {
@@ -566,7 +872,11 @@ export const TOOLS = [
       const dup = Object.values(w.payments).find((p) => p.invoiceId === inv.id && p.route === i.route && p.status === "awaiting_approval");
       if (dup) return { decision: "error", result: { error: `A payment on this invoice is already waiting for the family's approval (${dup.id}).` } };
 
-      const cost = priceRoute({ corridor: c.corridor, route: i.route as Route, deliverAmount: i.amount, institution: w.institutions[inv.institutionId], simDate: w.now })!;
+      const cost = priceRoute({ corridor: c.corridor, route: i.route as Route, deliverAmount: i.amount, institution: w.institutions[inv.institutionId], simDate: w.now, fxShocks: w.fxShocks })!;
+      // The payment carries the registry's record, never the model's copy of it: the check above ignores
+      // case, spacing and punctuation, so the model's text could still hold invisible or look-alike characters
+      // or any bank name. What the bank and the family's approval screen see is the verified account itself.
+      const verified = ben.inst.bank;
       const paymentId = store.nextId("pay");
       const approvalId = store.nextId("apr");
       const payment: Payment = {
@@ -579,7 +889,7 @@ export const TOOLS = [
         currency: inv.currency,
         payerId: i.payer_id,
         reference: i.reference,
-        beneficiary: { accountName: i.beneficiary.account_name, accountNumber: i.beneficiary.account_number, swift: i.beneficiary.swift, bankName: i.beneficiary.bank_name },
+        beneficiary: { accountName: verified.accountName, accountNumber: verified.accountNumber, swift: verified.swift, bankName: verified.bankName },
         cost,
         rationale: i.rationale,
         status: "awaiting_approval",
@@ -596,12 +906,57 @@ export const TOOLS = [
           paymentId,
           requestedAt: ww.now,
           summary: `${ROUTE_SHORT[payment.route]}: ${inv.currency} ${i.amount.toLocaleString()} to ${w.institutions[inv.institutionId].name}`,
+          terms: approvalTerms(w, payment),
         };
       });
+      // 5. Plan mandate: an instalment the payer approved in advance goes ahead without asking again, but only
+      //    if every term of the signed mandate still holds. Anything else pauses the mandate and asks the payer.
+      const mandate = flagOn("mandate")
+        ? Object.values(store.world.mandates ?? {}).find((m) => m.caseId === c.id && m.status === "active" && store.world.arrangements?.[m.arrangementId]?.invoiceId === inv.id)
+        : undefined;
+      let paused: { reason: string; failed: { id: string; message: string }[] } | undefined;
+      if (mandate) {
+        const mc = mandateAllows(store.world, mandate, { invoiceId: inv.id, amount: i.amount, route: i.route as Route, payerId: i.payer_id, beneficiary: payment.beneficiary });
+        if (mc.ok) {
+          store.mutate((ww) => {
+            const a = ww.approvals[approvalId];
+            a.decision = "approved";
+            a.decidedAt = ww.now;
+            a.method = "mandate";
+          });
+          store.log({ actor: "gateway", type: "approval.mandate", caseId: c.id, narration: `Instalment ${mc.instalment} paid under the plan mandate the payer signed: every term checked`, data: { approvalId, paymentId, mandateId: mandate.id, instalment: mc.instalment, checks: mc.passed } });
+          setPaymentStatus(store, paymentId, "approved", `Approved in advance under plan mandate ${mandate.id}`);
+          submitPayment(store, store.world.payments[paymentId]);
+          return {
+            decision: "allowed",
+            ruleIds: [...ev.limits.map((l) => l.ruleId), ...ev.requiredDocs.map((d) => d.ruleId)],
+            result: {
+              status: "sent_under_plan_mandate",
+              payment_id: paymentId,
+              mandate_id: mandate.id,
+              instalment: mc.instalment,
+              checks_passed: mc.passed,
+              cost_to_family: `${cost.sourceCurrency} ${Math.round(cost.totalSource).toLocaleString()}`,
+              note: "The payer approved this instalment in advance when signing the mandate, and every term still holds, so it has been sent. Tell the family briefly.",
+            },
+          };
+        }
+        const reason = mc.failed.map((f) => f.message).join(" ");
+        store.mutate((ww) => {
+          const m = ww.mandates![mandate.id];
+          m.status = "paused";
+          m.pausedReason = reason;
+          m.history.push({ at: ww.now, status: "paused", note: reason });
+        });
+        security(ctx, { severity: "warning", kind: "approval_required", title: "Plan mandate paused: this payment is outside what the payer approved", detail: `${inv.currency} ${i.amount.toLocaleString()} on ${inv.number}. ${reason}` });
+        store.log({ actor: "gateway", type: "mandate.paused", caseId: c.id, narration: "The plan mandate was paused: this payment needs the payer's own approval", data: { mandateId: mandate.id, paymentId, failed: mc.failed.map((f) => f.id) } });
+        paused = { reason, failed: mc.failed };
+      }
       return {
         decision: "needs_approval",
         ruleIds: [...ev.limits.map((l) => l.ruleId), ...ev.requiredDocs.map((d) => d.ruleId)],
         result: {
+          ...(paused ? { plan_mandate_paused: paused, explain_to_family: "Tell the payer in one short message what changed and that this payment needs their own approval." } : {}),
           status: "awaiting_family_approval",
           payment_id: paymentId,
           approval_id: approvalId,
@@ -616,7 +971,7 @@ export const TOOLS = [
     name: "resubmit_payment",
     tier: "money",
     description:
-      "Re-send a payment that the bank returned: with a corrected payment reference, or unchanged if the bank only had a temporary problem. Allowed without a new family approval only when the beneficiary and amount are unchanged (the family already approved exactly that).",
+      "Re-send a payment that the bank returned: with a corrected payment reference, or unchanged if the bank only had a temporary problem. Allowed without a new family approval only when the beneficiary and amount are unchanged (the family already approved exactly that). The safety layer re-checks it against everything since (the bill still open and owed, limits, a plan mandate still in force) and refuses it if anything changed: then propose a new payment.",
     schema: z.object({ payment_id: z.string(), corrected_reference: z.string().min(2).max(140), narration }),
     run: (i, ctx) => {
       const p = ctx.store.world.payments[i.payment_id];
@@ -624,6 +979,8 @@ export const TOOLS = [
       if (p.status !== "returned") return { decision: "error", result: { error: `Payment is ${p.status}, only returned payments can be resubmitted.` } };
       const ben = checkBeneficiary(ctx.store.world, p.institutionId, { account_name: p.beneficiary.accountName, account_number: p.beneficiary.accountNumber, swift: p.beneficiary.swift });
       if (!ben.verified) return { decision: "blocked", ruleIds: ["CARRYPAY.VERIFIED_BENEFICIARY"], result: { error: "BLOCKED: beneficiary no longer verified" } };
+      const refused = recheckResubmission(ctx, p);
+      if (refused) return refused;
       ctx.store.mutate((w) => {
         const pp = w.payments[p.id];
         pp.reference = i.corrected_reference;
@@ -642,15 +999,68 @@ export const TOOLS = [
 
 export type ToolName = (typeof TOOLS)[number]["name"];
 
+/**
+ * A returned transfer stopped counting against the bill and the limits the moment the money came back, so
+ * other payments may have been made since. Sending it again moves money again: re-check it against today's
+ * world (bill still open, amount still owed, limits, anti-splitting, no self-made part payment), and a payment
+ * approved under a plan mandate goes again only while that mandate is still in force. Anything else needs a
+ * new proposal and the payer's own approval.
+ */
+function recheckResubmission(ctx: ToolCtx, p: Payment): ToolOutcome | undefined {
+  const { store } = ctx;
+  const w = store.world;
+  const c = w.cases[ctx.caseId];
+  const inv = w.invoices[p.invoiceId];
+  const refuse = (ruleIds: string[], kind: SecurityEvent["kind"], title: string, detail: string): ToolOutcome => {
+    security(ctx, { severity: kind === "blocked_forbidden" ? "critical" : "warning", kind, title, detail, ...(ruleIds.length ? { ruleIds } : {}) });
+    return {
+      decision: "blocked",
+      ...(ruleIds.length ? { ruleIds } : {}),
+      narration: `Did not resend ${p.id}: ${title.toLowerCase()}`,
+      result: { error: `BLOCKED by safety layer: ${detail} Nothing was sent. If a payment is still needed, propose it again for the family's approval.` },
+    };
+  };
+  if (!inv || inv.status !== "open") return refuse([], "blocked_limit", "The bill is no longer open", `Invoice ${inv?.number ?? p.invoiceId} is ${inv?.status ?? "gone"}.`);
+  const o = outstanding(ctx, inv.id);
+  if (p.amount > o.remaining + 0.5) {
+    return refuse([], "blocked_limit", "Resending would pay more than is owed", `${inv.currency} ${p.amount.toLocaleString()} is more than the ${inv.currency} ${o.remaining.toLocaleString()} still outstanding on ${inv.number} (paid ${o.paid}, in flight ${o.inFlight}).`);
+  }
+  const ev = evaluateRoute({ world: w, caseFile: c, payer: c.people.find((x) => x.id === p.payerId), route: p.route, amount: p.amount, currency: p.currency, excludePaymentId: p.id, invoiceId: inv.id });
+  if (!ev.allowed) return refuse(ev.blockers.map((b) => b.ruleId), ev.blockers.some((b) => b.ruleId.includes("SPLITTING")) ? "blocked_forbidden" : "blocked_limit", "Resending would break a rule", ev.blockers.map((b) => b.message).join(" "));
+  if (c.type === "tuition" && p.amount < o.remaining - 0.5) {
+    const agreed = obligationsFor(w, c.id, "current").filter((ob) => ob.invoiceId === inv.id && ob.source === "arrangement");
+    if (!agreed.some((ob) => Math.abs(ob.amount - p.amount) <= 0.5)) {
+      return refuse(["CARRYPAY.NO_STRUCTURING"], "blocked_forbidden", "Resending would be a self-made part payment", `${inv.currency} ${p.amount.toLocaleString()} of the ${inv.currency} ${o.remaining.toLocaleString()} outstanding on ${inv.number} is not an instalment of a confirmed plan.`);
+    }
+  }
+  const approval = p.approvalId ? w.approvals[p.approvalId] : undefined;
+  if (approval?.method === "mandate") {
+    const used = store.ledger.find((e) => e.type === "approval.mandate" && e.data.approvalId === approval.id);
+    const m = used ? w.mandates?.[used.data.mandateId as string] : undefined;
+    if (!m || m.status !== "active") {
+      return refuse([], "approval_required", "The plan mandate is no longer in force", `${p.id} was approved under plan mandate ${m?.id ?? "(unknown)"}, which is now ${m?.status ?? "missing"}: the payer must approve it again.`);
+    }
+  }
+  return undefined;
+}
+
 export function toolTier(name: string): Tier | undefined {
   return TOOLS.find((t) => t.name === name)?.tier;
 }
 
 /** JSON schema for the Messages API, generated from the same zod schema we validate with. */
+const enabled = (t: { flag?: Flag }) => !t.flag || flagOn(t.flag);
+
+export function toolJsonSchema(t: (typeof TOOLS)[number]) {
+  const schema = z.toJSONSchema(t.schema) as { properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown };
+  delete schema.$schema;
+  for (const [field, flag] of Object.entries((t as { flaggedFields?: Record<string, Flag> }).flaggedFields ?? {})) if (!flagOn(flag)) delete schema.properties?.[field];
+  return schema;
+}
+
 export function anthropicToolDefs() {
-  return TOOLS.map((t) => {
-    const schema = z.toJSONSchema(t.schema) as Record<string, unknown>;
-    delete schema.$schema;
+  return TOOLS.filter(enabled).map((t) => {
+    const schema = toolJsonSchema(t);
     return { name: t.name, description: `[${t.tier.toUpperCase()}] ${t.description}`, input_schema: schema as { type: "object"; [k: string]: unknown } };
   });
 }
@@ -664,7 +1074,7 @@ export function executeTool(name: string, rawInput: unknown, ctx: ToolCtx): stri
     store.log({ actor: "gateway", type: "tool.blocked", caseId: ctx.caseId, narration: `Emergency stop is on: ${name} was not run`, data: { tool: name, decision: "blocked" } });
     return JSON.stringify({ error: "The family switched on the emergency stop. Do nothing further." });
   }
-  if (!spec) return JSON.stringify({ error: `Unknown tool ${name}` });
+  if (!spec || !enabled(spec)) return JSON.stringify({ error: `Unknown tool ${name}` });
   const parsed = (spec.schema as z.ZodObject).safeParse(unescapeNewlines(rawInput));
   if (!parsed.success) {
     store.log({ actor: "gateway", type: "tool.invalid", caseId: ctx.caseId, data: { tool: name, issues: parsed.error.issues.slice(0, 5) } });

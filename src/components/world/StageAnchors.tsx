@@ -12,7 +12,8 @@ export function StageAnchors({ state }: { state: PublicState }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
       <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7d918c]">
-        <Link2 size={12} /> Anchored on a public blockchain · {state.anchoring.chain}
+        <Link2 size={12} /> Anchored on {state.anchoring.second ? "two blockchains" : "a public blockchain"} · {state.anchoring.chain}
+        {state.anchoring.second ? ` + ${state.anchoring.second.chain}` : ""}
       </p>
       {recent.length === 0 ? (
         <p className="mt-2 text-[12px] text-[#7d918c]">The log&apos;s head hash goes on-chain at each milestone.</p>
@@ -34,6 +35,11 @@ export function StageAnchors({ state }: { state: PublicState }) {
                   </span>
                 ) : (
                   <span className="text-[#f0b44c]">{a.chain?.status === "failed" ? "not sent" : "local"}</span>
+                )}
+                {a.fisco && (
+                  <span className={a.fisco.status === "confirmed" ? "font-semibold text-[#5ccdb4]" : a.fisco.status === "failed" ? "text-[#f0b44c]" : "text-[#9fb2ad]"}>
+                    FISCO {a.fisco.status === "confirmed" ? `#${a.fisco.blockNumber}` : a.fisco.status === "failed" ? "✕" : "…"}
+                  </span>
                 )}
               </motion.li>
             ))}
