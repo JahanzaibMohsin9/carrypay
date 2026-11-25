@@ -65,24 +65,29 @@ describe("per-person language for agent messages", () => {
     expect(input.translations.zh).toBe("周雨桐的学费已付清。");
   });
 
-  it("splits the recorded live run's bilingual messages, so a replay reaches the father in Chinese too", () => {
+  it("gives the father the recorded live run's messages in Chinese, so a replay reaches him in Chinese too", () => {
     const rec = JSON.parse(readFileSync(path.join(process.cwd(), "recordings", "uk-year.json"), "utf8"));
-    const texts: string[] = [];
+    // a recording made with per-person language writes the Chinese as a translation; an older one appended it
+    // to the English text as a paragraph for "爸爸": both must reach the father in Chinese
+    const msgs: { text: string; texts?: Partial<Record<"en" | "zh", string>> }[] = [];
     const walk = (o: unknown): void => {
       if (Array.isArray(o)) o.forEach(walk);
       else if (o && typeof o === "object") {
-        const x = o as { tool?: string; input?: { text?: string } };
-        if (x.tool === "message_family" && x.input?.text) texts.push(x.input.text);
+        const x = o as { tool?: string; input?: { text?: string; translations?: Partial<Record<"en" | "zh", string>> } };
+        if (x.tool === "message_family" && x.input?.text) msgs.push({ text: x.input.text, texts: x.input.translations });
         Object.values(o).forEach(walk);
       }
     };
     walk(rec);
-    expect(texts.length).toBeGreaterThan(10);
-    const split = texts.map((t) => messageTexts({ text: t }, "en")).filter((v) => v.zh);
-    expect(split.length).toBeGreaterThanOrEqual(texts.length - 2);
-    for (const v of split) {
+    expect(msgs.length).toBeGreaterThan(10);
+    const split = msgs.map((m) => messageTexts(m, "en")).filter((v) => v.zh);
+    expect(split.length).toBeGreaterThanOrEqual(msgs.length - 2);
+    // a combined message is split at the "爸爸：" paragraph, and that label must not reach either reader
+    // (in a translation, "爸爸，…" is the agent's own greeting to him, so it isn't checked there)
+    for (const v of msgs.filter((m) => !m.texts?.zh).map((m) => messageTexts(m, "en")).filter((x) => x.zh)) {
       expect(v.zh).not.toMatch(/^爸爸/);
       expect(v.en).not.toMatch(/爸爸/);
     }
+    for (const m of msgs.filter((x) => x.texts?.zh)) expect(m.text).not.toMatch(/^爸爸/);
   });
 });
