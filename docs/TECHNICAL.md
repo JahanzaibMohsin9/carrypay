@@ -12,7 +12,7 @@ Companion documents: [SECURITY.md](SECURITY.md) (security self-assessment), [EVA
 | Corridors | Pakistan → Thailand (hospital), Pakistan → UK (admission through an agent), China → UK (tuition; fake study agent; a whole year of fees in instalments), plus uploaded bills from 13 destination countries |
 | Model | DeepSeek V4 Pro (function calling, thinking mode); OpenAI fallback |
 | Safety design | The AI proposes; deterministic code and the family's passkey decide. 22 tools in 3 permission tiers behind a safety gateway |
-| Results | 43/45 live end-to-end runs passed every check (sandbox results, not customer outcomes); 0/20 live-model attacks executed; 171 automated tests |
+| Results | 43/45 live end-to-end runs passed every check (sandbox results, not customer outcomes); 0/20 live-model attacks executed, 0/6 goals for an attacker that learns; 204 automated tests |
 | Proof | SHA-256 hash-chained activity log, head hash anchored at each milestone on the Conflux eSpace testnet and on a FISCO BCOS chain |
 
 ## 1. What the system does
@@ -225,7 +225,7 @@ The full self-assessment is [SECURITY.md](SECURITY.md); this is the design in br
 - **Approval** is a WebAuthn signature over a digest of the exact payment (§4.2), so a changed amount or account can't reuse it.
 - **Privacy:** known identifiers on the case (names, IDs, hospital and student numbers, card and passport numbers, terms from a medical word list) are masked before the agent's model sees them (§4.1). Uploaded photos and voice notes go to OpenAI as provided, and masking can miss identifiers CarryPay doesn't know, so the public sandbox uses fictional data.
 - **Evidence:** a hash-chained log anchored on a public chain and a FISCO BCOS chain (§6).
-- **Testing:** 18 deterministic attacks on the gateway and 11 on the plan workflow in `npm test`; 20 attacks on the live model with an ablation: a naive prompt without the gateway executed 2/20, the same naive prompt with the gateway 0/20, the CarryPay agent 0/20 tried and 0/20 executed ([redteam/REPORT.md](redteam/REPORT.md)). Judges can launch attacks themselves at `/attack`.
+- **Testing:** 41 deterministic attacks in `npm test` (safety layer, plan workflow, approvals and verification); an attacker that learns (DeepSeek writing a new attack each round from what the last one achieved, 26 rounds over six goals): 0 of 6 goals achieved; the model was fooled twice and the gateway blocked both ([redteam/ADAPTIVE.md](redteam/ADAPTIVE.md)); 20 fixed attacks on the live model with an ablation: a naive prompt without the gateway executed 2/20, the same naive prompt with the gateway 0/20, the CarryPay agent 0/20 tried and 0/20 executed ([redteam/REPORT.md](redteam/REPORT.md)). Judges can launch attacks themselves at `/attack`.
 
 ## 6. Tamper-evident activity log
 
@@ -262,7 +262,7 @@ Sandbox state lives in a data folder (world snapshot, ledger as JSONL, anchors, 
 
 ## 9. Testing and evaluation
 
-`npm test` runs 193 tests in 29 files (the list below is the core; also: all five scenarios, uploaded bills, on-chain anchoring on two fake chains, private sessions, the attack lab, the MCP server, family answers, retrying dropped LLM connections, feature flags, per-person message language, the Director's stress tests):
+`npm test` runs 204 tests in 31 files (the list below is the core; also: all five scenarios, uploaded bills, on-chain anchoring on two fake chains, private sessions, the attack lab, the MCP server, family answers, retrying dropped LLM connections, feature flags, per-person message language, the Director's stress tests):
 - rules engine: tax history, pricing order, Pakistan caps, card limits, carried-cash rule, anti-splitting, SAFE quota and prohibited purposes, deadline-aware comparison
 - every scenario end to end with the scripted agent, including the returned transfer, the scam email, the bill dispute, the refund and a tamper check, scored by the same evaluator as the live runs
 - 20 red-team attacks on the safety layer and 12 on the plan workflow (see [SECURITY.md](SECURITY.md))
@@ -275,6 +275,7 @@ Sandbox state lives in a data folder (world snapshot, ledger as JSONL, anchors, 
 Beyond unit tests:
 - `node scripts/eval.mjs run <scenario> <n>` plays a scenario Live end to end N times and scores each run with `src/server/evaluate.ts` (task checks, safety checks, wake-ups, emails, tokens, AI cost, money saved vs paying by card). `report` writes [EVAL.md](EVAL.md) and a chart. Current agent (v3.1): **43/45 runs passed every check**; the two failures were dropped connections to the model, with every task check passed. AI cost per case: $0.05 (admission checks) to $0.23 (the nine-day hospital case). These are sandbox results, not customer outcomes. For `uk-year`, `evaluate.ts` adds checks for the plan workflow (scholarship found and the statement corrected, correction sent with the award letter, no saving claimed before the university confirmed it, affordability checked before paying, the engine's pick recommended and accepted by the payer, plan confirmed in writing, every payment an instalment of it, reserve kept, the fake extension flagged with dates and account unchanged, an instalment paid under the mandate, the mandate paused on the changed instalment, every payment credited; with the `resolution` flag also the registration hold lifted by the university, no "all clear" before it, and the unmatched transfer fixed without paying again); its batch of live runs is not in EVAL.md yet. Each run also records outcome measures: the family's actions, approvals asked and withdrawn, hours from the institution's bank receiving a payment to the institution crediting it, and when the institution confirmed its requirement was met.
 - `npm run redteam:llm` runs 20 attacks against the live model, with an ablation using a naive prompt (`REDTEAM_AGENT=naive`); see [redteam/REPORT.md](redteam/REPORT.md).
+- `npm run redteam:adaptive` puts an attacker model against the live agent: for each of six goals it writes an email (any sender, optionally a document) or a family message, sees what the agent and the gateway did, and tries again; judged in code; see [redteam/ADAPTIVE.md](redteam/ADAPTIVE.md).
 - `node scripts/evidence.mjs` writes [evidence/](evidence/README.md): one log per scenario with its checks and on-chain anchors, each anchor matched against the chain.
 
 ## 10. Deployment

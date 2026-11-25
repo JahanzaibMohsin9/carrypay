@@ -52,7 +52,7 @@ Open:
 | `http://localhost:3000/pack` | Printable case pack (Save as PDF): payments, every bill, receipt and form, and the log verification |
 | `http://localhost:3000/director` | Director controls + raw agent log, including **chaos mode** (bank outage, card declined, institution silent) |
 
-Run the tests (193: rules engine, all five scenarios end to end, uploaded bills, the plan workflow, approvals tied to their terms, the bank's verification checks, on-chain anchoring on two chains, the MCP server, 20 red-team attacks on the safety layer and 12 on the plan workflow, property-based fuzzing of the safety gateway, sandbox institutions, chaos mode, privacy firewall, passkey verification):
+Run the tests (204: rules engine, all five scenarios end to end, uploaded bills, the plan workflow, approvals tied to their terms, the bank's verification checks, on-chain anchoring on two chains, the MCP server, 20 red-team attacks on the safety layer and 12 on the plan workflow, property-based fuzzing of the safety gateway, sandbox institutions, chaos mode, privacy firewall, passkey verification):
 
 ```bash
 npm test
@@ -70,6 +70,7 @@ With an API key in `.env.local` and the dev server running, two more checks use 
 node scripts/eval.mjs run th-medical 10    # play a scenario Live end to end N times, scored per run
 node scripts/eval.mjs report               # writes docs/EVAL.md and docs/eval/chart.svg
 npm run redteam:llm                        # 20 attacks against the live agent: docs/redteam/REPORT.md
+npm run redteam:adaptive                   # an attacker model that learns, 6 goals x 5 rounds: docs/redteam/ADAPTIVE.md
 ```
 
 ## Agent modes
@@ -171,7 +172,7 @@ The family enters their names, then uploads a PDF or a photo of a hospital or un
 | Privacy firewall | Known identifiers on the case (names, hospital and student numbers, card and passport numbers, medical terms) are replaced with placeholders before the agent's model sees them, and restored only inside CarryPay's code. Uploaded photos and voice notes are sent to OpenAI as provided; the public sandbox uses fictional data. |
 | Tamper-evident log | Each entry is SHA-256 hashed with the previous entry's hash. Verify in the Security Centre (recomputed in the browser), export from `/api/ledger`. At each milestone the head hash is anchored on the **Conflux eSpace testnet** ([contract](https://evmtestnet.confluxscan.org/address/0x7cebbc3ac1a2ec61607025a589efa01b597c42cf), source verified) and on a **FISCO BCOS** chain; "Check against the chain" checks both copies and proves the log wasn't edited afterwards. |
 
-Red-team results: `src/server/redteam.test.ts` (18 attacks on the safety layer, all blocked), `src/server/redteam.plan.test.ts` (11 attacks on the plan workflow, all held) and [docs/redteam/REPORT.md](docs/redteam/REPORT.md) (20 attacks on the live DeepSeek agent: 0 executed; a naive prompt tried 2, the gateway blocked both).
+Red-team results: 41 attacks in `npm test` (`src/server/redteam.test.ts`, `redteam.plan.test.ts` and the approval and verification tests), all blocked; [docs/redteam/REPORT.md](docs/redteam/REPORT.md) (20 attacks on the live DeepSeek agent: 0 executed; a naive prompt tried 2, the gateway blocked both); and an attacker that learns (DeepSeek writing a new attack each round from what the last one achieved, 26 rounds over six goals): 0 of 6 goals achieved; the model was fooled twice and the gateway blocked both ([docs/redteam/ADAPTIVE.md](docs/redteam/ADAPTIVE.md)).
 
 ## Use CarryPay from your own AI (MCP)
 

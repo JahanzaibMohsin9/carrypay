@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "redteam:llm": "vitest run --config vitest.redteam.config.mts",
+    "redteam:adaptive": "vitest run --config vitest.adaptive.config.mts --silent=false",
     "eval:live": "vitest run --config vitest.live.config.mts",
     "eval:replay": "vitest run --config vitest.replay.config.mts",
     "docs:pdf": "node scripts/docs-pdf.mjs"
