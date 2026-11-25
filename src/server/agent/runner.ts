@@ -171,7 +171,10 @@ export class AgentRunner {
 
   /** DeepSeek and OpenAI via the Chat Completions API with function calling. */
   private async runLiveOpenAICompatible(caseId: string, triggers: Trigger[], cfg: ProviderConfig) {
-    const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL, timeout: 180_000, maxRetries: 2 });
+    // A thinking-mode step on a long case can take minutes at the provider's peak hours; CARRYPAY_LLM_TIMEOUT_MS
+    // raises the per-request limit for long recordings (default 3 minutes, as before).
+    const timeout = Number(process.env.CARRYPAY_LLM_TIMEOUT_MS) || 180_000;
+    const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL, timeout, maxRetries: 2 });
     const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = anthropicToolDefs().map((t) => ({
       type: "function",
       function: { name: t.name, description: t.description, parameters: t.input_schema as Record<string, unknown> },
